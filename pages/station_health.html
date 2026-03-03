@@ -1542,6 +1542,19 @@ function getStationConfig(station) {
   return { channelId: channelId, apiKey: apiKey };
 }
 
+// Helper: yield to browser so status text / spinner repaints
+function yieldToBrowser() { return new Promise(function(r) { setTimeout(r, 0); }); }
+
+// Helper: fetch with timeout (default 30s) to avoid indefinite hangs
+function fetchWithTimeout(url, timeoutMs) {
+  timeoutMs = timeoutMs || 30000;
+  var controller = new AbortController();
+  var tid = setTimeout(function() { controller.abort(); }, timeoutMs);
+  return fetch(url, { signal: controller.signal })
+    .then(function(res) { clearTimeout(tid); return res; })
+    .catch(function(err) { clearTimeout(tid); throw err.name === 'AbortError' ? new Error('Timeout after ' + (timeoutMs/1000) + 's') : err; });
+}
+
 async function fetchLiveAll() {
   var btn    = document.getElementById('btnFetchAll');
   var status = document.getElementById('fetchStatus');
@@ -1560,9 +1573,12 @@ async function fetchLiveAll() {
       continue;
     }
     status.textContent = 'Fetching ' + station.name + ' (' + (i+1) + '/' + STATIONS.length + ')...';
+    await yieldToBrowser();  // let status text repaint
     try {
+      // Small delay between ThingSpeak requests to avoid rate-limiting
+      if (i > 0) await new Promise(function(r) { setTimeout(r, 500); });
       var url = 'https://api.thingspeak.com/channels/' + cfg.channelId + '/feeds.json?api_key=' + cfg.apiKey + '&results=8000';
-      var res = await fetch(url);
+      var res = await fetchWithTimeout(url, 30000);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var data = await res.json();
       stationData[station.id] = parseStationData(data, station);
@@ -1573,6 +1589,10 @@ async function fetchLiveAll() {
     }
   }
 
+  // Show rendering status and yield so the browser can repaint
+  status.textContent = 'Rendering charts...';
+  await yieldToBrowser();
+
   // Destroy existing charts and rebuild
   liveCharts.forEach(function(c) { try { c.destroy(); } catch(e){} });
   liveCharts = [];
@@ -1581,12 +1601,15 @@ async function fetchLiveAll() {
   container.style.display = '';
   document.getElementById('loadingMsg').style.display = 'none';
 
-  STATIONS.forEach(function(station) {
-    var data = stationData[station.id];
-    if (!data) return;
-    var section = renderStationSection(station, data);
+  for (var si = 0; si < STATIONS.length; si++) {
+    var st = STATIONS[si];
+    var data = stationData[st.id];
+    if (!data) continue;
+    status.textContent = 'Rendering ' + st.name + ' (' + (si+1) + '/' + STATIONS.length + ')...';
+    await yieldToBrowser();  // yield between each station's chart rendering
+    var section = renderStationSection(st, data);
     container.appendChild(section);
-  });
+  }
 
   // Update forecast with currently selected station
   if (window.BatteryForecast) {
