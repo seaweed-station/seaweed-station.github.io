@@ -444,12 +444,14 @@ body {
   <div class="header-actions">
     <a class="btn btn-sm" href="../ESP32_Weather_Station_Dashboard.html" title="All tables overview">&#9664; Overview</a>
     <button class="btn btn-primary" id="btnFetch" onclick="fetchLiveData()">Fetch Live</button>
+    <button class="btn" id="btnTriggerDL" onclick="triggerCIDownload()" title="Trigger CI to download fresh data">&#9889; Download</button>
     <button class="btn" id="btnLoadFile" onclick="document.getElementById('fileInput').click()">Load JSON</button>
     <input type="file" id="fileInput" multiple accept=".json" style="display:none"
            onchange="handleFileUpload(this.files)">
     <button class="btn" id="btnExportCSV" onclick="exportCSV()" title="Export processed data as CSV" style="display:none">Export CSV</button>
     <a class="btn btn-sm" href="settings.html">&#9881; Settings</a>
     <a class="btn btn-sm" href="station_health.html" title="Battery, Sync, Data Health">&#128267; Station Health</a>
+    <span id="triggerStatus" style="font-size:.8rem"></span>
   </div>
   <div class="header-meta">
     <span><span class="label">Source:</span> <span id="dataSourceLabel">No data loaded</span></span>
@@ -772,6 +774,10 @@ body {
 })();
 </script>
 
+<!-- Shared dashboard utilities -->
+<script src="seaweed_common.js"></script>
+<script src="seaweed_sync.js"></script>
+
 <!-- Battery prediction engine (shared) -->
 <script src="battery_model.js"></script>
 <script src="battery_forecast_widget.js"></script>
@@ -1041,21 +1047,7 @@ function setupAutoRefresh() {
 // =====================================================================
 // UTILITIES
 // =====================================================================
-function csvParse(fieldVal) {
-  if (!fieldVal || fieldVal === 'null') return [];
-  return fieldVal.split(',').map(function (v) {
-    v = v.trim();
-    if (v === 'NC' || v === '' || v === 'null' || v === 'nan') return null;
-    var n = parseFloat(v);
-    return isNaN(n) ? null : n;
-  });
-}
-
-function numParse(v) {
-  if (v === null || v === undefined || v === '' || v === 'null') return null;
-  var n = parseFloat(v);
-  return isNaN(n) ? null : n;
-}
+// csvParse, numParse → provided by seaweed_common.js
 
 function fmtDate(d) {
   if (!d) return '--';
@@ -1063,25 +1055,10 @@ function fmtDate(d) {
        + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
-function fmtBytes(kb) {
-  if (kb === null || kb === undefined) return '--';
-  if (kb >= 1048576) return (kb / 1048576).toFixed(1) + ' GB';
-  if (kb >= 1024)    return (kb / 1024).toFixed(1) + ' MB';
-  return kb + ' KB';
-}
+// fmtBytes / formatKB → provided by seaweed_common.js
+var fmtBytes = formatKB;
 
-function timeAgo(date) {
-  if (!date || isNaN(date.getTime())) return 'never';
-  var ms = Date.now() - date.getTime();
-  if (ms < 0) return 'in the future';
-  var mins = Math.floor(ms / 60000);
-  if (mins < 1)  return 'just now';
-  if (mins < 60) return mins + 'm ago';
-  var hrs = Math.floor(mins / 60);
-  if (hrs < 24) return hrs + 'h ' + (mins % 60) + 'm ago';
-  var days = Math.floor(hrs / 24);
-  return days + 'd ' + (hrs % 24) + 'h ago';
-}
+// timeAgo → provided by seaweed_common.js (pass true for suffix to get ' ago')
 
 function getTimezoneLabel() {
   try {
@@ -1144,118 +1121,8 @@ function findLastEntryWith(entries, key) {
   return null;
 }
 
-function collectSyncEventTimes(entries, sampleIdKey, valueKey) {
-  var times = [];
-  var lastSampleId = null;
-  for (var i = 0; i < entries.length; i++) {
-    var entry = entries[i];
-    var sid = sampleIdKey ? entry[sampleIdKey] : null;
-    if (sid !== null && sid !== undefined) {
-      if (lastSampleId === null || sid !== lastSampleId) {
-        times.push(entry.timestamp.getTime());
-        lastSampleId = sid;
-      }
-      continue;
-    }
-    if (entry[valueKey] !== null && entry[valueKey] !== undefined) {
-      times.push(entry.timestamp.getTime());
-    }
-  }
-  return times;
-}
-
-function parseField8ConfigUnified(rawField8) {
-  if (!rawField8 || typeof rawField8 !== 'string') return null;
-  if (window.BatteryModel && typeof window.BatteryModel.parseField8Config === 'function') {
-    return window.BatteryModel.parseField8Config(rawField8);
-  }
-  var parts = rawField8.split('|');
-  if (parts.length < 2) return null;
-  var tokens = parts[1].split(',');
-  if (tokens.length < 8) return null;
-  return {
-    deployMode: parseInt(tokens[0], 10) || 0,
-    sleepEnable: parseInt(tokens[1], 10) === 1,
-    samplePeriod_s: parseInt(tokens[2], 10) || 600,
-    tsBulkInterval_s: parseInt(tokens[3], 10) || 900,
-    tsBulkFreqHours: parseInt(tokens[4], 10) || 24,
-    espnowSyncPeriod_s: parseInt(tokens[5], 10) || 3600,
-    satAInstalled: parseInt(tokens[6], 10) === 1,
-    satBInstalled: parseInt(tokens[7], 10) === 1
-  };
-}
-
-function parseSyncConfigFromField8(rawField8) {
-  var cfg = parseField8ConfigUnified(rawField8);
-  if (!cfg) return null;
-  var periodSec = parseInt(cfg.espnowSyncPeriod_s, 10);
-  if (!isFinite(periodSec) || periodSec <= 0) return null;
-  periodSec = Math.max(60, Math.min(24 * 3600, periodSec));
-  return {
-    periodMs: periodSec * 1000,
-    satAInstalled: !!cfg.satAInstalled,
-    satBInstalled: !!cfg.satBInstalled
-  };
-}
-
-function estimateSyncPeriodMs(eventTimes, defaultPeriodMs) {
-  if (!eventTimes || eventTimes.length < 2) return defaultPeriodMs;
-  var deltas = [];
-  for (var i = 1; i < eventTimes.length; i++) {
-    var d = eventTimes[i] - eventTimes[i - 1];
-    if (d > 0) deltas.push(d);
-  }
-  if (!deltas.length) return defaultPeriodMs;
-  deltas.sort(function(a, b) { return a - b; });
-  var median = deltas[Math.floor(deltas.length / 2)];
-  if (!(median > 0)) return defaultPeriodMs;
-  var minMs = 45 * 60000;
-  var maxMs = 12 * 3600000;
-  return Math.max(minMs, Math.min(maxMs, median));
-}
-
-function buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs) {
-  var eventTimes = collectSyncEventTimes(entries, sampleIdKey, valueKey);
-  var inferredPeriodMs = estimateSyncPeriodMs(eventTimes, defaultPeriodMs);
-  var timeline = [];
-  var lastPeriod = inferredPeriodMs;
-  var lastSatAInstalled = true;
-  var lastSatBInstalled = true;
-
-  timeline.push({ ts: entries[0].timestamp.getTime(), periodMs: inferredPeriodMs, satAInstalled: true, satBInstalled: true });
-
-  for (var i = 0; i < entries.length; i++) {
-    var syncCfg = parseSyncConfigFromField8(entries[i]._rawField8);
-    if (!syncCfg) continue;
-    var changed = syncCfg.periodMs !== lastPeriod || syncCfg.satAInstalled !== lastSatAInstalled || syncCfg.satBInstalled !== lastSatBInstalled;
-    if (changed) {
-      timeline.push({
-        ts: entries[i].timestamp.getTime(),
-        periodMs: syncCfg.periodMs,
-        satAInstalled: syncCfg.satAInstalled,
-        satBInstalled: syncCfg.satBInstalled
-      });
-      lastPeriod = syncCfg.periodMs;
-      lastSatAInstalled = syncCfg.satAInstalled;
-      lastSatBInstalled = syncCfg.satBInstalled;
-    }
-  }
-
-  return timeline;
-}
-
-function syncCfgAt(tsMs, timeline, defaultPeriodMs) {
-  var cfg = { periodMs: defaultPeriodMs, satAInstalled: true, satBInstalled: true };
-  for (var i = 0; i < timeline.length; i++) {
-    if (timeline[i].ts <= tsMs) {
-      cfg.periodMs = timeline[i].periodMs;
-      cfg.satAInstalled = timeline[i].satAInstalled;
-      cfg.satBInstalled = timeline[i].satBInstalled;
-    }
-    else break;
-  }
-  return cfg;
-}
+// collectSyncEventTimes, parseField8ConfigUnified, parseSyncConfigFromField8,
+// estimateSyncPeriodMs, buildSyncPeriodTimeline, syncCfgAt → provided by seaweed_sync.js
 
 function countRecentMissing(entries, key, hoursBack, sampleIdKey, defaultPeriodHours, satInstallKey) {
   var latestMs = entries[entries.length - 1].timestamp.getTime();
@@ -1809,7 +1676,7 @@ function updateFreshnessBanner() {
   if (ageHrs < 2) {
     banner.classList.add('fresh');
     icon.textContent = '\u2705';
-    text.textContent = 'Data is fresh -- latest entry ' + timeAgo(latest);
+    text.textContent = 'Data is fresh -- latest entry ' + timeAgo(latest, true);
   } else if (ageHrs < 24) {
     banner.classList.add('stale');
     icon.textContent = '\u26A0\uFE0F';
@@ -1859,7 +1726,7 @@ function updateNetworkBar() {
       '<div>' +
         '<div class="chip-label">T0 Gateway</div>' +
         '<div class="chip-value">' + t0Text + '</div>' +
-        '<div class="chip-detail">Bat: ' + batStr(latest.t0BatPct) + ' | ' + timeAgo(latest.timestamp) + '</div>' +
+        '<div class="chip-detail">Bat: ' + batStr(latest.t0BatPct) + ' | ' + timeAgo(latest.timestamp, true) + '</div>' +
       '</div>' +
     '</div>' +
     '<div class="net-chip">' +
@@ -1867,7 +1734,7 @@ function updateNetworkBar() {
       '<div>' +
         '<div class="chip-label">Satellite A</div>' +
         '<div class="chip-value">' + satAText + '</div>' +
-        '<div class="chip-detail">Bat: ' + batStr(lastSatA ? lastSatA.satABatPct : null) + ' | ' + (lastSatA ? timeAgo(lastSatA.timestamp) : 'never') + '</div>' +
+        '<div class="chip-detail">Bat: ' + batStr(lastSatA ? lastSatA.satABatPct : null) + ' | ' + (lastSatA ? timeAgo(lastSatA.timestamp, true) : 'never') + '</div>' +
       '</div>' +
     '</div>' +
     '<div class="net-chip">' +
@@ -1875,7 +1742,7 @@ function updateNetworkBar() {
       '<div>' +
         '<div class="chip-label">Satellite B</div>' +
         '<div class="chip-value">' + satBText + '</div>' +
-        '<div class="chip-detail">Bat: ' + batStr(lastSatB ? lastSatB.satBBatPct : null) + ' | ' + (lastSatB ? timeAgo(lastSatB.timestamp) : 'never') + '</div>' +
+        '<div class="chip-detail">Bat: ' + batStr(lastSatB ? lastSatB.satBBatPct : null) + ' | ' + (lastSatB ? timeAgo(lastSatB.timestamp, true) : 'never') + '</div>' +
       '</div>' +
     '</div>' +
     '<div class="net-chip">' +
@@ -1903,7 +1770,7 @@ function updateStatusCards() {
   document.getElementById('t0Rssi').textContent   = (latest.t0Rssi !== null && latest.t0Rssi !== 0) ? latest.t0Rssi + ' dBm' : 'N/A';
   document.getElementById('t0Boot').textContent   = latest.t0Boot !== null ? latest.t0Boot.toLocaleString() : '--';
   document.getElementById('t0Heap').textContent   = latest.t0Heap !== null ? (latest.t0Heap / 1024).toFixed(0) + ' KB' : '--';
-  document.getElementById('t0LastSeen').textContent = timeAgo(latest.timestamp);
+  document.getElementById('t0LastSeen').textContent = timeAgo(latest.timestamp, true);
 
   var t0HasSensors = latest.t0Temp1 !== null || latest.t0Temp2 !== null;
   document.getElementById('t0Sensors').textContent = t0HasSensors ? 'Connected' : 'NC';
@@ -1942,7 +1809,7 @@ function updateStatusCards() {
   document.getElementById('satASyncRate').className   = 'detail-value ' + (satASyncPct > 80 ? 'ok-text' : satASyncPct > 50 ? 'warn-text' : 'error-text');
   document.getElementById('satAMissed').textContent   = satAMissed24.total > 0 ? satAMissed24.missing + ' / ' + satAMissed24.total : '--';
   document.getElementById('satAMissed').className     = 'detail-value ' + (satAMissed24.missing === 0 ? 'ok-text' : satAMissed24.missing < 5 ? 'warn-text' : 'error-text');
-  document.getElementById('satALastSeen').textContent = lastSatA ? timeAgo(lastSatA.timestamp) : 'Never';
+  document.getElementById('satALastSeen').textContent = lastSatA ? timeAgo(lastSatA.timestamp, true) : 'Never';
   setCardStatus('cardSatA', 'satABadge', 'satADot', satAPct, satAHasSensors, lastSatA !== null);
 
   // -- Sat-B --
@@ -1968,7 +1835,7 @@ function updateStatusCards() {
   document.getElementById('satBSyncRate').className   = 'detail-value ' + (satBSyncPct > 80 ? 'ok-text' : satBSyncPct > 50 ? 'warn-text' : 'error-text');
   document.getElementById('satBMissed').textContent   = satBMissed24.total > 0 ? satBMissed24.missing + ' / ' + satBMissed24.total : '--';
   document.getElementById('satBMissed').className     = 'detail-value ' + (satBMissed24.missing === 0 ? 'ok-text' : satBMissed24.missing < 5 ? 'warn-text' : 'error-text');
-  document.getElementById('satBLastSeen').textContent = lastSatB ? timeAgo(lastSatB.timestamp) : 'Never';
+  document.getElementById('satBLastSeen').textContent = lastSatB ? timeAgo(lastSatB.timestamp, true) : 'Never';
   setCardStatus('cardSatB', 'satBBadge', 'satBDot', satBPct, satBHasSensors, lastSatB !== null);
 
   // -- System --

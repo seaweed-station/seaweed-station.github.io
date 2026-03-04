@@ -9,6 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1/dist/chartjs-adapter-luxon.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2/dist/chartjs-plugin-zoom.min.js"></script>
+<script src="seaweed_common.js"></script>
+<script src="seaweed_sync.js"></script>
 <script src="battery_model.js"></script>
 <script src="battery_forecast_widget.js"></script>
 <style>
@@ -129,6 +131,10 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .fc-card-sub{font-size:.68rem;color:var(--text-muted)}
 .station-range{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 10px 0}
 .station-range .label{font-size:.74rem;color:var(--text-muted)}
+
+/* ======================== DATA SOURCE BADGE ======================== */
+.data-src{font-size:.68rem;padding:2px 8px;border-radius:10px;margin-left:6px;font-weight:500;letter-spacing:.02em}
+.src-live{background:#064e3b;color:#6ee7b7}.src-ci{background:#1e3a5f;color:#93c5fd}.src-cache{background:#78350f;color:#fcd34d}.src-none{background:#3f3f46;color:#a1a1aa}
 </style>
 </head>
 <body>
@@ -150,6 +156,7 @@ if (!sessionStorage.getItem('sw_auth')) { window.location.href = '../login.html'
       <a class="btn" href="station.html?table=shangani">Shangani</a>
       <a class="btn" href="station.html?table=funzi">Funzi</a>
       <button class="btn-fetch" id="btnFetchAll" onclick="fetchLiveAll()" title="Pull latest data from ThingSpeak for all stations">&#128752; Fetch Live</button>
+      <button class="btn" id="btnTriggerDL" onclick="triggerCIDownload()" title="Trigger GitHub Actions to download fresh data">&#9889; Download</button>
       <span class="fetch-status" id="fetchStatus"></span>
     </div>
   </div>
@@ -228,12 +235,15 @@ var STATIONS = [
 var liveCharts = [];  // track Chart.js instances for cleanup on refresh
 var stationRanges = {}; // { stationId: 'day'|'week'|'month'|'all' }
 var _syncWindowCache = {}; // cache evaluateSyncWindows per station+range
+var _stationChartsRendered = {}; // lazy-render: true once charts are built for a station
+var _stationDataSource = {}; // { stationId: { source: 'live'|'ci'|'cache', savedAt: timestamp } }
+var _currentRangeMaxPts = 350; // adaptive LTTB limit — lowered for 'all' range with large datasets
 
 // Largest-Triangle-Three-Buckets downsampling for {x,y} arrays.
 // Keeps first & last point, picks the most visually significant point per bucket.
 var MAX_CHART_POINTS = 350;
 function lttbDownsample(data, maxPts) {
-  maxPts = maxPts || MAX_CHART_POINTS;
+  maxPts = maxPts || _currentRangeMaxPts || MAX_CHART_POINTS;
   if (!data || data.length <= maxPts) return data;
   var len = data.length;
   var sampled = [data[0]];
@@ -264,54 +274,10 @@ function lttbDownsample(data, maxPts) {
 }
 
 var stationData = {}; // { stationId: { entries: [], raw: {} } }
-var loadedCount = 0;
-
-function normalizeDataFolder(folder, fallback) {
-  if (typeof folder !== 'string') return fallback;
-  var out = folder.trim();
-  if (!out) return fallback;
-  out = out.replace(/\\/g, '/');
-  out = out.replace(/^(\.\.\/)?data\//i, '');
-  out = out.replace(/\/merged_data\.js$/i, '');
-  out = out.replace(/^\/+|\/+$/g, '');
-  return out || fallback;
-}
-
-function getDataFolder(configKey, defaultFolder) {
-  var fallback = normalizeDataFolder(defaultFolder, defaultFolder);
-  try {
-    var s = JSON.parse(localStorage.getItem('seaweed_dashboard_config') || '{}');
-    var c = (s.channels || []).find(function(ch) { return ch.id === configKey; });
-    if (c && c.dataFolder) return normalizeDataFolder(c.dataFolder, fallback);
-  } catch(e) {}
-  return fallback;
-}
-
-function loadStation(station) {
-  var folder = getDataFolder(station.configKey, station.defaultFolder);
-  var script = document.createElement('script');
-  script.src = '../data/' + folder + '/merged_data.js';
-  script.onload = function() {
-    if (window.THINGSPEAK_DATA) {
-      stationData[station.id] = parseStationData(window.THINGSPEAK_DATA, station);
-      window.THINGSPEAK_DATA = null; // clear for next station
-    }
-    loadedCount++;
-    if (loadedCount >= STATIONS.length) onAllLoaded();
-  };
-  script.onerror = function() {
-    console.warn('[Health] No data for ' + station.name);
-    stationData[station.id] = { entries: [], raw: null };
-    loadedCount++;
-    if (loadedCount >= STATIONS.length) onAllLoaded();
-  };
-  document.body.appendChild(script);
-}
 
 // Parse gateway station data (T0 + SatA + SatB)
 function parseStationData(raw, station) {
   var feeds = raw.feeds || [];
-  if (raw.channel) feeds = feeds; // ThingSpeak format
   var entries = [];
 
   for (var i = 0; i < feeds.length; i++) {
@@ -432,6 +398,56 @@ function getCachedStationData(stationId) {
 }
 
 // ============================================================
+// HEALTH-SPECIFIC LOCALSTORAGE PERSISTENCE
+// ============================================================
+function saveHealthData(stationId, entries) {
+  try {
+    var slim = entries.map(function(e) {
+      var o = {};
+      for (var k in e) { if (e.hasOwnProperty(k) && k !== 'raw' && k !== '_rawField8') o[k] = e[k]; }
+      return o;
+    });
+    var payload = JSON.stringify({
+      entries: slim,
+      savedAt: Date.now(),
+      source: 'live',
+      lastEntryId: entries.length ? entries[entries.length - 1].entryId : null
+    });
+    localStorage.setItem('seaweed_health_' + stationId, payload);
+  } catch (e) {
+    console.warn('[Health] Could not save data to localStorage for ' + stationId + ':', e.message);
+  }
+}
+
+function loadHealthData(stationId) {
+  try {
+    var raw = localStorage.getItem('seaweed_health_' + stationId);
+    if (!raw) return null;
+    var cached = JSON.parse(raw);
+    if (!cached || !Array.isArray(cached.entries) || !cached.entries.length) return null;
+    var entries = cached.entries
+      .map(function(entry) {
+        entry.timestamp = new Date(entry.timestamp);
+        return entry;
+      })
+      .filter(function(entry) {
+        return entry.timestamp && !isNaN(entry.timestamp.getTime());
+      })
+      .sort(function(a, b) { return a.timestamp - b.timestamp; });
+    if (!entries.length) return null;
+    return {
+      entries: entries,
+      raw: null,
+      source: 'live',
+      savedAt: cached.savedAt || null,
+      lastEntryId: cached.lastEntryId || null
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// ============================================================
 // RENDERING
 // ============================================================
 function onAllLoaded() {
@@ -487,23 +503,36 @@ function renderStationSection(station, data) {
     else { freshnessClass = 'fresh-old'; freshnessText = timeAgo(e[e.length-1].timestamp) + ' old'; }
   }
 
+  // Data source badge
   var stationId = station.id;
+  var srcInfo = _stationDataSource[stationId] || {};
+  var srcLabel = '', srcClass = 'src-none';
+  if (srcInfo.source === 'live') {
+    srcClass = 'src-live';
+    srcLabel = 'Live' + (srcInfo.savedAt ? ' (' + timeAgo(new Date(srcInfo.savedAt)) + ' ago)' : '');
+  } else if (srcInfo.source === 'ci') {
+    srcClass = 'src-ci';
+    srcLabel = 'CI' + (hasData ? ' (' + timeAgo(e[e.length-1].timestamp) + ')' : '');
+  } else if (srcInfo.source === 'cache') {
+    srcClass = 'src-cache';
+    srcLabel = 'Cache' + (srcInfo.savedAt ? ' (' + timeAgo(new Date(srcInfo.savedAt)) + ' ago)' : '');
+  }
+  var srcBadgeHtml = srcLabel ? ' <span class="data-src ' + srcClass + '">' + srcLabel + '</span>' : '';
 
   sec.innerHTML =
     '<div class="station-header" onclick="toggleStation(\'' + stationId + '\')">' +
-      '<h2>' + station.name + ' <span class="freshness ' + freshnessClass + '">' + freshnessText + '</span>' +
+      '<h2>' + station.name + ' <span class="freshness ' + freshnessClass + '">' + freshnessText + '</span>' + srcBadgeHtml +
         (hasData ? ' <span style="font-size:.75rem;color:var(--text-muted)">' + e.length.toLocaleString() + ' entries</span>' : '') +
       '</h2>' +
       '<span class="chevron" id="chev_' + stationId + '">&#9660;</span>' +
     '</div>' +
-    '<div class="station-body" id="body_' + stationId + '">' +
+    '<div class="station-body" id="body_' + stationId + '" style="display:none">' +
       (hasData ? '' : '<p style="color:var(--text-muted);text-align:center;padding:20px">No data loaded for this station</p>') +
     '</div>';
 
   if (hasData) {
     var body = sec.querySelector('.station-body');
     var range = stationRanges[stationId] || 'week';
-    var chartEntries = filterByRange(e, range);
     var rangeBar = document.createElement('div');
     rangeBar.className = 'station-range';
     rangeBar.innerHTML =
@@ -514,10 +543,7 @@ function renderStationSection(station, data) {
       '<button class="btn btn-sm ' + (range === 'all' ? 'active' : '') + '" onclick="setStationRange(\'' + stationId + '\', \'all\')">All</button>';
     body.appendChild(rangeBar);
     renderSummaryCards(body, e, stationId);
-    renderBatteryCharts(body, chartEntries, stationId, range);
-    renderSyncCharts(body, chartEntries, stationId, range);
-    renderDataHealth(body, chartEntries);
-    renderDailyHealth(body, chartEntries);
+    // Charts are lazy-rendered on first expand — see toggleStation() / _renderStationCharts()
   }
 
   return sec;
@@ -530,6 +556,31 @@ function toggleStation(id) {
   var open = body.style.display !== 'none';
   body.style.display = open ? 'none' : '';
   if (chev) chev.style.transform = open ? '' : 'rotate(180deg)';
+  // Lazy-render charts on first expand
+  if (!open && !_stationChartsRendered[id]) {
+    _renderStationCharts(id);
+  }
+}
+
+// Render charts + data health tables for a station (called once on first expand)
+function _renderStationCharts(stationId) {
+  var data = stationData[stationId];
+  if (!data || !data.entries || !data.entries.length) return;
+  var body = document.getElementById('body_' + stationId);
+  if (!body) return;
+  var range = stationRanges[stationId] || 'week';
+  var chartEntries = filterByRange(data.entries, range);
+  // Adaptive LTTB: fewer points for "All" range with large datasets
+  _currentRangeMaxPts = (range === 'all' && data.entries.length > 3000) ? 200 : MAX_CHART_POINTS;
+  var chartsDiv = document.createElement('div');
+  chartsDiv.id = 'charts_' + stationId;
+  renderBatteryCharts(chartsDiv, chartEntries, stationId, range);
+  renderSyncCharts(chartsDiv, chartEntries, stationId, range);
+  renderDataHealth(chartsDiv, chartEntries);
+  renderDailyHealth(chartsDiv, chartEntries);
+  body.appendChild(chartsDiv);
+  _currentRangeMaxPts = MAX_CHART_POINTS; // reset
+  _stationChartsRendered[stationId] = true;
 }
 
 function filterByRange(entries, range) {
@@ -543,6 +594,17 @@ function filterByRange(entries, range) {
   return entries.filter(function(x) { return x.timestamp >= start; });
 }
 
+function _destroyStationCharts(stationId) {
+  // Properly destroy Chart.js instances for this station to prevent memory leaks
+  liveCharts = liveCharts.filter(function(c) {
+    if (c.canvas && c.canvas._stationId === stationId) {
+      c.destroy();
+      return false;
+    }
+    return true;
+  });
+}
+
 function setStationRange(stationId, range) {
   stationRanges[stationId] = range;
   // Invalidate cached sync windows for this station
@@ -551,199 +613,44 @@ function setStationRange(stationId, range) {
   if (!data || !data.entries || !data.entries.length) return;
   var body = document.getElementById('body_' + stationId);
   if (!body) return;
-  body.innerHTML = '';
 
-  var rangeBar = document.createElement('div');
-  rangeBar.className = 'station-range';
-  rangeBar.innerHTML =
-    '<span class="label">Plots:</span>' +
-    '<button class="btn btn-sm ' + (range === 'day' ? 'active' : '') + '" onclick="setStationRange(\'' + stationId + '\', \'day\')">Day</button>' +
-    '<button class="btn btn-sm ' + (range === 'week' ? 'active' : '') + '" onclick="setStationRange(\'' + stationId + '\', \'week\')">Week</button>' +
-    '<button class="btn btn-sm ' + (range === 'month' ? 'active' : '') + '" onclick="setStationRange(\'' + stationId + '\', \'month\')">Month</button>' +
-    '<button class="btn btn-sm ' + (range === 'all' ? 'active' : '') + '" onclick="setStationRange(\'' + stationId + '\', \'all\')">All</button>';
-  body.appendChild(rangeBar);
+  // Destroy existing chart instances (memory leak fix)
+  _destroyStationCharts(stationId);
 
+  // Update active range button without rebuilding the range bar
+  var rangeBar = body.querySelector('.station-range');
+  if (rangeBar) {
+    var btns = rangeBar.querySelectorAll('.btn');
+    for (var i = 0; i < btns.length; i++) {
+      var txt = btns[i].textContent.toLowerCase();
+      if (txt === range) btns[i].classList.add('active');
+      else btns[i].classList.remove('active');
+    }
+  }
+
+  // Remove old charts container only — keep range bar + summary cards
+  var oldCharts = document.getElementById('charts_' + stationId);
+  if (oldCharts) oldCharts.remove();
+
+  // Adaptive LTTB: fewer points for "All" range with large datasets
+  _currentRangeMaxPts = (range === 'all' && data.entries.length > 3000) ? 200 : MAX_CHART_POINTS;
+
+  // Build new charts container
   var chartEntries = filterByRange(data.entries, range);
-  renderSummaryCards(body, data.entries, stationId);
-  renderBatteryCharts(body, chartEntries, stationId, range);
-  renderSyncCharts(body, chartEntries, stationId, range);
-  renderDataHealth(body, chartEntries);
-  renderDailyHealth(body, chartEntries);
+  var chartsDiv = document.createElement('div');
+  chartsDiv.id = 'charts_' + stationId;
+  renderBatteryCharts(chartsDiv, chartEntries, stationId, range);
+  renderSyncCharts(chartsDiv, chartEntries, stationId, range);
+  renderDataHealth(chartsDiv, chartEntries);
+  renderDailyHealth(chartsDiv, chartEntries);
+  body.appendChild(chartsDiv);
+  _currentRangeMaxPts = MAX_CHART_POINTS; // reset
+  _stationChartsRendered[stationId] = true;
 }
 
-function collectSyncEventTimes(entries, sampleIdKey, valueKey) {
-  var times = [];
-  var lastSampleId = null;
-  for (var i = 0; i < entries.length; i++) {
-    var entry = entries[i];
-    var sid = entry[sampleIdKey];
-    if (sid !== null && sid !== undefined) {
-      if (lastSampleId === null || sid !== lastSampleId) {
-        times.push(entry.timestamp.getTime());
-        lastSampleId = sid;
-      }
-      continue;
-    }
-    if (entry[valueKey] !== null && entry[valueKey] !== undefined) {
-      times.push(entry.timestamp.getTime());
-    }
-  }
-  return times;
-}
-
-function parseField8ConfigUnified(rawField8) {
-  if (!rawField8 || typeof rawField8 !== 'string') return null;
-  if (window.BatteryModel && typeof window.BatteryModel.parseField8Config === 'function') {
-    return window.BatteryModel.parseField8Config(rawField8);
-  }
-  var parts = rawField8.split('|');
-  if (parts.length < 2) return null;
-  var tokens = parts[1].split(',');
-  if (tokens.length < 8) return null;
-  return {
-    deployMode: parseInt(tokens[0], 10) || 0,
-    sleepEnable: parseInt(tokens[1], 10) === 1,
-    samplePeriod_s: parseInt(tokens[2], 10) || 600,
-    tsBulkInterval_s: parseInt(tokens[3], 10) || 900,
-    tsBulkFreqHours: parseInt(tokens[4], 10) || 24,
-    espnowSyncPeriod_s: parseInt(tokens[5], 10) || 3600,
-    satAInstalled: parseInt(tokens[6], 10) === 1,
-    satBInstalled: parseInt(tokens[7], 10) === 1
-  };
-}
-
-function parseSyncConfigFromField8(rawField8) {
-  var cfg = parseField8ConfigUnified(rawField8);
-  if (!cfg) return null;
-  var periodSec = parseInt(cfg.espnowSyncPeriod_s, 10);
-  if (!isFinite(periodSec) || periodSec <= 0) return null;
-  periodSec = Math.max(60, Math.min(24 * 3600, periodSec));
-  return {
-    periodMs: periodSec * 1000,
-    satAInstalled: !!cfg.satAInstalled,
-    satBInstalled: !!cfg.satBInstalled
-  };
-}
-
-function buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs) {
-  var eventTimes = collectSyncEventTimes(entries, sampleIdKey, valueKey);
-  var inferredPeriodMs = estimateSyncPeriodMs(eventTimes, defaultPeriodMs);
-  var timeline = [];
-  var lastPeriod = inferredPeriodMs;
-  var lastSatAInstalled = true;
-  var lastSatBInstalled = true;
-
-  timeline.push({ ts: entries[0].timestamp.getTime(), periodMs: inferredPeriodMs, satAInstalled: true, satBInstalled: true });
-
-  for (var i = 0; i < entries.length; i++) {
-    var syncCfg = parseSyncConfigFromField8(entries[i]._rawField8);
-    if (!syncCfg) continue;
-    var changed = syncCfg.periodMs !== lastPeriod || syncCfg.satAInstalled !== lastSatAInstalled || syncCfg.satBInstalled !== lastSatBInstalled;
-    if (changed) {
-      timeline.push({
-        ts: entries[i].timestamp.getTime(),
-        periodMs: syncCfg.periodMs,
-        satAInstalled: syncCfg.satAInstalled,
-        satBInstalled: syncCfg.satBInstalled
-      });
-      lastPeriod = syncCfg.periodMs;
-      lastSatAInstalled = syncCfg.satAInstalled;
-      lastSatBInstalled = syncCfg.satBInstalled;
-    }
-  }
-
-  return timeline;
-}
-
-function syncCfgAt(tsMs, timeline, defaultPeriodMs) {
-  var cfg = { periodMs: defaultPeriodMs, satAInstalled: true, satBInstalled: true };
-  for (var i = 0; i < timeline.length; i++) {
-    if (timeline[i].ts <= tsMs) {
-      cfg.periodMs = timeline[i].periodMs;
-      cfg.satAInstalled = timeline[i].satAInstalled;
-      cfg.satBInstalled = timeline[i].satBInstalled;
-    }
-    else break;
-  }
-  return cfg;
-}
-
-function estimateSyncPeriodMs(eventTimes, defaultPeriodMs) {
-  if (!eventTimes || eventTimes.length < 2) return defaultPeriodMs;
-  var deltas = [];
-  for (var i = 1; i < eventTimes.length; i++) {
-    var d = eventTimes[i] - eventTimes[i - 1];
-    if (d > 0) deltas.push(d);
-  }
-  if (!deltas.length) return defaultPeriodMs;
-  deltas.sort(function(a, b) { return a - b; });
-  var median = deltas[Math.floor(deltas.length / 2)];
-  if (!(median > 0)) return defaultPeriodMs;
-  var minMs = 45 * 60000;
-  var maxMs = 12 * 3600000;
-  return Math.max(minMs, Math.min(maxMs, median));
-}
-
-function evaluateSyncWindows(entries, sampleIdKey, valueKey, startMs, endMs, defaultPeriodMs, satInstallKey) {
-  if (!entries || !entries.length || !(endMs >= startMs)) {
-    return { synced: 0, missed: 0, total: 0, slots: [], periodMs: defaultPeriodMs, installKey: satInstallKey };
-  }
-
-  var eventTimes = collectSyncEventTimes(entries, sampleIdKey, valueKey);
-  var periodTimeline = buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs);
-
-  var anchor = endMs;
-  for (var i = eventTimes.length - 1; i >= 0; i--) {
-    if (eventTimes[i] <= endMs) {
-      anchor = eventTimes[i];
-      break;
-    }
-  }
-
-  var slotTimes = [];
-  var t = anchor;
-  var guard = 0;
-  while (t >= startMs && guard < 20000) {
-    slotTimes.push(t);
-    var stepMs = syncCfgAt(t, periodTimeline, defaultPeriodMs).periodMs;
-    if (!(stepMs > 0)) stepMs = defaultPeriodMs;
-    t -= stepMs;
-    guard++;
-  }
-  if (!slotTimes.length) slotTimes.push(endMs);
-  slotTimes.sort(function(a, b) { return a - b; });
-
-  var slots = [];
-  var synced = 0;
-  for (var s = 0; s < slotTimes.length; s++) {
-    var slotTs = slotTimes[s];
-    var slotCfg = syncCfgAt(slotTs, periodTimeline, defaultPeriodMs);
-    if (satInstallKey && slotCfg[satInstallKey] === false) continue;
-    var slotPeriodMs = slotCfg.periodMs;
-    var graceMs = Math.min(30 * 60000, Math.max(10 * 60000, Math.round(slotPeriodMs * 0.2)));
-    var minTs = slotTs - graceMs;
-    var maxTs = slotTs + graceMs;
-    var hit = false;
-    for (var j = 0; j < eventTimes.length; j++) {
-      var evTs = eventTimes[j];
-      if (evTs < minTs) continue;
-      if (evTs > maxTs) break;
-      hit = true;
-      break;
-    }
-    if (hit) synced++;
-    slots.push({ ts: slotTs, hit: hit, periodMs: slotPeriodMs });
-  }
-
-  return {
-    synced: synced,
-    missed: slots.length - synced,
-    total: slots.length,
-    slots: slots,
-    periodMs: syncCfgAt(endMs, periodTimeline, defaultPeriodMs).periodMs,
-    installKey: satInstallKey
-  };
-}
+// Sync analysis functions: collectSyncEventTimes, parseField8ConfigUnified,
+// parseSyncConfigFromField8, estimateSyncPeriodMs, buildSyncPeriodTimeline,
+// syncCfgAt, evaluateSyncWindows  →  provided by seaweed_sync.js
 
 // ============================================================
 // COMPACT SUMMARY CARDS
@@ -840,21 +747,27 @@ function renderSummaryCards(container, entries, stationId) {
     return out;
   }
 
+  // Safe .toFixed() helper — guards against null/undefined values from partial or test entries
+  function safeFixed(val, decimals, suffix) {
+    if (val === null || val === undefined || isNaN(val)) return '--';
+    return val.toFixed(decimals) + (suffix || '');
+  }
+
   row.innerHTML =
     '<div class="sum-card">' +
       '<h4>T0 Gateway</h4>' +
-      '<div class="sum-val" style="color:' + batColor(t0 ? t0.t0BatPct : null) + '">' + (t0 ? t0.t0BatPct.toFixed(0) + '%' : '--') + '</div>' +
-      '<div class="sum-sub">Voltage: ' + (t0 ? t0.t0BatV.toFixed(2) + 'V' : '--') + '</div>' +
+      '<div class="sum-val" style="color:' + batColor(t0 ? t0.t0BatPct : null) + '">' + (t0 ? safeFixed(t0.t0BatPct, 0, '%') : '--') + '</div>' +
+      '<div class="sum-sub">Voltage: ' + (t0 ? safeFixed(t0.t0BatV, 2, 'V') : '--') + '</div>' +
       '<div class="sum-sub">24h \u0394: ' + drain24('t0BatPct') + '</div>' +
-      '<div class="sum-sub">RSSI: ' + (t0 && t0.t0Rssi ? t0.t0Rssi + ' dBm' : '--') + '</div>' +
+      '<div class="sum-sub">RSSI: ' + (t0 && t0.t0Rssi !== null ? t0.t0Rssi + ' dBm' : '--') + '</div>' +
       '<div class="sum-sub">Boot: ' + (t0 && t0.t0Boot !== null ? '#' + t0.t0Boot : '--') +
         ' &nbsp; Heap: ' + (t0 && t0.t0Heap !== null ? (t0.t0Heap/1024).toFixed(0) + ' KB' : '--') + '</div>' +
       '<div class="sum-sub" style="margin-top:4px;color:var(--accent)">FW: ' + t0Fw + '</div>' +
     '</div>' +
     '<div class="sum-card">' +
       '<h4>Satellite A</h4>' +
-      '<div class="sum-val" style="color:' + batColor(satA ? satA.satABatPct : null) + '">' + (satA ? satA.satABatPct.toFixed(0) + '%' : '--') + '</div>' +
-      '<div class="sum-sub">Voltage: ' + (satA ? satA.satABatV.toFixed(2) + 'V' : '--') + ' &nbsp; RSSI: ' + (satA ? satA.satARssi : '--') + '</div>' +
+      '<div class="sum-val" style="color:' + batColor(satA ? satA.satABatPct : null) + '">' + (satA ? safeFixed(satA.satABatPct, 0, '%') : '--') + '</div>' +
+      '<div class="sum-sub">Voltage: ' + (satA ? safeFixed(satA.satABatV, 2, 'V') : '--') + ' &nbsp; RSSI: ' + (satA && satA.satARssi !== null ? satA.satARssi : '--') + '</div>' +
       '<div class="sum-sub">24h \u0394: ' + drain24('satABatPct') + '</div>' +
       '<div class="sum-sub">Sync (24h): ' + syncPctStr(satA24) + '</div>' +
       '<div class="sum-sub">Drift: ' + driftCardLine(driftA) + '</div>' +
@@ -862,8 +775,8 @@ function renderSummaryCards(container, entries, stationId) {
     '</div>' +
     '<div class="sum-card">' +
       '<h4>Satellite B</h4>' +
-      '<div class="sum-val" style="color:' + batColor(satB ? satB.satBBatPct : null) + '">' + (satB ? satB.satBBatPct.toFixed(0) + '%' : '--') + '</div>' +
-      '<div class="sum-sub">Voltage: ' + (satB ? satB.satBBatV.toFixed(2) + 'V' : '--') + ' &nbsp; RSSI: ' + (satB ? satB.satBRssi : '--') + '</div>' +
+      '<div class="sum-val" style="color:' + batColor(satB ? satB.satBBatPct : null) + '">' + (satB ? safeFixed(satB.satBBatPct, 0, '%') : '--') + '</div>' +
+      '<div class="sum-sub">Voltage: ' + (satB ? safeFixed(satB.satBBatV, 2, 'V') : '--') + ' &nbsp; RSSI: ' + (satB && satB.satBRssi !== null ? satB.satBRssi : '--') + '</div>' +
       '<div class="sum-sub">24h \u0394: ' + drain24('satBBatPct') + '</div>' +
       '<div class="sum-sub">Sync (24h): ' + syncPctStr(satB24) + '</div>' +
       '<div class="sum-sub">Drift: ' + driftCardLine(driftB) + '</div>' +
@@ -888,11 +801,7 @@ function batColor(pct) {
   return 'var(--danger)';
 }
 
-function formatKB(kb) {
-  if (kb >= 1048576) return (kb / 1048576).toFixed(1) + ' GB';
-  if (kb >= 1024) return (kb / 1024).toFixed(1) + ' MB';
-  return kb + ' KB';
-}
+// formatKB → provided by seaweed_common.js
 
 // ============================================================
 // BATTERY CHARTS
@@ -979,8 +888,15 @@ function renderSyncCharts(container, entries, stationId, range) {
     var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     var rangeStartMs = entries[0].timestamp.getTime();
     var rangeEndMs = entries[entries.length - 1].timestamp.getTime();
-    var satAWindowEval = evaluateSyncWindows(entries, 'satASampleId', 'satABatV', rangeStartMs, rangeEndMs, 3 * 3600000, 'satAInstalled');
-    var satBWindowEval = evaluateSyncWindows(entries, 'satBSampleId', 'satBBatV', rangeStartMs, rangeEndMs, 3 * 3600000, 'satBInstalled');
+    var syncRangeCacheKey = stationId + '_sync_' + range;
+    if (!_syncWindowCache[syncRangeCacheKey]) {
+      _syncWindowCache[syncRangeCacheKey] = {
+        satA: evaluateSyncWindows(entries, 'satASampleId', 'satABatV', rangeStartMs, rangeEndMs, 3 * 3600000, 'satAInstalled'),
+        satB: evaluateSyncWindows(entries, 'satBSampleId', 'satBBatV', rangeStartMs, rangeEndMs, 3 * 3600000, 'satBInstalled')
+      };
+    }
+    var satAWindowEval = _syncWindowCache[syncRangeCacheKey].satA;
+    var satBWindowEval = _syncWindowCache[syncRangeCacheKey].satB;
 
     function keyFromTs(tsMs) {
       var d = new Date(tsMs);
@@ -1121,7 +1037,7 @@ function renderSyncCharts(container, entries, stationId, range) {
     // Re-parse session config only when field8 changes (tracks testing interval changes).
     if (e._rawField8 && e._rawField8 !== _prevRawField8) {
       _uploadCfg = parseField8ConfigUnified(e._rawField8);
-      _expectedSessionMs = _uploadCfg ? _uploadCfg.tsBulkFreqDays * 3600 * 1000 : 0;
+      _expectedSessionMs = _uploadCfg ? _uploadCfg.tsBulkFreqHours * 3600 * 1000 : 0;
       _prevRawField8 = e._rawField8;
     }
 
@@ -1212,26 +1128,6 @@ function renderSyncCharts(container, entries, stationId, range) {
     }, { stationId: stationId, chartKey: 'rssi' });
   }
 
-  // Sync reliability stats row (24h expected windows) — use cached results from renderSummaryCards
-  var cacheKey24 = stationId + '_24h';
-  if (!_syncWindowCache[cacheKey24]) {
-    var cutoff24 = entries[entries.length - 1].timestamp.getTime() - 24 * 3600000;
-    _syncWindowCache[cacheKey24] = {
-      satA: evaluateSyncWindows(entries, 'satASampleId', 'satABatV', cutoff24, entries[entries.length - 1].timestamp.getTime(), 3 * 3600000, 'satAInstalled'),
-      satB: evaluateSyncWindows(entries, 'satBSampleId', 'satBBatV', cutoff24, entries[entries.length - 1].timestamp.getTime(), 3 * 3600000, 'satBInstalled')
-    };
-  }
-  var satA24 = _syncWindowCache[cacheKey24].satA;
-  var satB24 = _syncWindowCache[cacheKey24].satB;
-  var satAPct = satA24.total > 0 ? satA24.synced / satA24.total * 100 : 0;
-  var satBPct = satB24.total > 0 ? satB24.synced / satB24.total * 100 : 0;
-
-  var syncRow = document.createElement('div');
-  syncRow.className = 'summary-row';
-  syncRow.innerHTML =
-    '<div class="sum-card"><h4>Sat-A Sync Rate (24h)</h4><div class="sum-val" style="color:' + pctColor(satAPct) + '">' + satAPct.toFixed(1) + '%</div><div class="sum-sub">' + satA24.synced + ' / ' + satA24.total + ' windows</div></div>' +
-    '<div class="sum-card"><h4>Sat-B Sync Rate (24h)</h4><div class="sum-val" style="color:' + pctColor(satBPct) + '">' + satBPct.toFixed(1) + '%</div><div class="sum-sub">' + satB24.synced + ' / ' + satB24.total + ' windows</div></div>';
-  container.appendChild(syncRow);
 }
 
 function rangeLabel(range) {
@@ -1389,12 +1285,7 @@ function closeChartModal(evt) {
 }
 
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') {
-    document.getElementById('chartModalOverlay').classList.remove('open');
-    if (_modalChart) { _modalChart.destroy(); _modalChart = null; }
-    _modalSource = null;
-    updateModalRangeControls();
-  }
+  if (e.key === 'Escape') closeChartModal();
 });
 
 function pctColor(v) {
@@ -1567,16 +1458,7 @@ function chartOpts(yLabel, yMin, yMax, range) {
   };
 }
 
-function timeAgo(date) {
-  var sec = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (sec < 60) return sec + 's';
-  var min = Math.floor(sec / 60);
-  if (min < 60) return min + 'm';
-  var hrs = Math.floor(min / 60);
-  if (hrs < 24) return hrs + 'h ' + (min % 60) + 'm';
-  var days = Math.floor(hrs / 24);
-  return days + 'd ' + (hrs % 24) + 'h';
-}
+// timeAgo → provided by seaweed_common.js  (call with suffix=false, the default)
 
 // ============================================================
 // FETCH LIVE FROM THINGSPEAK
@@ -1595,18 +1477,7 @@ function getStationConfig(station) {
   return { channelId: channelId, apiKey: apiKey };
 }
 
-// Helper: yield to browser so status text / spinner repaints
-function yieldToBrowser() { return new Promise(function(r) { setTimeout(r, 0); }); }
-
-// Helper: fetch with timeout (default 30s) to avoid indefinite hangs
-function fetchWithTimeout(url, timeoutMs) {
-  timeoutMs = timeoutMs || 30000;
-  var controller = new AbortController();
-  var tid = setTimeout(function() { controller.abort(); }, timeoutMs);
-  return fetch(url, { signal: controller.signal })
-    .then(function(res) { clearTimeout(tid); return res; })
-    .catch(function(err) { clearTimeout(tid); throw err.name === 'AbortError' ? new Error('Timeout after ' + (timeoutMs/1000) + 's') : err; });
-}
+// fetchWithTimeout, yieldToBrowser → provided by seaweed_common.js
 
 async function fetchLiveAll() {
   var btn    = document.getElementById('btnFetchAll');
@@ -1617,6 +1488,7 @@ async function fetchLiveAll() {
 
   var fetched = 0;
   var errors  = [];
+  var totalNew = 0;
 
   for (var i = 0; i < STATIONS.length; i++) {
     var station = STATIONS[i];
@@ -1630,11 +1502,50 @@ async function fetchLiveAll() {
     try {
       // Small delay between ThingSpeak requests to avoid rate-limiting
       if (i > 0) await new Promise(function(r) { setTimeout(r, 500); });
-      var url = 'https://api.thingspeak.com/channels/' + cfg.channelId + '/feeds.json?api_key=' + cfg.apiKey + '&results=2000';
+
+      // Incremental fetch: if we have cached data, only request entries after the last one
+      var existingData = stationData[station.id];
+      var existingEntries = (existingData && existingData.entries && existingData.entries.length) ? existingData.entries : [];
+      var lastTs = existingEntries.length ? existingEntries[existingEntries.length - 1].timestamp : null;
+
+      var url = 'https://api.thingspeak.com/channels/' + cfg.channelId + '/feeds.json?api_key=' + cfg.apiKey;
+      if (lastTs && existingEntries.length > 10) {
+        // Fetch only new entries since last known timestamp (+1s to avoid dupe)
+        var startISO = new Date(lastTs.getTime() + 1000).toISOString();
+        url += '&start=' + encodeURIComponent(startISO) + '&results=8000';
+      } else {
+        // Full fetch (first time or very few entries)
+        url += '&results=8000';
+      }
+
       var res = await fetchWithTimeout(url, 30000);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var data = await res.json();
-      stationData[station.id] = parseStationData(data, station);
+      var newParsed = parseStationData(data, station);
+      var newCount = newParsed.entries.length;
+
+      if (lastTs && existingEntries.length > 10 && newCount > 0) {
+        // Merge: append new entries to existing, dedup by entryId
+        var existingIds = {};
+        existingEntries.forEach(function(e) { existingIds[e.entryId] = true; });
+        var merged = existingEntries.slice();
+        newParsed.entries.forEach(function(e) {
+          if (!existingIds[e.entryId]) merged.push(e);
+        });
+        merged.sort(function(a, b) { return a.timestamp - b.timestamp; });
+        stationData[station.id] = { entries: merged, raw: null };
+        totalNew += newCount;
+      } else if (newCount > 0) {
+        stationData[station.id] = newParsed;
+        totalNew += newCount;
+      }
+      // else: no new entries, keep existing data as-is
+
+      // Persist to localStorage for instant reload next visit
+      if (stationData[station.id] && stationData[station.id].entries.length) {
+        saveHealthData(station.id, stationData[station.id].entries);
+      }
+      _stationDataSource[station.id] = { source: 'live', savedAt: Date.now() };
       fetched++;
     } catch (err) {
       console.error('[Health] Live fetch failed for ' + station.name + ':', err);
@@ -1650,6 +1561,7 @@ async function fetchLiveAll() {
   liveCharts.forEach(function(c) { try { c.destroy(); } catch(e){} });
   liveCharts = [];
   _syncWindowCache = {};  // clear cached sync evaluations
+  _stationChartsRendered = {};  // reset lazy-render flags
   var container = document.getElementById('stationsContainer');
   container.innerHTML = '';
   container.style.display = '';
@@ -1679,14 +1591,16 @@ async function fetchLiveAll() {
   btn.innerHTML = '&#128752; Fetch Live';
   btn.disabled  = false;
   var ts = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  var newStr = totalNew > 0 ? ' (' + totalNew + ' new)' : ' (up to date)';
   if (errors.length) {
-    status.innerHTML = '<span style="color:var(--warning)">' + fetched + ' OK, ' + errors.length + ' failed &mdash; ' + ts + '</span>';
+    status.innerHTML = '<span style="color:var(--warning)">' + fetched + ' OK, ' + errors.length + ' failed' + newStr + ' &mdash; ' + ts + '</span>';
   } else {
-    status.innerHTML = '<span style="color:var(--success)">All ' + fetched + ' stations updated &mdash; ' + ts + '</span>';
+    status.innerHTML = '<span style="color:var(--success)">All ' + fetched + ' stations updated' + newStr + ' &mdash; ' + ts + '</span>';
   }
 }
 
-// ==========================================================// BOOT: Load all stations sequentially from local data
+// ==========================================================
+// BOOT: Load all stations — localStorage first, then merged_data.js
 // ============================================================
 (function() {
   var idx = 0;
@@ -1703,6 +1617,15 @@ async function fetchLiveAll() {
       else onAllLoaded();
     }
 
+    // Priority 1: Health-specific localStorage (saved by Fetch Live)
+    var healthCached = loadHealthData(station.id);
+    if (healthCached && healthCached.entries.length > 0) {
+      console.log('[Health] Loaded ' + healthCached.entries.length + ' entries from localStorage for ' + station.name);
+      _stationDataSource[station.id] = { source: 'live', savedAt: healthCached.savedAt || null };
+      return doneWithStation(healthCached);
+    }
+
+    // Priority 2: merged_data.js from CI (GitHub Pages)
     function tryLoadFolder(folder, allowFallback) {
       var script = document.createElement('script');
       script.src = '../data/' + folder + '/merged_data.js';
@@ -1711,6 +1634,7 @@ async function fetchLiveAll() {
           try {
             stationData[station.id] = parseStationData(window.THINGSPEAK_DATA, station);
             window.THINGSPEAK_DATA = null;
+            _stationDataSource[station.id] = { source: 'ci', savedAt: null };
             return doneWithStation(stationData[station.id]);
           } catch (err) {
             console.warn('[Health] Parse failed for ' + station.name + ' from ' + folder + ':', err);
@@ -1722,9 +1646,11 @@ async function fetchLiveAll() {
           return tryLoadFolder(defaultFolder, false);
         }
 
+        // Priority 3: station.html cache (seaweed_cache_*)
         var cachedOnLoad = getCachedStationData(station.id);
         if (cachedOnLoad) {
           console.warn('[Health] Using cached data for ' + station.name + ' (loader returned empty)');
+          _stationDataSource[station.id] = { source: 'cache', savedAt: null };
           return doneWithStation(cachedOnLoad);
         }
 
@@ -1737,9 +1663,11 @@ async function fetchLiveAll() {
           return tryLoadFolder(defaultFolder, false);
         }
 
+        // Priority 3: station.html cache (seaweed_cache_*)
         var cachedOnError = getCachedStationData(station.id);
         if (cachedOnError) {
           console.warn('[Health] Using cached data for ' + station.name + ' (data file not reachable)');
+          _stationDataSource[station.id] = { source: 'cache', savedAt: null };
           return doneWithStation(cachedOnError);
         }
 

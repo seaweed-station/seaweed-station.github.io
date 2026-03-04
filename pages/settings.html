@@ -404,14 +404,26 @@ input.wide { max-width: none; }
         Your PC does not need to be on.
       </div>
 
+      <div class="field-group" style="margin-bottom:12px">
+        <label for="githubPat">GitHub Personal Access Token <span style="color:var(--text-muted);font-weight:400">(optional &mdash; enables Trigger Download button)</span></label>
+        <div style="display:flex;gap:8px">
+          <input type="password" id="githubPat" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" style="flex:1;font-family:monospace;font-size:0.85rem;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+          <button class="btn" onclick="saveGithubPat()" style="white-space:nowrap">Save PAT</button>
+        </div>
+        <div class="field-hint">Needs <code>actions:write</code> scope. Stored in localStorage only &mdash; never sent anywhere except the GitHub API. <a href="https://github.com/settings/tokens/new?scopes=repo&description=Seaweed+Dashboard+Download+Trigger" target="_blank">Create one &rarr;</a></div>
+        <span id="patStatus" style="font-size:.8rem;color:var(--success);display:none">&#10003; Saved</span>
+      </div>
+
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <a class="btn btn-primary" href="https://github.com/bosunjm-cloud/seaweed-station-dashboard/actions/workflows/download-data.yml" target="_blank">
-          &#128279; View run history &amp; trigger manually
+        <button class="btn btn-primary" id="btnTriggerDL" onclick="triggerCIDownload()" title="Trigger GitHub Actions workflow_dispatch">&#9889; Trigger Download Now</button>
+        <a class="btn" href="https://github.com/bosunjm-cloud/seaweed-station-dashboard/actions/workflows/download-data.yml" target="_blank">
+          &#128279; View run history
         </a>
         <a class="btn" href="https://github.com/bosunjm-cloud/seaweed-station-dashboard/edit/main/.github/workflows/download-data.yml" target="_blank">
           &#9998; Edit schedule (change cron)
         </a>
       </div>
+      <span id="triggerStatus" style="font-size:.8rem;margin-top:6px;display:block"></span>
 
       <div class="info-box">
         <div class="info-title">Changing the frequency</div>
@@ -650,6 +662,51 @@ function copyCode(elId, btn) {
   }
 }
 
+//  GitHub PAT (stored separately — sensitive) 
+function saveGithubPat() {
+  var pat = (document.getElementById('githubPat').value || '').trim();
+  if (pat) {
+    localStorage.setItem('seaweed_github_pat', pat);
+  } else {
+    localStorage.removeItem('seaweed_github_pat');
+  }
+  var s = document.getElementById('patStatus');
+  s.style.display = 'inline'; s.textContent = pat ? '\u2713 Saved' : '\u2713 Cleared';
+  setTimeout(function() { s.style.display = 'none'; }, 3000);
+}
+
+function triggerCIDownload() {
+  var pat = localStorage.getItem('seaweed_github_pat');
+  if (!pat) {
+    alert('Set a GitHub Personal Access Token above first (needs actions:write scope).');
+    return;
+  }
+  var btn = document.getElementById('btnTriggerDL');
+  var status = document.getElementById('triggerStatus');
+  btn.disabled = true; btn.textContent = '\u26A1 Triggering...';
+  status.textContent = '';
+
+  fetch('https://api.github.com/repos/bosunjm-cloud/seaweed-station-dashboard/actions/workflows/download-data.yml/dispatches', {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/vnd.github+json',
+      'Authorization': 'Bearer ' + pat,
+      'X-GitHub-Api-Version': '2022-11-28'
+    },
+    body: JSON.stringify({ ref: 'main' })
+  }).then(function(res) {
+    if (res.status === 204) {
+      status.innerHTML = '<span style="color:var(--success)">\u2705 Workflow triggered! Check <a href="https://github.com/bosunjm-cloud/seaweed-station-dashboard/actions" target="_blank">Actions</a> for progress.</span>';
+    } else {
+      return res.json().then(function(j) { throw new Error(j.message || ('HTTP ' + res.status)); });
+    }
+  }).catch(function(err) {
+    status.innerHTML = '<span style="color:var(--danger)">\u274C Failed: ' + err.message + '</span>';
+  }).finally(function() {
+    btn.disabled = false; btn.textContent = '\u26A1 Trigger Download Now';
+  });
+}
+
 //  Load saved config into the form on page load 
 function loadSavedConfig() {
   var saved = {};
@@ -678,6 +735,12 @@ function loadSavedConfig() {
 
   document.getElementById('autoRefreshMin').value = String(saved.autoRefreshMin != null ? saved.autoRefreshMin : 15);
   document.getElementById('maxResults').value     = saved.maxResults || 8000;
+
+  // Restore GitHub PAT (masked — just show that one is saved)
+  var savedPat = localStorage.getItem('seaweed_github_pat');
+  if (savedPat) {
+    document.getElementById('githubPat').value = savedPat;
+  }
 }
 
 //  Init 
