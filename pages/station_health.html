@@ -227,10 +227,41 @@ if (!sessionStorage.getItem('sw_auth')) { window.location.href = '../login.html'
 
 // Station configurations
 var STATIONS = [
-  { id: 'perth',    name: 'Perth Test Table',          defaultFolder: 'data_3262071_TT', configKey: 'perth',    type: 'gateway', defaultChannelId: '3262071', defaultApiKey: 'VVHUX39KINYPLCVI' },
-  { id: 'shangani', name: 'Shangani Aramani, Kenya',   defaultFolder: 'data_Shangani',   configKey: 'shangani', type: 'gateway', defaultChannelId: '3262074', defaultApiKey: 'X7ZETMYRRQCAFE8S' },
-  { id: 'funzi',    name: 'Funzi Island, Kenya',       defaultFolder: 'data_Funzi',      configKey: 'funzi',    type: 'gateway', defaultChannelId: '3256756', defaultApiKey: 'D8TXB5B33KPWRIHO' },
+  { id: 'perth',    name: 'Perth Test Table',          defaultFolder: 'data_3262071_TT', configKey: 'perth',    type: 'gateway', defaultChannelId: '3262071', defaultApiKey: 'VVHUX39KINYPLCVI', tz: 'Australia/Perth' },
+  { id: 'shangani', name: 'Shangani Aramani, Kenya',   defaultFolder: 'data_Shangani',   configKey: 'shangani', type: 'gateway', defaultChannelId: '3262074', defaultApiKey: 'X7ZETMYRRQCAFE8S', tz: 'Africa/Nairobi' },
+  { id: 'funzi',    name: 'Funzi Island, Kenya',       defaultFolder: 'data_Funzi',      configKey: 'funzi',    type: 'gateway', defaultChannelId: '3256756', defaultApiKey: 'D8TXB5B33KPWRIHO', tz: 'Africa/Nairobi' },
 ];
+
+// Timezone helpers
+function stationTz(stationId) {
+  var s = STATIONS.find(function(st) { return st.id === stationId; });
+  return s && s.tz ? s.tz : Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+function stationTzShort(stationId) {
+  try {
+    var tz = stationTz(stationId);
+    return new Date().toLocaleTimeString('en-US', { timeZone: tz, timeZoneName: 'short' }).split(' ').pop();
+  } catch(e) { return ''; }
+}
+// Format a Date in a station's local timezone
+function fmtStationTime(date, stationId, opts) {
+  if (!date || isNaN(date.getTime())) return '--';
+  var tz = stationTz(stationId);
+  var defaults = { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false };
+  if (opts) { for (var k in opts) defaults[k] = opts[k]; }
+  return date.toLocaleString('en-GB', defaults);
+}
+// Get hour (0-23) in station-local timezone
+function stationLocalHour(date, stationId) {
+  var tz = stationTz(stationId);
+  return parseInt(date.toLocaleString('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }), 10);
+}
+// Get YYYY-MM-DD string in station-local timezone
+function stationLocalDay(date, stationId) {
+  var tz = stationTz(stationId);
+  var parts = date.toLocaleDateString('en-CA', { timeZone: tz }); // en-CA gives YYYY-MM-DD
+  return parts;
+}
 
 var liveCharts = [];  // track Chart.js instances for cleanup on refresh
 var stationRanges = {}; // { stationId: 'day'|'week'|'month'|'all' }
@@ -391,59 +422,24 @@ function getCachedStationData(stationId) {
       })
       .sort(function(a, b) { return a.timestamp - b.timestamp; });
     if (!entries.length) return null;
-    return { entries: entries, raw: null, source: 'cache' };
+    return { entries: entries, raw: null, source: 'cache', savedAt: cached.savedAt || null };
   } catch (e) {
     return null;
   }
 }
 
 // ============================================================
-// HEALTH-SPECIFIC LOCALSTORAGE PERSISTENCE
+// SHARED LOCALSTORAGE PERSISTENCE  (same key as station.html)
+// Key: seaweed_cache_<stationId>  Shape: { allEntries, savedAt }
 // ============================================================
-function saveHealthData(stationId, entries) {
+function saveCacheData(stationId, entries) {
   try {
-    var slim = entries.map(function(e) {
-      var o = {};
-      for (var k in e) { if (e.hasOwnProperty(k) && k !== 'raw' && k !== '_rawField8') o[k] = e[k]; }
-      return o;
-    });
-    var payload = JSON.stringify({
-      entries: slim,
-      savedAt: Date.now(),
-      source: 'live',
-      lastEntryId: entries.length ? entries[entries.length - 1].entryId : null
-    });
-    localStorage.setItem('seaweed_health_' + stationId, payload);
+    localStorage.setItem('seaweed_cache_' + stationId, JSON.stringify({
+      allEntries: entries,
+      savedAt:    Date.now()
+    }));
   } catch (e) {
-    console.warn('[Health] Could not save data to localStorage for ' + stationId + ':', e.message);
-  }
-}
-
-function loadHealthData(stationId) {
-  try {
-    var raw = localStorage.getItem('seaweed_health_' + stationId);
-    if (!raw) return null;
-    var cached = JSON.parse(raw);
-    if (!cached || !Array.isArray(cached.entries) || !cached.entries.length) return null;
-    var entries = cached.entries
-      .map(function(entry) {
-        entry.timestamp = new Date(entry.timestamp);
-        return entry;
-      })
-      .filter(function(entry) {
-        return entry.timestamp && !isNaN(entry.timestamp.getTime());
-      })
-      .sort(function(a, b) { return a.timestamp - b.timestamp; });
-    if (!entries.length) return null;
-    return {
-      entries: entries,
-      raw: null,
-      source: 'live',
-      savedAt: cached.savedAt || null,
-      lastEntryId: cached.lastEntryId || null
-    };
-  } catch (e) {
-    return null;
+    console.warn('[Health] Could not save cache for ' + stationId + ':', e.message);
   }
 }
 
@@ -523,6 +519,7 @@ function renderStationSection(station, data) {
     '<div class="station-header" onclick="toggleStation(\'' + stationId + '\')">' +
       '<h2>' + station.name + ' <span class="freshness ' + freshnessClass + '">' + freshnessText + '</span>' + srcBadgeHtml +
         (hasData ? ' <span style="font-size:.75rem;color:var(--text-muted)">' + e.length.toLocaleString() + ' entries</span>' : '') +
+        ' <span style="font-size:.68rem;color:var(--text-muted);opacity:.7">' + stationTzShort(stationId) + '</span>' +
       '</h2>' +
       '<span class="chevron" id="chev_' + stationId + '">&#9660;</span>' +
     '</div>' +
@@ -577,7 +574,7 @@ function _renderStationCharts(stationId) {
   renderBatteryCharts(chartsDiv, chartEntries, stationId, range);
   renderSyncCharts(chartsDiv, chartEntries, stationId, range);
   renderDataHealth(chartsDiv, chartEntries);
-  renderDailyHealth(chartsDiv, chartEntries);
+  renderDailyHealth(chartsDiv, chartEntries, stationId);
   body.appendChild(chartsDiv);
   _currentRangeMaxPts = MAX_CHART_POINTS; // reset
   _stationChartsRendered[stationId] = true;
@@ -642,7 +639,7 @@ function setStationRange(stationId, range) {
   renderBatteryCharts(chartsDiv, chartEntries, stationId, range);
   renderSyncCharts(chartsDiv, chartEntries, stationId, range);
   renderDataHealth(chartsDiv, chartEntries);
-  renderDailyHealth(chartsDiv, chartEntries);
+  renderDailyHealth(chartsDiv, chartEntries, stationId);
   body.appendChild(chartsDiv);
   _currentRangeMaxPts = MAX_CHART_POINTS; // reset
   _stationChartsRendered[stationId] = true;
@@ -841,7 +838,7 @@ function renderBatteryCharts(container, entries, stationId, range) {
       makeDS(entries, 'satABatPct', 'Sat-A', '#10b981'),
       makeDS(entries, 'satBBatPct', 'Sat-B', '#f59e0b'),
     ]},
-    options: chartOpts('Battery (%)', 0, 100, range),
+    options: chartOpts('Battery (%)', 0, 100, range, stationId),
   }, { stationId: stationId, chartKey: 'battery_pct' });
 
   makeLiveChart(voltBox, voltCanvas, 'Battery Voltage \u2013 ' + rangeLabel(range), {
@@ -851,7 +848,7 @@ function renderBatteryCharts(container, entries, stationId, range) {
       makeDS(entries, 'satABatV', 'Sat-A', '#34d399'),
       makeDS(entries, 'satBBatV', 'Sat-B', '#fbbf24'),
     ]},
-    options: chartOpts('Voltage (V)', 2.5, 4.5, range),
+    options: chartOpts('Voltage (V)', 2.5, 4.5, range, stationId),
   }, { stationId: stationId, chartKey: 'battery_voltage' });
 }
 
@@ -905,13 +902,14 @@ function renderSyncCharts(container, entries, stationId, range) {
 
     if (range === 'day') {
       var tMax = rangeEndMs;
+      // Use station-local hour for bucket labels
       var floorHour = new Date(tMax); floorHour.setMinutes(0, 0, 0, 0);
       var windowStart = floorHour.getTime() - 24 * 3600000;
       for (var h = 0; h < 24; h++) {
         var bStart = windowStart + h * 3600000;
         byBucket[h] = { satATotal: 0, satA: 0, satBTotal: 0, satB: 0, bStart: bStart };
         bucketKeys.push(h);
-        labels.push(String(new Date(bStart).getHours()).padStart(2, '0') + ':00');
+        labels.push(String(stationLocalHour(new Date(bStart), stationId)).padStart(2, '0') + ':00');
       }
 
       satAWindowEval.slots.forEach(function(slot) {
@@ -1104,7 +1102,7 @@ function renderSyncCharts(container, entries, stationId, range) {
   }
 
   if ((hasDrift || hasSystemDrift) && driftCanvas) {
-    var dOpts = chartOpts('Drift (s)', undefined, undefined, range);
+    var dOpts = chartOpts('Drift (s)', undefined, undefined, range, stationId);
     dOpts.scales.y.ticks = { callback: function(v) { return (v>=0?'+':'')+v+'s'; }, color: '#94a3b8', font: { size: 10 } };
     var driftDatasets = [];
     if (satADriftSeries.length) driftDatasets.push(makeSeriesDS(lttbDownsample(satADriftSeries), 'Sat-A Drift', '#22c55e'));
@@ -1124,7 +1122,7 @@ function renderSyncCharts(container, entries, stationId, range) {
         makeSeriesDS(lttbDownsample(satARssiSeries), 'Sat-A RSSI', '#22c55e'),
         makeSeriesDS(lttbDownsample(satBRssiSeries), 'Sat-B RSSI', '#3b82f6'),
       ]},
-      options: chartOpts('RSSI (dBm)', -100, 0, range),
+      options: chartOpts('RSSI (dBm)', -100, 0, range, stationId),
     }, { stationId: stationId, chartKey: 'rssi' });
   }
 
@@ -1220,8 +1218,10 @@ function openChartModal(title, srcCanvas) {
         } else {
           mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', displayFormats: { day: 'dd MMM' } };
         }
+        var mTz = (_modalSource && _modalSource.stationId) ? stationTz(_modalSource.stationId) : undefined;
+        var mAdapters = mTz ? { date: { zone: mTz } } : undefined;
         return {
-          x: { type: 'time', time: mxTime,
+          x: { type: 'time', time: mxTime, adapters: mAdapters,
                ticks: { color: '#64748b', font: { size: 11 }, maxTicksLimit: 12 }, grid: { color: '#1e293b' } },
           y: { title: { display: !!yTitle, text: yTitle, color: '#64748b', font: { size: 11 } },
                min: (yMin !== undefined && yMin !== null) ? yMin : undefined,
@@ -1345,12 +1345,13 @@ function renderDataHealth(container, entries) {
 // ============================================================
 // DAILY HEALTH SUMMARY TABLE
 // ============================================================
-function renderDailyHealth(container, entries) {
+function renderDailyHealth(container, entries, stationId) {
   if (!entries.length) return;
 
   var byDay = {};
   entries.forEach(function(e) {
-    var day = e.timestamp.toISOString().slice(0,10);
+    // Group by station-local date
+    var day = stationId ? stationLocalDay(e.timestamp, stationId) : e.timestamp.toISOString().slice(0,10);
     if (!byDay[day]) byDay[day] = [];
     byDay[day].push(e);
   });
@@ -1370,8 +1371,9 @@ function renderDailyHealth(container, entries) {
   for (var di = 0; di < days.length; di++) {
     var day = days[di];
     var de  = byDay[day];
-    var dl  = new Date(day + 'T00:00:00Z');
-    var dateLabel = dl.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', weekday: 'short' });
+    var dl  = new Date(day + 'T12:00:00Z'); // noon UTC avoids day-boundary shifts
+    var tz  = stationId ? stationTz(stationId) : undefined;
+    var dateLabel = dl.toLocaleDateString('en-GB', Object.assign({ day: 'numeric', month: 'short', weekday: 'short' }, tz ? { timeZone: tz } : {}));
 
     // Battery delta
     function batDelta(arr, key) {
@@ -1419,7 +1421,7 @@ function renderDailyHealth(container, entries) {
 // ============================================================
 // CHART HELPERS
 // ============================================================
-function chartOpts(yLabel, yMin, yMax, range) {
+function chartOpts(yLabel, yMin, yMax, range, stationId) {
   // X-axis time configuration depends on view range:
   //   day   → hour ticks showing HH:mm
   //   week  → day ticks showing dd MMM (one per day, 7 labels)
@@ -1439,6 +1441,9 @@ function chartOpts(yLabel, yMin, yMax, range) {
     xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', displayFormats: { day: 'dd MMM' } };
     xMaxTicks = 12;
   }
+  // Station-local timezone for Luxon adapter
+  var tz = stationId ? stationTz(stationId) : undefined;
+  var adapters = tz ? { date: { zone: tz } } : undefined;
   return {
     responsive: true,
     maintainAspectRatio: false,
@@ -1449,7 +1454,7 @@ function chartOpts(yLabel, yMin, yMax, range) {
       tooltip: { backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8', borderColor: '#334155', borderWidth: 1 },
     },
     scales: {
-      x: { type: 'time', time: xTime,
+      x: { type: 'time', time: xTime, adapters: adapters,
         ticks: { color: '#64748b', font: { size: 10 }, maxTicksLimit: xMaxTicks }, grid: { color: '#1e293b' } },
       y: { title: { display: true, text: yLabel, color: '#64748b', font: { size: 10 } },
         min: yMin, max: yMax,
@@ -1503,20 +1508,8 @@ async function fetchLiveAll() {
       // Small delay between ThingSpeak requests to avoid rate-limiting
       if (i > 0) await new Promise(function(r) { setTimeout(r, 500); });
 
-      // Incremental fetch: if we have cached data, only request entries after the last one
-      var existingData = stationData[station.id];
-      var existingEntries = (existingData && existingData.entries && existingData.entries.length) ? existingData.entries : [];
-      var lastTs = existingEntries.length ? existingEntries[existingEntries.length - 1].timestamp : null;
-
-      var url = 'https://api.thingspeak.com/channels/' + cfg.channelId + '/feeds.json?api_key=' + cfg.apiKey;
-      if (lastTs && existingEntries.length > 10) {
-        // Fetch only new entries since last known timestamp (+1s to avoid dupe)
-        var startISO = new Date(lastTs.getTime() + 1000).toISOString();
-        url += '&start=' + encodeURIComponent(startISO) + '&results=8000';
-      } else {
-        // Full fetch (first time or very few entries)
-        url += '&results=8000';
-      }
+      // Full fetch (same approach as station.html — always pull everything)
+      var url = 'https://api.thingspeak.com/channels/' + cfg.channelId + '/feeds.json?api_key=' + cfg.apiKey + '&results=8000';
 
       var res = await fetchWithTimeout(url, 30000);
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -1524,26 +1517,15 @@ async function fetchLiveAll() {
       var newParsed = parseStationData(data, station);
       var newCount = newParsed.entries.length;
 
-      if (lastTs && existingEntries.length > 10 && newCount > 0) {
-        // Merge: append new entries to existing, dedup by entryId
-        var existingIds = {};
-        existingEntries.forEach(function(e) { existingIds[e.entryId] = true; });
-        var merged = existingEntries.slice();
-        newParsed.entries.forEach(function(e) {
-          if (!existingIds[e.entryId]) merged.push(e);
-        });
-        merged.sort(function(a, b) { return a.timestamp - b.timestamp; });
-        stationData[station.id] = { entries: merged, raw: null };
-        totalNew += newCount;
-      } else if (newCount > 0) {
+      if (newCount > 0) {
+        var prevCount = (stationData[station.id] && stationData[station.id].entries) ? stationData[station.id].entries.length : 0;
         stationData[station.id] = newParsed;
-        totalNew += newCount;
+        totalNew += Math.max(0, newCount - prevCount);
       }
-      // else: no new entries, keep existing data as-is
 
-      // Persist to localStorage for instant reload next visit
+      // Persist to shared localStorage cache (same key as station.html)
       if (stationData[station.id] && stationData[station.id].entries.length) {
-        saveHealthData(station.id, stationData[station.id].entries);
+        saveCacheData(station.id, stationData[station.id].entries);
       }
       _stationDataSource[station.id] = { source: 'live', savedAt: Date.now() };
       fetched++;
@@ -1617,12 +1599,12 @@ async function fetchLiveAll() {
       else onAllLoaded();
     }
 
-    // Priority 1: Health-specific localStorage (saved by Fetch Live)
-    var healthCached = loadHealthData(station.id);
-    if (healthCached && healthCached.entries.length > 0) {
-      console.log('[Health] Loaded ' + healthCached.entries.length + ' entries from localStorage for ' + station.name);
-      _stationDataSource[station.id] = { source: 'live', savedAt: healthCached.savedAt || null };
-      return doneWithStation(healthCached);
+    // Priority 1: Shared localStorage cache (seaweed_cache_<id>, written by both pages)
+    var cached = getCachedStationData(station.id);
+    if (cached && cached.entries.length > 0) {
+      console.log('[Health] Loaded ' + cached.entries.length + ' entries from cache for ' + station.name);
+      _stationDataSource[station.id] = { source: 'live', savedAt: cached.savedAt || null };
+      return doneWithStation(cached);
     }
 
     // Priority 2: merged_data.js from CI (GitHub Pages)
