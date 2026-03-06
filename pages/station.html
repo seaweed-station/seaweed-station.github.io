@@ -756,6 +756,10 @@ body {
 })();
 </script>
 
+<!-- Shared utility libraries -->
+<script src="seaweed_common.js"></script>
+<script src="seaweed_sync.js"></script>
+
 <!-- Battery prediction engine (shared) -->
 <script src="battery_model.js"></script>
 <script src="battery_forecast_widget.js"></script>
@@ -1017,23 +1021,8 @@ function setupAutoRefresh() {
 }
 
 // =====================================================================
-// UTILITIES
+// UTILITIES  (csvParse, numParse, timeAgo provided by seaweed_common.js)
 // =====================================================================
-function csvParse(fieldVal) {
-  if (!fieldVal || fieldVal === 'null') return [];
-  return fieldVal.split(',').map(function (v) {
-    v = v.trim();
-    if (v === 'NC' || v === '' || v === 'null' || v === 'nan') return null;
-    var n = parseFloat(v);
-    return isNaN(n) ? null : n;
-  });
-}
-
-function numParse(v) {
-  if (v === null || v === undefined || v === '' || v === 'null') return null;
-  var n = parseFloat(v);
-  return isNaN(n) ? null : n;
-}
 
 function fmtDate(d) {
   if (!d) return '--';
@@ -1046,19 +1035,6 @@ function fmtBytes(kb) {
   if (kb >= 1048576) return (kb / 1048576).toFixed(1) + ' GB';
   if (kb >= 1024)    return (kb / 1024).toFixed(1) + ' MB';
   return kb + ' KB';
-}
-
-function timeAgo(date) {
-  if (!date || isNaN(date.getTime())) return 'never';
-  var ms = Date.now() - date.getTime();
-  if (ms < 0) return 'in the future';
-  var mins = Math.floor(ms / 60000);
-  if (mins < 1)  return 'just now';
-  if (mins < 60) return mins + 'm ago';
-  var hrs = Math.floor(mins / 60);
-  if (hrs < 24) return hrs + 'h ' + (mins % 60) + 'm ago';
-  var days = Math.floor(hrs / 24);
-  return days + 'd ' + (hrs % 24) + 'h ago';
 }
 
 function getTimezoneLabel() {
@@ -1122,177 +1098,17 @@ function findLastEntryWith(entries, key) {
   return null;
 }
 
-function collectSyncEventTimes(entries, sampleIdKey, valueKey) {
-  var times = [];
-  var lastSampleId = null;
-  for (var i = 0; i < entries.length; i++) {
-    var entry = entries[i];
-    var sid = sampleIdKey ? entry[sampleIdKey] : null;
-    if (sid !== null && sid !== undefined) {
-      if (lastSampleId === null || sid !== lastSampleId) {
-        times.push(entry.timestamp.getTime());
-        lastSampleId = sid;
-      }
-      continue;
-    }
-    if (entry[valueKey] !== null && entry[valueKey] !== undefined) {
-      times.push(entry.timestamp.getTime());
-    }
-  }
-  return times;
-}
-
-function parseSyncPeriodMsFromField8(rawField8) {
-  if (!rawField8 || typeof rawField8 !== 'string') return null;
-  var parts = rawField8.split('|');
-  if (parts.length < 2) return null;
-  var cfg = parts[1].split(',');
-  if (cfg.length < 6) return null;
-  var periodSec = parseInt(cfg[5], 10);
-  if (!isFinite(periodSec) || periodSec <= 0) return null;
-  periodSec = Math.max(60, Math.min(24 * 3600, periodSec));
-  return periodSec * 1000;
-}
-
-function buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs) {
-  var eventTimes = collectSyncEventTimes(entries, sampleIdKey, valueKey);
-  var inferredPeriodMs = estimateSyncPeriodMs(eventTimes, defaultPeriodMs);
-  var timeline = [];
-  var lastPeriod = null;
-
-  timeline.push({ ts: entries[0].timestamp.getTime(), periodMs: inferredPeriodMs });
-  lastPeriod = inferredPeriodMs;
-
-  for (var i = 0; i < entries.length; i++) {
-    var periodMs = parseSyncPeriodMsFromField8(entries[i]._rawField8);
-    if (!(periodMs > 0)) continue;
-    if (periodMs !== lastPeriod) {
-      timeline.push({ ts: entries[i].timestamp.getTime(), periodMs: periodMs });
-      lastPeriod = periodMs;
-    }
-  }
-
-  return timeline;
-}
-
-function periodMsAt(tsMs, timeline, defaultPeriodMs) {
-function parseField8ConfigUnified(rawField8) {
-  if (!rawField8 || typeof rawField8 !== 'string') return null;
-  if (window.BatteryModel && typeof window.BatteryModel.parseField8Config === 'function') {
-    return window.BatteryModel.parseField8Config(rawField8);
-  }
-  var parts = rawField8.split('|');
-  if (parts.length < 2) return null;
-  var tokens = parts[1].split(',');
-  if (tokens.length < 8) return null;
-  return {
-    deployMode: parseInt(tokens[0], 10) || 0,
-    sleepEnable: parseInt(tokens[1], 10) === 1,
-    samplePeriod_s: parseInt(tokens[2], 10) || 600,
-    tsBulkInterval_s: parseInt(tokens[3], 10) || 900,
-    tsBulkFreqHours: parseInt(tokens[4], 10) || 24,
-    espnowSyncPeriod_s: parseInt(tokens[5], 10) || 3600,
-    satAInstalled: parseInt(tokens[6], 10) === 1,
-    satBInstalled: parseInt(tokens[7], 10) === 1
-  };
-}
-
-function parseSyncConfigFromField8(rawField8) {
-  var cfg = parseField8ConfigUnified(rawField8);
-  if (!cfg) return null;
-  var periodSec = parseInt(cfg.espnowSyncPeriod_s, 10);
-  if (!isFinite(periodSec) || periodSec <= 0) return null;
-  periodSec = Math.max(60, Math.min(24 * 3600, periodSec));
-  return {
-    periodMs: periodSec * 1000,
-    satAInstalled: !!cfg.satAInstalled,
-    satBInstalled: !!cfg.satBInstalled
-  };
-  var deltas = [];
-  for (var i = 1; i < eventTimes.length; i++) {
-function buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs) {
-    if (d > 0) deltas.push(d);
-  }
-  if (!deltas.length) return defaultPeriodMs;
-  var lastPeriod = inferredPeriodMs;
-  var lastSatAInstalled = true;
-  var lastSatBInstalled = true;
-  var median = deltas[Math.floor(deltas.length / 2)];
-  timeline.push({ ts: entries[0].timestamp.getTime(), periodMs: inferredPeriodMs, satAInstalled: true, satBInstalled: true });
-  var maxMs = 12 * 3600000;
-  return Math.max(minMs, Math.min(maxMs, median));
-    var syncCfg = parseSyncConfigFromField8(entries[i]._rawField8);
-    if (!syncCfg) continue;
-    var changed = syncCfg.periodMs !== lastPeriod || syncCfg.satAInstalled !== lastSatAInstalled || syncCfg.satBInstalled !== lastSatBInstalled;
-    if (changed) {
-      timeline.push({
-        ts: entries[i].timestamp.getTime(),
-        periodMs: syncCfg.periodMs,
-        satAInstalled: syncCfg.satAInstalled,
-        satBInstalled: syncCfg.satBInstalled
-      });
-      lastPeriod = syncCfg.periodMs;
-      lastSatAInstalled = syncCfg.satAInstalled;
-      lastSatBInstalled = syncCfg.satBInstalled;
-  var latestMs = entries[entries.length - 1].timestamp.getTime();
-  var startMs = latestMs - hoursBack * 3600000;
-  var defaultPeriodMs = (defaultPeriodHours || 3) * 3600000;
-  var eventTimes = collectSyncEventTimes(entries, sampleIdKey, key);
-  var periodTimeline = buildSyncPeriodTimeline(entries, sampleIdKey, key, defaultPeriodMs);
-
-function syncCfgAt(tsMs, timeline, defaultPeriodMs) {
-  var cfg = { periodMs: defaultPeriodMs, satAInstalled: true, satBInstalled: true };
-    if (eventTimes[i] <= latestMs) {
-    if (timeline[i].ts <= tsMs) {
-      cfg.periodMs = timeline[i].periodMs;
-      cfg.satAInstalled = timeline[i].satAInstalled;
-      cfg.satBInstalled = timeline[i].satBInstalled;
-    }
-      break;
-    }
-  return cfg;
-
-  var slotTimes = [];
+// =====================================================================
+// SYNC HELPERS -- delegate to seaweed_sync.js (loaded above)
+// countRecentMissing wraps evaluateSyncWindows for backward compat
+// =====================================================================
 function countRecentMissing(entries, key, hoursBack, sampleIdKey, defaultPeriodHours, satInstallKey) {
-  var guard = 0;
-  while (t >= startMs && guard < 20000) {
-    slotTimes.push(t);
-    var stepMs = syncCfgAt(t, periodTimeline, defaultPeriodMs).periodMs;
-    if (!(stepMs > 0)) stepMs = defaultPeriodMs;
-    t -= stepMs;
-    guard++;
-  }
-  if (!slotTimes.length) slotTimes.push(latestMs);
-
-  var synced = 0;
-  for (var s = 0; s < slotTimes.length; s++) {
-    var slotTs = slotTimes[s];
-    var slotCfg = syncCfgAt(slotTs, periodTimeline, defaultPeriodMs);
-    if (satInstallKey && slotCfg[satInstallKey] === false) continue;
-    var slotPeriodMs = slotCfg.periodMs;
-    var graceMs = Math.min(30 * 60000, Math.max(10 * 60000, Math.round(slotPeriodMs * 0.2)));
-    var minTs = slotTs - graceMs;
-    var maxTs = slotTs + graceMs;
-    var hit = false;
-    for (var j = 0; j < eventTimes.length; j++) {
-      var evTs = eventTimes[j];
-      if (evTs < minTs) continue;
-      if (evTs > maxTs) break;
-      hit = true;
-      break;
-    }
-    if (hit) synced++;
-  }
-
-  var totalSlots = slotTimes.length;
-  if (satInstallKey) {
-    totalSlots = 0;
-    for (var q = 0; q < slotTimes.length; q++) {
-      if (syncCfgAt(slotTimes[q], periodTimeline, defaultPeriodMs)[satInstallKey] !== false) totalSlots++;
-    }
-  }
-
-  return { total: totalSlots, missing: totalSlots - synced, synced: synced };
+  if (!entries || !entries.length) return { total: 0, missing: 0, synced: 0 };
+  var latestMs = entries[entries.length - 1].timestamp.getTime();
+  var startMs  = latestMs - hoursBack * 3600000;
+  var defaultPeriodMs = (defaultPeriodHours || 3) * 3600000;
+  var result = evaluateSyncWindows(entries, sampleIdKey, key, startMs, latestMs, defaultPeriodMs, satInstallKey);
+  return { total: result.total, missing: result.missed, synced: result.synced };
 }
 </script>
 
@@ -2996,10 +2812,15 @@ document.addEventListener('DOMContentLoaded', function () {
   restoreViewPrefs();
 
   // Auto-load merged_data.js if present
-  if (window.THINGSPEAK_DATA) {
-    console.log('[Dashboard] Auto-loaded merged_data.js');
-    handleNewData(window.THINGSPEAK_DATA, 'Local file (' + STATION.dataFolder + '/merged_data.js)');
+  // Accept both legacy THINGSPEAK_DATA and current STATION_DATA variable names
+  var _autoData = window.STATION_DATA || window.THINGSPEAK_DATA;
+  if (_autoData) {
+    console.log('[Dashboard] Auto-loaded merged_data.js (' +
+      (window.STATION_DATA ? 'STATION_DATA' : 'THINGSPEAK_DATA') + ', ' +
+      (_autoData.feeds ? _autoData.feeds.length : 0) + ' feeds)');
+    handleNewData(_autoData, 'Local file (' + STATION.dataFolder + '/merged_data.js)');
   } else {
+    console.warn('[Dashboard] merged_data.js loaded but neither window.STATION_DATA nor window.THINGSPEAK_DATA found — check download_data.ps1 output');
     // Restore from localStorage cache
     try {
       var _raw = localStorage.getItem('seaweed_cache_' + TABLE_ID);
