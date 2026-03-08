@@ -1999,6 +1999,30 @@ function updatePeaksTable() {
       avg: vals.reduce(function(a, b) { return a + b; }, 0) / vals.length };
   }
 
+  // Build Open-Meteo daily stats from weatherState.data
+  var wxByDay = {};
+  if (weatherState.data && weatherState.data.time) {
+    var wxd = weatherState.data;
+    for (var wi = 0; wi < wxd.time.length; wi++) {
+      var wxDay = wxd.time[wi].slice(0, 10);
+      if (!wxByDay[wxDay]) wxByDay[wxDay] = { temps: [], hums: [] };
+      if (wxd.temperature_2m[wi] !== null && wxd.temperature_2m[wi] !== undefined)
+        wxByDay[wxDay].temps.push(wxd.temperature_2m[wi]);
+      if (wxd.relative_humidity_2m[wi] !== null && wxd.relative_humidity_2m[wi] !== undefined)
+        wxByDay[wxDay].hums.push(wxd.relative_humidity_2m[wi]);
+    }
+  }
+  var hasWx = Object.keys(wxByDay).length > 0;
+  function wxArrStats(arr) {
+    if (!arr || !arr.length) return null;
+    return { min: Math.min.apply(null, arr), max: Math.max.apply(null, arr), avg: arr.reduce(function(a, b) { return a + b; }, 0) / arr.length };
+  }
+  function fmtWxCell(stats, borderStyle) {
+    var tdStyle = borderStyle ? ' style="' + borderStyle + '"' : '';
+    if (!stats) return '<td class="peaks-nc"' + tdStyle + '>--</td>';
+    return '<td' + tdStyle + '>' + stats.min.toFixed(1) + ' / ' + stats.avg.toFixed(1) + ' / ' + stats.max.toFixed(1) + '</td>';
+  }
+
   // Group temps first, then humidities
   var tempKeys = [], humKeys = [];
   for (var s = 1; s <= SENSOR_COUNT; s++) {
@@ -2007,10 +2031,14 @@ function updatePeaksTable() {
     if (entries.some(function(e) { return e['rh' + s] !== null; }))
       humKeys.push(['rh' + s, 'S' + s + ' H', SENSOR_COLORS[s-1]]);
   }
-  var allKeys = tempKeys.concat(humKeys);
 
   var headHtml = '<tr><th>Date</th><th>Pts</th>';
-  allKeys.forEach(function(k) {
+  if (hasWx) headHtml += '<th style="color:#f59e0b;border-left:2px solid #475569">OM Temp</th>';
+  tempKeys.forEach(function(k) {
+    headHtml += '<th style="color:' + k[2] + '">' + k[1] + ' (min/avg/max)</th>';
+  });
+  if (hasWx) headHtml += '<th style="color:#06b6d4;border-left:2px solid #475569">OM Hum</th>';
+  humKeys.forEach(function(k) {
     headHtml += '<th style="color:' + k[2] + '">' + k[1] + ' (min/avg/max)</th>';
   });
   headHtml += '</tr>';
@@ -2026,7 +2054,8 @@ function updatePeaksTable() {
     var dateLabel = dl.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', weekday: 'short' });
 
     var dayStats = {};
-    allKeys.forEach(function(k) { dayStats[k[0]] = fieldStats(de, k[0]); });
+    var allSensorKeys = tempKeys.concat(humKeys);
+    allSensorKeys.forEach(function(k) { dayStats[k[0]] = fieldStats(de, k[0]); });
 
     // Highlights across temp sensors
     var tMinVals = [], tAvgVals = [], tMaxVals = [];
@@ -2043,19 +2072,38 @@ function updatePeaksTable() {
 
     bodyHtml += '<tr><td>' + dateLabel + '</td><td>' + de.length + '</td>';
 
-    allKeys.forEach(function(k) {
+    if (hasWx) {
+      var wxDayData = wxByDay[day];
+      bodyHtml += fmtWxCell(wxArrStats(wxDayData ? wxDayData.temps : []), 'border-left:2px solid #475569;color:#f59e0b');
+    }
+
+    tempKeys.forEach(function(k) {
       var stats = dayStats[k[0]];
       if (!stats) { bodyHtml += '<td><span class="peaks-nc">NC</span></td>'; return; }
-      var isTemp = k[0].charAt(0) === 't';
-      var hlMin = isTemp ? (stats.min === lowestTMin  ? ' hl-min' : '') : (stats.min === lowestHMin  ? ' hl-min' : '');
-      var hlAvg = isTemp ? (stats.avg === highestTAvg ? ' hl-avg' : '') : (stats.avg === highestHAvg ? ' hl-avg' : '');
-      var hlMax = isTemp ? (stats.max === highestTMax ? ' hl-max' : '') : (stats.max === highestHMax ? ' hl-max' : '');
+      var hlMin = stats.min === lowestTMin  ? ' hl-min' : '';
+      var hlAvg = stats.avg === highestTAvg ? ' hl-avg' : '';
+      var hlMax = stats.max === highestTMax ? ' hl-max' : '';
       bodyHtml += '<td><span class="' + hlMin.trim() + '">' + stats.min.toFixed(1) + '</span> / <span class="' + hlAvg.trim() + '">' + stats.avg.toFixed(1) + '</span> / <span class="' + hlMax.trim() + '">' + stats.max.toFixed(1) + '</span></td>';
     });
+
+    if (hasWx) {
+      var wxDayData2 = wxByDay[day];
+      bodyHtml += fmtWxCell(wxArrStats(wxDayData2 ? wxDayData2.hums : []), 'border-left:2px solid #475569;color:#06b6d4');
+    }
+
+    humKeys.forEach(function(k) {
+      var stats = dayStats[k[0]];
+      if (!stats) { bodyHtml += '<td><span class="peaks-nc">NC</span></td>'; return; }
+      var hlMin = stats.min === lowestHMin  ? ' hl-min' : '';
+      var hlAvg = stats.avg === highestHAvg ? ' hl-avg' : '';
+      var hlMax = stats.max === highestHMax ? ' hl-max' : '';
+      bodyHtml += '<td><span class="' + hlMin.trim() + '">' + stats.min.toFixed(1) + '</span> / <span class="' + hlAvg.trim() + '">' + stats.avg.toFixed(1) + '</span> / <span class="' + hlMax.trim() + '">' + stats.max.toFixed(1) + '</span></td>';
+    });
+
     bodyHtml += '</tr>';
   }
 
-  if (!allKeys.length) {
+  if (!tempKeys.length && !humKeys.length) {
     bodyHtml = '<tr><td colspan="2" class="peaks-nc" style="text-align:center;padding:20px">' +
       'No sensor data available</td></tr>';
   }
@@ -2366,6 +2414,9 @@ function renderWeatherCharts() {
       type: 'line', data: { datasets: uvDS },
       options: uvOpts, plugins: [nightShadingPlugin, dayLabelPlugin, dailyMinMaxPlugin, nowLinePlugin] });
   }
+
+  // Refresh daily summary table so Open-Meteo columns appear
+  if (typeof updatePeaksTable === 'function' && state.filteredEntries && state.filteredEntries.length) updatePeaksTable();
 }
 
 // =====================================================================
