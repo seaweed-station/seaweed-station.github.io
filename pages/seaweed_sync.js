@@ -155,6 +155,17 @@ function buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs
 
   for (var i = 0; i < entries.length; i++) {
     var syncCfg = parseSyncConfigFromField8(entries[i]._rawField8);
+    // Fallback for Supabase entries: use espnow_sync_period_s column directly
+    // (field8 is always null for Supabase data; satA/satB installed are inferred
+    //  from whether sat_a_sample_id / sat_b_sample_id are non-null in this entry)
+    if (!syncCfg && entries[i].espnowSyncPeriod_s > 0) {
+      var e = entries[i];
+      syncCfg = {
+        periodMs:      e.espnowSyncPeriod_s * 1000,
+        satAInstalled: e.satASampleId != null,
+        satBInstalled: e.satBSampleId != null
+      };
+    }
     if (!syncCfg) continue;
     var changed = syncCfg.periodMs !== lastPeriod ||
                   syncCfg.satAInstalled !== lastSatAInstalled ||

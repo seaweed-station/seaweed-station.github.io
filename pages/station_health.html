@@ -1518,12 +1518,13 @@ function parseSupabaseData(rows, station) {
     entry.satBTemp2 = r.sat_b_temp_2 !== null ? r.sat_b_temp_2 : null;
     entry.satBHum2  = r.sat_b_humidity_2 !== null ? r.sat_b_humidity_2 : null;
 
-    // System (field8 equivalent)
-    entry._rawField8 = null;  // Not applicable for Supabase data
-    entry.sdFreeKB   = null;  // Not in Supabase schema
-    entry.csq        = null;
-    entry.uploadOk   = null;
-    entry.syncDrift   = r.sat_a_sync_drift !== null ? r.sat_a_sync_drift : null;
+    // System diagnostics (previously packed in field8; now individual Supabase columns)
+    entry._rawField8        = null;  // Not applicable for Supabase data
+    entry.sdFreeKB          = r.sd_free_kb          != null ? r.sd_free_kb          : null;
+    entry.csq               = r.csq                 != null ? r.csq                 : null;
+    entry.uploadOk          = null;  // Not stored per-row; see device_status.last_upload_result
+    entry.syncDrift         = r.t0_sync_drift_s     != null ? r.t0_sync_drift_s     : null;
+    entry.espnowSyncPeriod_s = r.espnow_sync_period_s != null ? r.espnow_sync_period_s : null;
 
     entries.push(entry);
   }

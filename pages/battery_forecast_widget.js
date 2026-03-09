@@ -225,6 +225,7 @@ window.BatteryForecast = (function () {
       r2:                reg.r2,
       slope_pct_per_day: reg.slope * 86400000,
       pointCount:        usedWindow.pts.length,
+      trendDaysLeft:     latestY / (-reg.slope * 86400000),
       reason:            null,
     };
   }
@@ -389,6 +390,7 @@ window.BatteryForecast = (function () {
     var datasets = [];
     var info = {
       t0DaysLeft: null, satADaysLeft: null, satBDaysLeft: null,
+      t0TrendDaysLeft: null, satATrendDaysLeft: null, satBTrendDaysLeft: null,
       t0Mae: null, satAMae: null, satBMae: null,
       configAvailable: !!cfg,
       configSummary: BatteryModel.configSummary(cfg),
@@ -490,7 +492,8 @@ window.BatteryForecast = (function () {
       var t0Trend = buildTrendDataset(t0Actual, 'T0', C.t0Trend);
       if (t0Trend.dataset) {
         datasets.push(t0Trend.dataset);
-        info._trendConfidence.push({ label: 'T0', windowLabel: t0Trend.windowLabel, r2: t0Trend.r2, color: C.t0Trend, slope_pct_per_day: t0Trend.slope_pct_per_day });
+        info.t0TrendDaysLeft = t0Trend.trendDaysLeft;
+        info._trendConfidence.push({ label: 'T0', windowLabel: t0Trend.windowLabel, r2: t0Trend.r2, color: C.t0Trend, slope_pct_per_day: t0Trend.slope_pct_per_day, trendDaysLeft: t0Trend.trendDaysLeft });
       } else {
         if (t0Actual.length > 0) info._trendInsufficient.push({ label: 'T0', reason: t0Trend.reason, color: C.t0Trend });
       }
@@ -585,7 +588,8 @@ window.BatteryForecast = (function () {
       var satATrend = buildTrendDataset(satAActual, 'Sat-A', C.satATrend);
       if (satATrend.dataset) {
         datasets.push(satATrend.dataset);
-        info._trendConfidence.push({ label: 'Sat-A', windowLabel: satATrend.windowLabel, r2: satATrend.r2, color: C.satATrend, slope_pct_per_day: satATrend.slope_pct_per_day });
+        info.satATrendDaysLeft = satATrend.trendDaysLeft;
+        info._trendConfidence.push({ label: 'Sat-A', windowLabel: satATrend.windowLabel, r2: satATrend.r2, color: C.satATrend, slope_pct_per_day: satATrend.slope_pct_per_day, trendDaysLeft: satATrend.trendDaysLeft });
       } else {
         if (satAActual.length > 0) info._trendInsufficient.push({ label: 'Sat-A', reason: satATrend.reason, color: C.satATrend });
       }
@@ -679,7 +683,8 @@ window.BatteryForecast = (function () {
       var satBTrend = buildTrendDataset(satBActual, 'Sat-B', C.satBTrend);
       if (satBTrend.dataset) {
         datasets.push(satBTrend.dataset);
-        info._trendConfidence.push({ label: 'Sat-B', windowLabel: satBTrend.windowLabel, r2: satBTrend.r2, color: C.satBTrend, slope_pct_per_day: satBTrend.slope_pct_per_day });
+        info.satBTrendDaysLeft = satBTrend.trendDaysLeft;
+        info._trendConfidence.push({ label: 'Sat-B', windowLabel: satBTrend.windowLabel, r2: satBTrend.r2, color: C.satBTrend, slope_pct_per_day: satBTrend.slope_pct_per_day, trendDaysLeft: satBTrend.trendDaysLeft });
       } else {
         if (satBActual.length > 0) info._trendInsufficient.push({ label: 'Sat-B', reason: satBTrend.reason, color: C.satBTrend });
       }
@@ -881,25 +886,37 @@ window.BatteryForecast = (function () {
     }
 
     // Days remaining cards — accuracy merged in when available
-    function daysCard(label, days, mae, color) {
-      if (days === null) return '';
-      var dStr = days < 1 ? '< 1' : Math.round(days).toString();
-      var mStr = (days / 30.44).toFixed(1);
+    function daysCard(label, days, mae, color, trendDays) {
+      if (days === null && (trendDays === null || trendDays === undefined)) return '';
+      var body = '';
+      if (days !== null) {
+        var dStr = days < 1 ? '< 1' : Math.round(days).toString();
+        var mStr = (days / 30.44).toFixed(1);
+        body += '<div class="fc-card-value" style="color:' + color + '">'
+             +  dStr + ' <span class="fc-card-unit">days</span></div>'
+             + '<div class="fc-card-sub">' + mStr + ' mo &mdash; <span style="opacity:.65">calculated</span></div>';
+      }
+      if (trendDays !== null && trendDays !== undefined) {
+        var tdStr  = trendDays < 1 ? '&lt; 1' : Math.round(trendDays).toString();
+        var tdMStr = (trendDays / 30.44).toFixed(1);
+        body += '<div class="fc-card-value" style="color:' + color + ';opacity:0.7;font-size:1.15rem">'
+             +  tdStr + ' <span class="fc-card-unit">days</span></div>'
+             + '<div class="fc-card-sub">' + tdMStr + ' mo &mdash; <span style="color:#93c5fd;opacity:.85">trend</span></div>';
+      }
       var accLine = mae
         ? '<div class="fc-card-sub">\u00b1' + mae.mae.toFixed(1) + '% accuracy (' + mae.samples + ' pts)</div>'
         : '';
       return '<div class="fc-card" style="border-top:3px solid ' + color + '">'
            + '<div class="fc-card-label">' + label + '</div>'
-           + '<div class="fc-card-value" style="color:' + color + '">' + dStr + ' <span class="fc-card-unit">days</span></div>'
-           + '<div class="fc-card-sub">' + mStr + ' months</div>'
+           + body
            + accLine
            + '</div>';
     }
 
     html += '<div class="fc-cards">';
-    html += daysCard('T0 Gateway',  info.t0DaysLeft,   info.t0Mae,   C.t0Actual);
-    html += daysCard('Satellite A', info.satADaysLeft, info.satAMae, C.satAActual);
-    html += daysCard('Satellite B', info.satBDaysLeft, info.satBMae, C.satBActual);
+    html += daysCard('T0 Gateway',  info.t0DaysLeft,   info.t0Mae,   C.t0Actual,   info.t0TrendDaysLeft);
+    html += daysCard('Satellite A', info.satADaysLeft, info.satAMae, C.satAActual, info.satATrendDaysLeft);
+    html += daysCard('Satellite B', info.satBDaysLeft, info.satBMae, C.satBActual, info.satBTrendDaysLeft);
     html += '</div>';
 
     var el = document.getElementById('fcInfoCards');
@@ -915,10 +932,14 @@ window.BatteryForecast = (function () {
       } else {
         var parts = [];
         tOk.forEach(function (t) {
+          var dRemStr = (t.trendDaysLeft !== null && t.trendDaysLeft !== undefined)
+            ? ' &nbsp;\u2192 <strong style="color:#fbbf24">' + (t.trendDaysLeft < 1 ? '&lt;1' : Math.round(t.trendDaysLeft)) + ' d</strong>'
+            : '';
           parts.push('<span style="color:' + t.color + '">' + t.label + '</span>'
             + ' trend: <strong style="color:#e2e8f0">' + t.windowLabel + '</strong>'
             + ' &nbsp;R\u00b2=<strong style="color:#e2e8f0">' + Math.round(t.r2 * 100) + '%</strong>'
             + ' &nbsp;' + t.slope_pct_per_day.toFixed(2) + '%/day'
+            + dRemStr
           );
         });
         tFail.forEach(function (t) {
