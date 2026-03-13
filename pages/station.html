@@ -1214,7 +1214,7 @@ function parseFeeds(rawFeeds) {
 // =====================================================================
 // DATA LOADING + DEDUPLICATION
 // =====================================================================
-function handleNewData(data, sourceLabel) {
+function handleNewData(data, sourceLabel, persistCache) {
   if (!data || !data.feeds || !data.feeds.length) {
     console.warn('[Dashboard] No feed data in source:', sourceLabel);
     return;
@@ -1232,38 +1232,30 @@ function handleNewData(data, sourceLabel) {
   applyTimeRange();
   renderDashboard();
 
-  try {
-    localStorage.setItem('seaweed_cache_' + TABLE_ID, JSON.stringify({
-      allEntries:  state.allEntries,
-      channelInfo: state.channelInfo,
-      savedAt:     Date.now()
-    }));
-  } catch (e) { console.warn('[Cache] localStorage save failed:', e); }
+  if (persistCache !== false) {
+    try {
+      localStorage.setItem('seaweed_cache_' + TABLE_ID, JSON.stringify({
+        allEntries:  state.allEntries,
+        channelInfo: state.channelInfo,
+        savedAt:     Date.now()
+      }));
+    } catch (e) { console.warn('[Cache] localStorage save failed:', e); }
+  }
 }
 
 async function fetchLiveData(silent) {
-  var _cfg = getConfig();
-  var ch  = (_cfg.channelId || DEFAULTS.channelId).trim();
-  var key = (_cfg.apiKey    || DEFAULTS.apiKey).trim();
-  if (!ch || !key) {
-    if (!silent) { alert('Configure Channel ID and Read API Key in settings.html.'); }
-    return;
-  }
-
   var btn = document.getElementById('btnFetch');
   btn.innerHTML = '<span class="spinner"></span> Fetching...';
   btn.disabled  = true;
 
   try {
-    var url = 'https://api.thingspeak.com/channels/' + ch + '/feeds.json?api_key=' + key + '&results=8000';
-    var res = await fetch(url);
-    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
-    var data = await res.json();
-    handleNewData(data, 'Live fetch (' + new Date().toLocaleTimeString('en-GB') + ')');
+    var result = await fetchStationData(TABLE_ID);
+    var data = { channel: state.channelInfo || { id: TABLE_ID, name: STATION.title }, feeds: result.feeds };
+    handleNewData(data, 'Supabase live (' + new Date().toLocaleTimeString('en-GB') + ')');
   } catch (err) {
-    console.error('[Dashboard] Fetch failed:', err);
+    console.error('[Dashboard] Supabase fetch failed:', err);
     if (!silent) {
-      alert('Fetch failed: ' + err.message + '\n\nCheck your Channel ID/API Key and internet access.\nIf using file:// protocol, try "Load JSON" instead.');
+      alert('Fetch failed: ' + err.message + '\n\nCheck Supabase URL/Key in Settings.\nIf using file:// protocol, try "Load JSON" instead.');
     }
   } finally {
     btn.innerHTML = 'Fetch Live';
@@ -2855,34 +2847,63 @@ document.addEventListener('DOMContentLoaded', function () {
   // Auto-load merged_data.js if present
   // Accept both legacy THINGSPEAK_DATA and current STATION_DATA variable names
   var _autoData = window.STATION_DATA || window.THINGSPEAK_DATA;
+  var _localLoaded = false;
   if (_autoData) {
     console.log('[Dashboard] Auto-loaded merged_data.js (' +
       (window.STATION_DATA ? 'STATION_DATA' : 'THINGSPEAK_DATA') + ', ' +
       (_autoData.feeds ? _autoData.feeds.length : 0) + ' feeds)');
-    handleNewData(_autoData, 'Local file (' + STATION.dataFolder + '/merged_data.js)');
+    handleNewData(_autoData, 'Local file (' + STATION.dataFolder + '/merged_data.js)', false);
+    _localLoaded = true;
   } else {
     console.warn('[Dashboard] merged_data.js loaded but neither window.STATION_DATA nor window.THINGSPEAK_DATA found — check download_data.ps1 output');
-    // Restore from localStorage cache
-    try {
-      var _raw = localStorage.getItem('seaweed_cache_' + TABLE_ID);
-      if (_raw) {
-        var _cached = JSON.parse(_raw);
-        if (_cached.allEntries && _cached.allEntries.length) {
-          state.allEntries = _cached.allEntries.map(function(e) {
-            e.timestamp = new Date(e.timestamp);
-            return e;
-          });
-          state.channelInfo = _cached.channelInfo || null;
-          var _ageMin = Math.round((Date.now() - _cached.savedAt) / 60000);
-          var _ageStr = _ageMin < 60 ? _ageMin + 'm' : Math.round(_ageMin / 60) + 'h';
-          state.dataSource = 'Cached (' + _ageStr + ' ago)';
+  }
+
+  // Always attempt cache merge (whether local file was loaded or not)
+  try {
+    var _raw = localStorage.getItem('seaweed_cache_' + TABLE_ID);
+    if (_raw) {
+      var _cached = JSON.parse(_raw);
+      if (_cached.allEntries && _cached.allEntries.length) {
+        var _prevLatestTs = state.allEntries.length
+          ? state.allEntries[state.allEntries.length - 1].timestamp
+          : null;
+
+        // Build map from current entries, then merge cache on top.
+        // This preserves newest fetched-live rows across page reloads.
+        var _entryMap = new Map();
+        state.allEntries.forEach(function(e) {
+          _entryMap.set(e.entryId, e);
+        });
+
+        _cached.allEntries.forEach(function(e) {
+          e.timestamp = new Date(e.timestamp);
+          if (!isNaN(e.timestamp.getTime())) {
+            _entryMap.set(e.entryId, e);
+          }
+        });
+
+        var _merged = Array.from(_entryMap.values()).sort(function(a, b) {
+          return a.timestamp - b.timestamp;
+        });
+        state.allEntries = _merged;
+        state.channelInfo = _cached.channelInfo || state.channelInfo || null;
+
+        var _newLatestTs = _merged.length ? _merged[_merged.length - 1].timestamp : null;
+        if (_newLatestTs) {
+          if (!_localLoaded || !_prevLatestTs || _newLatestTs > _prevLatestTs) {
+            var _ageMin = Math.round((Date.now() - _cached.savedAt) / 60000);
+            var _ageStr = _ageMin < 60 ? _ageMin + 'm' : Math.round(_ageMin / 60) + 'h';
+            state.dataSource = 'Cached (' + _ageStr + ' ago)';
+          } else if (_localLoaded) {
+            state.dataSource = 'Local file + cache';
+          }
           applyTimeRange();
           renderDashboard();
-          console.log('[Dashboard] Restored ' + state.allEntries.length + ' entries from cache');
+          console.log('[Dashboard] Merged ' + _cached.allEntries.length + ' cached entries; now ' + state.allEntries.length + ' total');
         }
       }
-    } catch (e) { console.warn('[Cache] Restore failed:', e); }
-  }
+    }
+  } catch (e) { console.warn('[Cache] Merge failed:', e); }
 
   // Setup auto-refresh
   setupAutoRefresh();

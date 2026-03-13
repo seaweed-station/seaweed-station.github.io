@@ -83,9 +83,9 @@ function formatKB(kb) {
 // =====================================================================
 
 /** Default Supabase project URL (override via localStorage seaweed_dashboard_config.supabaseUrl) */
-var SUPABASE_URL_DEFAULT  = '';
+var SUPABASE_URL_DEFAULT  = 'https://qjtjmczixgjxxwmyabmk.supabase.co';   // TODO: replace with https://<project-id>.supabase.co
 /** Default Supabase anon key (override via localStorage) */
-var SUPABASE_ANON_KEY_DEFAULT = '';
+var SUPABASE_ANON_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqdGptY3ppeGdqeHh3bXlhYm1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjUzMzEsImV4cCI6MjA4ODIwMTMzMX0.K7NdFhCiHJdDpwwiERhH_GVH-AMqaMizPYegaiP2tqg';  // TODO: replace with your project's anon/public key
 
 /**
  * Get Supabase credentials from localStorage config (set by settings.html)
@@ -287,4 +287,121 @@ function triggerCIDownload() {
   }).finally(function () {
     if (btn) { btn.disabled = false; btn.innerHTML = '\u26A1 Download'; }
   });
+}
+
+// =====================================================================
+// SHARED SUPABASE DATA FETCH
+// =====================================================================
+
+/**
+ * Fetch sensor_readings for one station from Supabase.
+ * Returns rows as ThingSpeak-compatible feed objects via supabaseRowToFeed().
+ *
+ * @param {string} stationId - Device ID (e.g. 'perth', 'shangani', 'funzi')
+ * @param {Object} [opts]
+ * @param {number} [opts.limit=8000]   - Max rows
+ * @param {number} [opts.timeoutMs=30000]
+ * @returns {Promise<{feeds: Object[], source: string, rows: number, rawRows: Object[]}>}
+ *          Resolves with feed array + metadata.  Rejects on network/auth error.
+ */
+async function fetchStationData(stationId, opts) {
+  opts = opts || {};
+  var limit = opts.limit || 8000;
+  var supaCfg = getSupabaseConfig();
+  if (!supaCfg.url || !supaCfg.key ||
+      supaCfg.url === 'YOUR_SUPABASE_URL' || supaCfg.key === 'YOUR_SUPABASE_ANON_KEY') {
+    throw new Error('Supabase not configured');
+  }
+  var hdrs = supabaseHeaders(supaCfg.key);
+  var allRows = [];
+  var pageSize = 1000;
+  var offset = 0;
+  // Paginate to collect up to `limit` rows
+  while (offset < limit) {
+    var batchLimit = Math.min(pageSize, limit - offset);
+    var url = supaCfg.url + '/rest/v1/sensor_readings' +
+              '?device_id=eq.' + encodeURIComponent(stationId) +
+              '&order=recorded_at.asc' +
+              '&limit=' + batchLimit +
+              '&offset=' + offset;
+    var res = await fetchWithTimeout(url, opts.timeoutMs || 30000, { headers: hdrs });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var batch = await res.json();
+    if (!batch.length) break;
+    allRows = allRows.concat(batch);
+    if (batch.length < batchLimit) break; // last page
+    offset += batch.length;
+  }
+  // Convert to ThingSpeak-compatible feed format
+  var feeds = allRows.map(supabaseRowToFeed);
+  return { feeds: feeds, source: 'live', rows: allRows.length, rawRows: allRows };
+}
+
+/**
+ * Load station data with priority chain: Supabase → localStorage cache → static file.
+ *
+ * @param {string} stationId    - Device ID (e.g. 'perth', 'shangani', 'funzi')
+ * @param {Object} [opts]
+ * @param {string} [opts.cacheKey]     - localStorage key for cached feeds (default: 'seaweed_cache_<stationId>')
+ * @param {string} [opts.fileUrl]      - URL of the static merged_data.js fallback
+ * @param {number} [opts.limit=8000]   - Max Supabase rows
+ * @param {number} [opts.timeoutMs=30000]
+ * @param {function} [opts.onStatus]   - Callback(message) for progress updates
+ * @returns {Promise<{feeds: Object[], source: string, rows: number}>}
+ */
+async function loadStationData(stationId, opts) {
+  opts = opts || {};
+  var cacheKey = opts.cacheKey || ('seaweed_cache_' + stationId);
+  var status = opts.onStatus || function () {};
+
+  // --- 1. Try Supabase live fetch ---
+  try {
+    status('Fetching live data from Supabase\u2026');
+    var result = await fetchStationData(stationId, {
+      limit: opts.limit,
+      timeoutMs: opts.timeoutMs
+    });
+    // Cache the feeds for cross-page sharing (matches station.html format)
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify({
+        allEntries: result.feeds,
+        savedAt: Date.now()
+      }));
+    } catch (e) { /* quota exceeded — ignore */ }
+    status('Loaded ' + result.rows + ' rows from Supabase');
+    return { feeds: result.feeds, source: 'supabase', rows: result.rows };
+  } catch (supaErr) {
+    status('Supabase unavailable: ' + supaErr.message);
+  }
+
+  // --- 2. Try localStorage cache ---
+  try {
+    var cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      var data = JSON.parse(cached);
+      var feeds = data.allEntries || data;  // handle {allEntries:...} or raw [...] format
+      if (Array.isArray(feeds) && feeds.length) {
+        var ts = data.savedAt ? new Date(data.savedAt).toISOString() : 'unknown';
+        status('Using cached data (' + feeds.length + ' entries, saved ' + ts + ')');
+        return { feeds: feeds, source: 'cache', rows: feeds.length };
+      }
+    }
+  } catch (e) { /* corrupt cache — ignore */ }
+
+  // --- 3. Fall back to static file ---
+  if (opts.fileUrl) {
+    status('Loading from static file\u2026');
+    var res = await fetchWithTimeout(opts.fileUrl, opts.timeoutMs || 30000);
+    if (!res.ok) throw new Error('Static file HTTP ' + res.status);
+    var text = await res.text();
+    // Static files define a global variable; eval the script to extract feeds
+    var scriptEl = document.createElement('script');
+    scriptEl.textContent = text;
+    document.head.appendChild(scriptEl);
+    document.head.removeChild(scriptEl);
+    status('Loaded from static file');
+    return { feeds: null, source: 'file', rows: 0 }; // page will use the global var set by the script
+  }
+
+  throw new Error('No data source available for ' + stationId);
 }

@@ -1545,33 +1545,17 @@ async function fetchLiveAll() {
   btn.disabled  = true;
   status.textContent = '';
 
-  var supaCfg = getSupabaseConfig();
-  if (!supaCfg.url || !supaCfg.key) {
-    status.innerHTML = '<span style="color:var(--danger)">Supabase not configured — set URL + key in Settings</span>';
-    btn.innerHTML = '&#128752; Fetch Live';
-    btn.disabled = false;
-    return;
-  }
-
   var fetched  = 0;
   var errors   = [];
   var totalNew = 0;
-  var hdrs     = supabaseHeaders(supaCfg.key);
 
   for (var i = 0; i < STATIONS.length; i++) {
     var station = STATIONS[i];
     status.textContent = 'Fetching ' + station.name + ' (' + (i+1) + '/' + STATIONS.length + ')...';
     await yieldToBrowser();
     try {
-      var url = supaCfg.url + '/rest/v1/sensor_readings' +
-                '?device_id=eq.' + station.id +
-                '&order=recorded_at.asc' +
-                '&limit=8000';
-
-      var res = await fetchWithTimeout(url, 30000, { headers: hdrs });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      var rows = await res.json();
-      var newParsed = parseSupabaseData(rows, station);
+      var result = await fetchStationData(station.id);
+      var newParsed = parseSupabaseData(result.rawRows, station);
       var newCount = newParsed.entries.length;
 
       if (newCount > 0) {

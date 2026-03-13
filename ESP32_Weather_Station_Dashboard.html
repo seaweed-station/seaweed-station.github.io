@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="pages/seaweed_common.js"></script>
 <style>
 /* -- CSS Variables ------------------------------------------------- */
 :root {
@@ -45,6 +46,17 @@ a:hover { text-decoration: underline; }
 }
 .btn:hover { background: var(--bg-hover); border-color: var(--accent); }
 .btn-sm { padding: 4px 10px; font-size: 0.75rem; }
+.btn-primary { background: var(--success); color: #fff; border-color: var(--success); }
+.btn-primary:hover { background: #16a34a; border-color: #16a34a; }
+.fetch-status { font-size: 0.72rem; color: var(--text-sec); }
+.source-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  font-size: 0.6rem; font-weight: 600; text-transform: uppercase; margin-left: 6px;
+}
+.source-live { background: var(--success-dim); color: var(--success); }
+.source-cache { background: var(--warning-dim); color: var(--warning); }
+.source-file { background: #1e293b; color: var(--text-muted); border: 1px solid var(--border); }
+.auto-refresh-label { font-size: 0.65rem; color: var(--text-muted); }
 
 /* -- Main layout --------------------------------------------------- */
 .main { max-width: 1400px; margin: 0 auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 24px; }
@@ -155,6 +167,9 @@ a:hover { text-decoration: underline; }
     </div>
   </div>
   <div class="header-actions">
+    <button class="btn btn-primary" id="btnFetchAll" onclick="fetchAllLive()">&#128752; Fetch Live</button>
+    <span class="fetch-status" id="fetchStatus"></span>
+    <span class="auto-refresh-label" id="autoRefreshLabel"></span>
     <a class="btn btn-sm" href="pages/battery_estimator.html" title="Battery Estimator" style="font-size:0.95rem">&#128267; Battery</a>
     <a class="btn btn-sm" href="pages/station_health.html" title="Station Health">&#128267; Station Health</a>
     <a class="btn btn-sm" href="pages/settings.html">&#9881; Settings</a>
@@ -234,7 +249,8 @@ var TABLES = [
     weather: { lat: -31.87, lon: 115.90 },
     channelId: '3246116',
     apiKey: '7K00B1Y8DNOTEIM0',
-    temp: true, /* flag: temporary page */
+    temp: true,
+    legacy: true, /* WROOM: ThingSpeak legacy, retiring soon */
   },
 ];
 
@@ -251,11 +267,6 @@ TABLES.forEach(function(t) {
 // =====================================================================
 // UTILITY: Parse feed entry into usable values
 // =====================================================================
-function csvParse(val) {
-  if (!val || typeof val !== 'string') return [];
-  return val.split(',').map(function(v) { var n = parseFloat(v); return isNaN(n) ? null : n; });
-}
-
 function parseEntry(f) {
   var ts = new Date(f.created_at);
   var t0Sensors = csvParse(f.field2);
@@ -299,14 +310,6 @@ function parseEntry(f) {
     satAFwVersion: satAFw,
     satBFwVersion: satBFw,
   };
-}
-
-function timeAgo(d) {
-  var ms = Date.now() - d.getTime();
-  if (ms < 60000) return Math.round(ms/1000) + 's ago';
-  if (ms < 3600000) return Math.round(ms/60000) + 'm ago';
-  if (ms < 86400000) return Math.round(ms/3600000) + 'h ago';
-  return Math.round(ms/86400000) + 'd ago';
 }
 
 function findLast(entries, key) {
@@ -571,7 +574,7 @@ function renderWroomCard(table, summary) {
       '<div class="spark-box"><div class="spark-title">Humidity</div><div class="spark-wrap"><canvas id="spark-hum-wroom"></canvas></div></div>' +
     '</div>' +
     '<div style="font-size:0.7rem;color:var(--text-muted);text-align:right">' +
-      'Last update: ' + timeAgo(summary.lastUpdate) + ' &bull; ' + summary.entries + ' entries total' +
+      'Last update: ' + timeAgo(summary.lastUpdate, true) + ' &bull; ' + summary.entries + ' entries total' +
     '</div>';
 
   return card;
@@ -755,7 +758,8 @@ function renderTableCard(table, summary) {
 
     '<div style="font-size:0.7rem;color:var(--text-muted);text-align:right">' +
       (noData ? 'No sensor data yet &mdash; sensors not deployed' :
-        'Last update: ' + timeAgo(summary.lastUpdate) + ' &bull; ' + summary.entries + ' entries total') +
+        'Last update: ' + timeAgo(summary.lastUpdate, true) + ' &bull; ' + summary.entries + ' entries' +
+        (_dataSource[table.id] ? ' <span class="source-badge source-' + _dataSource[table.id] + '">' + _dataSource[table.id] + '</span>' : '')) +
     '</div>';
 
   return card;
@@ -894,29 +898,59 @@ function loadTableData(table) {
     });
   }
 
-  return new Promise(function(resolve) {
-    var jsUrl = table.dataFile;
+  // --- Supabase-first data loading with fallbacks ---
+  // Priority: 1) Supabase live fetch  2) localStorage cache  3) merged_data.js file
+  return new Promise(async function(resolve) {
+    // --- 1. Try Supabase live fetch ---
+    try {
+      var result = await fetchStationData(table.id);
+      if (result && result.feeds && result.feeds.length) {
+        var entries = result.feeds.map(parseEntry).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
+        if (entries.length) {
+          _dataSource[table.id] = 'live';
+          resolve(entries);
+          return;
+        }
+      }
+    } catch (e) {
+      console.log('[Overview] Supabase fetch failed for ' + table.id + ': ' + e.message);
+    }
 
-    // Fallback: read from the localStorage cache written by station.html when
-    // the user fetches live data on that page.
+    // --- 2. Try localStorage cache ---
     function resolveFromCache() {
       try {
         var raw = localStorage.getItem('seaweed_cache_' + table.id);
         if (raw) {
           var cached = JSON.parse(raw);
-          if (cached.allEntries && cached.allEntries.length) {
-            var entries = cached.allEntries.map(function(e) {
-              e.timestamp = new Date(e.timestamp);
-              return e;
-            }).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
-            if (entries.length) { resolve(entries); return; }
+          var arr = cached.allEntries || cached;
+          if (Array.isArray(arr) && arr.length) {
+            // Cache may contain feed objects or parsed entry objects
+            var entries;
+            if (arr[0].field1 !== undefined) {
+              // Feed format from fetchStationData cache
+              entries = arr.map(parseEntry).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
+            } else {
+              // Already-parsed entry format from station.html cache
+              entries = arr.map(function(e) {
+                e.timestamp = new Date(e.timestamp);
+                return e;
+              }).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
+            }
+            if (entries.length) {
+              _dataSource[table.id] = 'cache';
+              resolve(entries);
+              return;
+            }
           }
         }
       } catch (e) {}
-      resolve(null);
+      return false;
     }
+    if (resolveFromCache() !== false) return;
 
-    if (!jsUrl) { resolveFromCache(); return; }
+    // --- 3. Fall back to static merged_data.js file ---
+    var jsUrl = table.dataFile;
+    if (!jsUrl) { resolve(null); return; }
 
     var script = document.createElement('script');
     script.src = jsUrl;
@@ -925,18 +959,113 @@ function loadTableData(table) {
         var data = window.STATION_DATA;
         delete window.STATION_DATA;
         var entries = (data.feeds || []).map(parseEntry).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
-        if (entries.length) { resolve(entries); } else { resolveFromCache(); }
+        if (entries.length) {
+          _dataSource[table.id] = 'file';
+          resolve(entries);
+        } else {
+          resolve(null);
+        }
       } else {
-        resolveFromCache();
+        resolve(null);
       }
       script.remove();
     };
     script.onerror = function() {
-      resolveFromCache();
+      resolve(null);
       script.remove();
     };
     document.head.appendChild(script);
   });
+}
+
+var _dataSource = {};  // tableId -> 'live' | 'cache' | 'file'
+var _autoRefreshTimer = null;
+
+async function fetchAllLive() {
+  var btn = document.getElementById('btnFetchAll');
+  var statusEl = document.getElementById('fetchStatus');
+  btn.innerHTML = '<span class="spinner"></span> Fetching...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+
+  var fetched = 0, errors = [];
+
+  for (var i = 0; i < TABLES.length; i++) {
+    var table = TABLES[i];
+    if (table.legacy) continue;  // Legacy stations (e.g. WROOM) stay on their own data source
+    statusEl.textContent = 'Fetching ' + table.name + '...';
+    try {
+      var result = await fetchStationData(table.id);
+      if (result && result.feeds && result.feeds.length) {
+        var entries = result.feeds.map(parseEntry).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
+        if (entries.length) {
+          tableEntries[table.id] = entries;
+          _dataSource[table.id] = 'live';
+          fetched++;
+        }
+      }
+    } catch (err) {
+      console.error('[Overview] Fetch failed for ' + table.name + ':', err);
+      errors.push(table.name + ': ' + err.message);
+    }
+  }
+
+  // Re-render all cards
+  renderAllCards();
+
+  btn.innerHTML = '&#128752; Fetch Live';
+  btn.disabled = false;
+  var ts = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+  if (errors.length) {
+    statusEl.innerHTML = '<span style="color:var(--warning)">' + fetched + ' OK, ' + errors.length + ' failed &mdash; ' + ts + '</span>';
+  } else if (fetched > 0) {
+    statusEl.innerHTML = '<span style="color:var(--success)">' + fetched + ' stations updated &mdash; ' + ts + '</span>';
+  } else {
+    statusEl.innerHTML = '<span style="color:var(--text-muted)">No updates &mdash; ' + ts + '</span>';
+  }
+}
+
+function renderAllCards() {
+  var grid = document.getElementById('tableGrid');
+  grid.innerHTML = '';
+  for (var i = 0; i < TABLES.length; i++) {
+    var table = TABLES[i];
+    var entries = tableEntries[table.id];
+    var card;
+    if (table.id === 'wroom') {
+      var wroomSummary = computeWroomSummary(entries);
+      card = renderWroomCard(table, wroomSummary);
+    } else if (entries && entries.length) {
+      var summary = computeSummary(entries);
+      card = renderTableCard(table, summary);
+    } else {
+      card = renderTableCard(table, null);
+    }
+    grid.appendChild(card);
+    // Re-render sparklines
+    if (table.id === 'wroom') {
+      if (entries) renderSparkline('spark-temp-wroom', computeWroomSummary(entries).sparkTemp, '#ef4444');
+      if (entries) renderSparkline('spark-hum-wroom', computeWroomSummary(entries).sparkHum, '#3b82f6');
+    } else {
+      var sum = entries ? computeSummary(entries) : null;
+      if (sum && sum.sparkTemp) {
+        renderSparkline('spark-temp-' + table.id, sum.sparkTemp, '#ef4444');
+        renderSparkline('spark-hum-'  + table.id, sum.sparkHum,  '#3b82f6');
+      }
+    }
+  }
+}
+
+function setupAutoRefresh() {
+  if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+  _autoRefreshTimer = null;
+  var mins = 15;  // 15-minute auto-refresh
+  var label = document.getElementById('autoRefreshLabel');
+  _autoRefreshTimer = setInterval(function() {
+    console.log('[Overview] Auto-refresh triggered');
+    fetchAllLive();
+  }, mins * 60000);
+  if (label) label.textContent = 'Auto-refresh: every ' + mins + 'm';
 }
 
 // =====================================================================
@@ -997,6 +1126,9 @@ async function init() {
       renderSparkline('spark-hum-'  + cards[j].table.id, cards[j].summary.sparkHum,  '#3b82f6');
     }
   }
+
+  // Start auto-refresh
+  setupAutoRefresh();
 }
 
 document.addEventListener('DOMContentLoaded', init);
