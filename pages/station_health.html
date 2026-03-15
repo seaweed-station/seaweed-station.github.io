@@ -158,6 +158,7 @@ if (!sessionStorage.getItem('sw_auth')) { window.location.href = '../login.html'
       <a class="btn" href="perth_wroom.html">Perth WROOM</a>
       <a class="btn" href="station.html?table=shangani">Shangani</a>
       <a class="btn" href="station.html?table=funzi">Funzi</a>
+      <a class="btn" href="station.html?table=spare">Spare</a>
       <button class="btn-fetch" id="btnFetchAll" onclick="fetchLiveAll()" title="Pull latest data from Supabase for all stations">&#128752; Fetch Live</button>
       <button class="btn" id="btnTriggerDL" onclick="triggerCIDownload()" title="Trigger GitHub Actions to download fresh data">&#9889; Download</button>
       <span class="fetch-status" id="fetchStatus"></span>
@@ -181,6 +182,7 @@ if (!sessionStorage.getItem('sw_auth')) { window.location.href = '../login.html'
           <option value="perth">Perth TT</option>
           <option value="shangani">Shangani</option>
           <option value="funzi">Funzi</option>
+          <option value="spare">Spare</option>
         </select>
         <span style="font-size:11px;color:#64748b;">From</span>
         <input type="date" id="fcStartDate" style="background:#0f172a;border:1px solid #334155;border-radius:4px;color:#94a3b8;font-size:11px;padding:2px 6px;cursor:pointer;">
@@ -234,6 +236,7 @@ var STATIONS = [
   { id: 'perth',    name: 'Perth Test Table',          defaultFolder: 'data_3262071_TT', configKey: 'perth',    type: 'gateway', tz: 'Australia/Perth' },
   { id: 'shangani', name: 'Shangani Aramani, Kenya',   defaultFolder: 'data_Shangani',   configKey: 'shangani', type: 'gateway', tz: 'Africa/Nairobi' },
   { id: 'funzi',    name: 'Funzi Island, Kenya',       defaultFolder: 'data_Funzi',      configKey: 'funzi',    type: 'gateway', tz: 'Africa/Nairobi' },
+  { id: 'spare',    name: 'Spare Station',             defaultFolder: 'data_spare',      configKey: 'spare',    type: 'gateway', tz: 'UTC' },
 ];
 
 // Timezone helpers (all display uses UTC)

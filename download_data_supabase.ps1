@@ -34,6 +34,7 @@ $defaultStations = @(
     @{ id = "perth";    name = "Perth Test Table";    dataFolder = "data_3262071_TT" }
     @{ id = "shangani"; name = "Shangani Aramani";    dataFolder = "data_Shangani" }
     @{ id = "funzi";    name = "Funzi Island";        dataFolder = "data_Funzi" }
+    @{ id = "spare";    name = "Spare Station";       dataFolder = "data_spare" }
 )
 
 $cfg = @{
@@ -146,12 +147,14 @@ function ConvertTo-ThingSpeakFeed {
     # field1: battery %
     $f1 = if ($null -ne $row.battery_pct) { [string]$row.battery_pct } else { $null }
 
-    # field2: temp1,hum1,temp2,hum2
+    # field2: temp1,hum1,temp2,hum2,temp3,hum3
     $f2Parts = @(
         $(if ($null -ne $row.temp_1)     { $row.temp_1 }     else { "" }),
         $(if ($null -ne $row.humidity_1)  { $row.humidity_1 }  else { "" }),
         $(if ($null -ne $row.temp_2)     { $row.temp_2 }     else { "" }),
-        $(if ($null -ne $row.humidity_2)  { $row.humidity_2 }  else { "" })
+        $(if ($null -ne $row.humidity_2)  { $row.humidity_2 }  else { "" }),
+        $(if ($null -ne $row.temp_3)     { $row.temp_3 }     else { "" }),
+        $(if ($null -ne $row.humidity_3)  { $row.humidity_3 }  else { "" })
     )
     $f2 = $f2Parts -join ","
 

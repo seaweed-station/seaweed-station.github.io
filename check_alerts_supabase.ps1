@@ -70,7 +70,8 @@ if ($stationsCfg.Count -eq 0) {
     $stationsCfg = @(
         @{ id = "perth";    name = "Perth Test Table" },
         @{ id = "shangani"; name = "Shangani Aramani" },
-        @{ id = "funzi";    name = "Funzi Island" }
+        @{ id = "funzi";    name = "Funzi Island" },
+        @{ id = "spare";    name = "Spare Station" }
     )
 }
 
@@ -85,7 +86,7 @@ function Get-LatestReadings {
                "?device_id=eq.$deviceId" +
                "&order=recorded_at.desc" +
                "&limit=$results" +
-               "&select=id,recorded_at,battery_pct,temp_1,temp_2,battery_v"
+               "&select=id,recorded_at,battery_pct,temp_1,temp_2,temp_3,battery_v"
         $rows = Invoke-RestMethod -Uri $url -Headers $supaHeaders -Method Get -TimeoutSec 20
         return $rows
     } catch {
@@ -230,6 +231,7 @@ foreach ($station in $stationsCfg) {
     $tempValues = @()
     if ($null -ne $latest.temp_1) { $tempValues += $latest.temp_1 }
     if ($null -ne $latest.temp_2) { $tempValues += $latest.temp_2 }
+    if ($null -ne $latest.temp_3) { $tempValues += $latest.temp_3 }
 
     $overtempTitle = "[CRITICAL] $($station.name) - overtemp"
     $overtempFound = $false
