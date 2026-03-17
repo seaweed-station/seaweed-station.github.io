@@ -3,6 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <script>if(sessionStorage.getItem('sw_auth')!=='ok'){location.replace('../login.html?r='+encodeURIComponent(location.href));}</script>
+<script>
+(function () {
+  var SETTINGS_PW = 'changeme';
+  var SETTINGS_KEY = 'sw_settings_auth';
+  if (sessionStorage.getItem(SETTINGS_KEY) === 'ok') return;
+
+  var input = window.prompt('Enter settings password:');
+  if (input !== SETTINGS_PW) {
+    alert('Incorrect settings password.');
+    location.replace('../ESP32_Weather_Station_Dashboard.html');
+    return;
+  }
+  sessionStorage.setItem(SETTINGS_KEY, 'ok');
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Settings -- Seaweed Station Dashboard</title>
 <style>
@@ -580,6 +595,12 @@ input.wide { max-width: none; }
 <script>
 "use strict";
 
+function ensureSettingsUnlocked() {
+  if (sessionStorage.getItem('sw_settings_auth') === 'ok') return true;
+  alert('Settings are locked. Reload and enter the settings password.');
+  return false;
+}
+
 //  Get current form values as a config object 
 // Auto-compute data subfolder name: data_(channelId)_(suffix) or data_(suffix) if no ID yet
 function getDataFolder(channelId, suffix) {
@@ -660,6 +681,7 @@ function updatePreviews() {
 
 //  Save to localStorage 
 function saveSettings() {
+  if (!ensureSettingsUnlocked()) return;
   var cfg = getFormConfig();
   localStorage.setItem('seaweed_dashboard_config', JSON.stringify(cfg));
 
@@ -672,6 +694,7 @@ function saveSettings() {
 
 //  Download config.json 
 function downloadConfigJson() {
+  if (!ensureSettingsUnlocked()) return;
   var cfg  = getFormConfig();
   var json = buildConfigJson(cfg);
   var blob = new Blob([json], { type: 'application/json' });
@@ -705,6 +728,7 @@ function copyCode(elId, btn) {
 
 //  GitHub PAT (stored separately — sensitive) 
 function saveGithubPat() {
+  if (!ensureSettingsUnlocked()) return;
   var pat = (document.getElementById('githubPat').value || '').trim();
   if (pat) {
     localStorage.setItem('seaweed_github_pat', pat);
@@ -717,6 +741,7 @@ function saveGithubPat() {
 }
 
 function triggerCIDownload() {
+  if (!ensureSettingsUnlocked()) return;
   var pat = localStorage.getItem('seaweed_github_pat');
   if (!pat) {
     alert('Set a GitHub Personal Access Token above first (needs actions:write scope).');

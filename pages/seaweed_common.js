@@ -211,6 +211,8 @@ function supabaseRowToFeed(row) {
     humidity_1:     n(row.humidity_1),
     temp_2:         n(row.temp_2),
     humidity_2:     n(row.humidity_2),
+    temp_3:         n(row.temp_3),
+    humidity_3:     n(row.humidity_3),
     // Sat-A
     sat_a_battery_v:   n(row.sat_a_battery_v),
     sat_a_battery_pct: n(row.sat_a_battery_pct),

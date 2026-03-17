@@ -306,6 +306,45 @@ function lttbDownsample(data, maxPts) {
 
 var stationData = {}; // { stationId: { entries: [], raw: {} } }
 var _stationDiag = {}; // v2: { stationId: { upload: <row>, sync: { A: <row>, B: <row> } } }
+var _stationSyncTimeline = {}; // { stationId: sync_sessions[] }
+
+async function loadStationDiagnostics(stationId) {
+  try {
+    var ulSess = await fetchLatestUploadSession(stationId);
+    var syncSess = await fetchLatestSyncSessions(stationId);
+    var syncRows = await fetchSyncSessions(stationId, { limit: 2000, timeoutMs: 20000 });
+    _stationDiag[stationId] = { upload: ulSess, sync: syncSess };
+    _stationSyncTimeline[stationId] = Array.isArray(syncRows) ? syncRows : [];
+  } catch (diagErr) {
+    console.warn('[Health] Diagnostics fetch failed for ' + stationId + ':', diagErr);
+    _stationDiag[stationId] = { upload: null, sync: {} };
+    _stationSyncTimeline[stationId] = [];
+  }
+}
+
+async function refreshDiagnosticsAllBackground() {
+  for (var i = 0; i < STATIONS.length; i++) {
+    var st = STATIONS[i];
+    if (!stationData[st.id] || !stationData[st.id].entries || !stationData[st.id].entries.length) continue;
+    await loadStationDiagnostics(st.id);
+    refreshStationDiagnosticsUI(st.id);
+  }
+}
+
+function refreshStationDiagnosticsUI(stationId) {
+  var data = stationData[stationId];
+  if (!data || !data.entries || !data.entries.length) return;
+  var body = document.getElementById('body_' + stationId);
+  if (!body) return;
+
+  var existingSummary = body.querySelector('.summary-row');
+  if (existingSummary) existingSummary.remove();
+  renderSummaryCards(body, data.entries, stationId);
+
+  if (_stationChartsRendered[stationId]) {
+    setStationRange(stationId, stationRanges[stationId] || 'week');
+  }
+}
 
 function latestInstalledFlag(entries, key) {
   if (!entries || !entries.length) return null;
@@ -879,57 +918,6 @@ function renderBatteryCharts(container, entries, stationId, range) {
       borderColor: color, backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: false };
   }
 
-  function makeCalculatedT0VoltageDS(data) {
-    if (typeof BatteryModel === 'undefined' || !BatteryModel.calcT0Daily || !BatteryModel.projectVoltageCurve) return null;
-    var latest = data[data.length - 1];
-    if (!latest || latest.t0BatPct === null) return null;
-
-    var cfg = null;
-    if (latest._rawField8 && BatteryModel.parseField8Config) {
-      cfg = BatteryModel.parseField8Config(latest._rawField8);
-    }
-    if (!cfg) {
-      cfg = {
-        deployMode: 1,
-        sleepEnable: true,
-        samplePeriod_s: 600,
-        tsBulkInterval_s: 900,
-        tsBulkFreqHours: 24,
-        espnowSyncPeriod_s: 10800,
-        satAInstalled: true,
-        satBInstalled: true,
-      };
-    }
-
-    var est = BatteryModel.calcT0Daily(cfg);
-    var curve = BatteryModel.projectVoltageCurve(
-      latest.t0BatPct,
-      latest.timestamp,
-      est.dailyTotal_mAh,
-      est.batteryCapacity,
-      est.derating,
-      {
-        boardKind: 't0',
-        fullV: 4.2,
-        cutoffV: 3.3,
-        maxDays: Math.max(7, Math.min(180, Math.ceil(est.lifetimeDays || 30)))
-      }
-    );
-    if (!curve || !curve.length) return null;
-
-    return {
-      label: 'T0 Model',
-      data: curve.map(function(p) { return { x: p.time, y: p.voltage }; }),
-      borderColor: '#f87171',
-      backgroundColor: 'transparent',
-      borderWidth: 1.8,
-      borderDash: [6, 4],
-      pointRadius: 0,
-      tension: 0.25,
-      fill: false,
-    };
-  }
-
   makeLiveChart(batBox, batCanvas, 'Battery % \u2013 ' + rangeLabel(range), {
     type: 'line',
     data: { datasets: (function() {
@@ -965,12 +953,24 @@ function renderSyncCharts(container, entries, stationId, range) {
   if (!entries || !entries.length) return;
   var satAEnabled = isSatelliteInstalled(entries, 'A');
   var satBEnabled = isSatelliteInstalled(entries, 'B');
+  var rangeStartMs = entries[0].timestamp.getTime();
+  var rangeEndMs = entries[entries.length - 1].timestamp.getTime();
+  var syncRows = (_stationSyncTimeline[stationId] || []).filter(function(row) {
+    var ts = new Date(ensureUTC(row && row.sync_started_at)).getTime();
+    return !isNaN(ts) && ts >= rangeStartMs && ts <= rangeEndMs;
+  });
   // Check if any sync/RSSI data exists
-  var hasDrift = entries.some(function(e) {
+  var hasDrift = syncRows.some(function(row) {
+    var n = (row && row.node_id ? String(row.node_id) : '').toUpperCase();
+    return ((n === 'A' && satAEnabled) || (n === 'B' && satBEnabled)) && row.sat_drift_s !== null && row.sat_drift_s !== undefined;
+  }) || entries.some(function(e) {
     return (satAEnabled && e.satASyncDrift !== null) || (satBEnabled && e.satBSyncDrift !== null);
   });
   var hasSystemDrift = entries.some(function(e) { return e.syncDrift !== null; });
-  var hasRssi  = entries.some(function(e) {
+  var hasRssi  = syncRows.some(function(row) {
+    var n = (row && row.node_id ? String(row.node_id) : '').toUpperCase();
+    return ((n === 'A' && satAEnabled) || (n === 'B' && satBEnabled)) && row.sat_rssi_avg !== null && row.sat_rssi_avg !== undefined && row.sat_rssi_avg !== 0;
+  }) || entries.some(function(e) {
     return (satAEnabled && e.satARssi !== null && e.satARssi !== 0) || (satBEnabled && e.satBRssi !== null && e.satBRssi !== 0);
   });
   var hasSyncData = entries.some(function(e) {
@@ -996,8 +996,6 @@ function renderSyncCharts(container, entries, stationId, range) {
 
     var byBucket = {}, bucketKeys = [], labels = [];
     var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    var rangeStartMs = entries[0].timestamp.getTime();
-    var rangeEndMs = entries[entries.length - 1].timestamp.getTime();
     var syncRangeCacheKey = stationId + '_sync_' + range;
     if (!_syncWindowCache[syncRangeCacheKey]) {
       _syncWindowCache[syncRangeCacheKey] = {
@@ -1130,16 +1128,27 @@ function renderSyncCharts(container, entries, stationId, range) {
 
   container.appendChild(row);
 
-  var recent = entries;
-  var MAX_POINT_GAP_MS = 60 * 60000;
-
   var satADriftSeries = [], satBDriftSeries = [], sysDriftSeries = [];
   var satARssiSeries = [], satBRssiSeries = [];
-  var lastSatASampleId = null, lastSatBSampleId = null;
-  var satALastDrift = null, satBLastDrift = null;
-  var satALastRssi = null, satBLastRssi = null;
-  var satALastDriftTs = null, satBLastDriftTs = null;
-  var satALastRssiTs = null, satBLastRssiTs = null;
+
+  // Primary source (v2): sync_sessions timeline
+  if (syncRows.length) {
+    syncRows.forEach(function(row) {
+      var t = new Date(ensureUTC(row.sync_started_at));
+      if (isNaN(t.getTime())) return;
+      var node = (row.node_id || '').toUpperCase();
+      if (node === 'A') {
+        if (row.sat_drift_s !== null && row.sat_drift_s !== undefined) satADriftSeries.push({ x: t, y: row.sat_drift_s });
+        if (row.sat_rssi_avg !== null && row.sat_rssi_avg !== undefined && row.sat_rssi_avg !== 0) satARssiSeries.push({ x: t, y: row.sat_rssi_avg });
+      } else if (node === 'B' && satBEnabled) {
+        if (row.sat_drift_s !== null && row.sat_drift_s !== undefined) satBDriftSeries.push({ x: t, y: row.sat_drift_s });
+        if (row.sat_rssi_avg !== null && row.sat_rssi_avg !== undefined && row.sat_rssi_avg !== 0) satBRssiSeries.push({ x: t, y: row.sat_rssi_avg });
+      }
+    });
+  }
+
+  var recent = entries;
+  var MAX_POINT_GAP_MS = 60 * 60000;
 
   // Session config is read per-entry (re-parse only on field8 change) so that
   // interval changes during testing are correctly reflected in the deduplication threshold.
@@ -1147,6 +1156,14 @@ function renderSyncCharts(container, entries, stationId, range) {
   var _prevRawField8 = null;
   var _expectedSessionMs = 0;
   var _lastSysDriftTs = null;
+
+  // Legacy fallback for pre-v2 datasets where drift/RSSI lived in entry fields.
+  var _needLegacySatSeries = !satADriftSeries.length && !satBDriftSeries.length && !satARssiSeries.length && !satBRssiSeries.length;
+  var lastSatASampleId = null, lastSatBSampleId = null;
+  var satALastDrift = null, satBLastDrift = null;
+  var satALastRssi = null, satBLastRssi = null;
+  var satALastDriftTs = null, satBLastDriftTs = null;
+  var satALastRssiTs = null, satBLastRssiTs = null;
 
   recent.forEach(function(e) {
     var tsMs = e.timestamp.getTime();
@@ -1165,7 +1182,7 @@ function renderSyncCharts(container, entries, stationId, range) {
       _prevRawField8 = e._rawField8;
     }
 
-    if (e.satASyncDrift !== null) {
+    if (_needLegacySatSeries && e.satASyncDrift !== null) {
       var emitSatADrift = satANewSync || satALastDrift === null || e.satASyncDrift !== satALastDrift || satALastDriftTs === null || (tsMs - satALastDriftTs >= MAX_POINT_GAP_MS);
       if (emitSatADrift) {
         satADriftSeries.push({ x: e.timestamp, y: e.satASyncDrift });
@@ -1173,7 +1190,7 @@ function renderSyncCharts(container, entries, stationId, range) {
         satALastDriftTs = tsMs;
       }
     }
-    if (satBEnabled && e.satBSyncDrift !== null) {
+    if (_needLegacySatSeries && satBEnabled && e.satBSyncDrift !== null) {
       var emitSatBDrift = satBNewSync || satBLastDrift === null || e.satBSyncDrift !== satBLastDrift || satBLastDriftTs === null || (tsMs - satBLastDriftTs >= MAX_POINT_GAP_MS);
       if (emitSatBDrift) {
         satBDriftSeries.push({ x: e.timestamp, y: e.satBSyncDrift });
@@ -1196,7 +1213,7 @@ function renderSyncCharts(container, entries, stationId, range) {
       }
     }
 
-    if (e.satARssi !== null && e.satARssi !== 0) {
+    if (_needLegacySatSeries && e.satARssi !== null && e.satARssi !== 0) {
       var emitSatARssi = satANewSync || satALastRssi === null || e.satARssi !== satALastRssi || satALastRssiTs === null || (tsMs - satALastRssiTs >= MAX_POINT_GAP_MS);
       if (emitSatARssi) {
         satARssiSeries.push({ x: e.timestamp, y: e.satARssi });
@@ -1204,7 +1221,7 @@ function renderSyncCharts(container, entries, stationId, range) {
         satALastRssiTs = tsMs;
       }
     }
-    if (satBEnabled && e.satBRssi !== null && e.satBRssi !== 0) {
+    if (_needLegacySatSeries && satBEnabled && e.satBRssi !== null && e.satBRssi !== 0) {
       var emitSatBRssi = satBNewSync || satBLastRssi === null || e.satBRssi !== satBLastRssi || satBLastRssiTs === null || (tsMs - satBLastRssiTs >= MAX_POINT_GAP_MS);
       if (emitSatBRssi) {
         satBRssiSeries.push({ x: e.timestamp, y: e.satBRssi });
@@ -1713,15 +1730,8 @@ async function fetchLiveAll() {
       _stationDataSource[station.id] = { source: 'live', savedAt: Date.now() };
       fetched++;
 
-      // v2: fetch diagnostic data from upload_sessions + sync_sessions
-      try {
-        var ulSess = await fetchLatestUploadSession(station.id);
-        var syncSess = await fetchLatestSyncSessions(station.id);
-        _stationDiag[station.id] = { upload: ulSess, sync: syncSess };
-      } catch (diagErr) {
-        console.warn('[Health] Diagnostics fetch failed for ' + station.name + ':', diagErr);
-        _stationDiag[station.id] = { upload: null, sync: {} };
-      }
+      // v2: diagnostics from upload_sessions + sync_sessions
+      await loadStationDiagnostics(station.id);
     } catch (err) {
       console.error('[Health] Live fetch failed for ' + station.name + ':', err);
       errors.push(station.name + ': ' + err.message);
@@ -1849,7 +1859,10 @@ onDashboardDataRefresh(function(msg) {
       stationData[station.id] = dataObj;
       idx++;
       if (idx < STATIONS.length) loadNext();
-      else onAllLoaded();
+      else {
+        onAllLoaded();
+        refreshDiagnosticsAllBackground();
+      }
     }
 
     // Priority 1: Shared localStorage cache (seaweed_cache_<id>, written by both pages)

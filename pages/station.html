@@ -770,8 +770,8 @@ body {
 </script>
 
 <!-- Shared utility libraries -->
-<script src="seaweed_common.js"></script>
-<script src="seaweed_sync.js"></script>
+<script src="seaweed_common.js?v=20260317"></script>
+<script src="seaweed_sync.js?v=20260317"></script>
 
 <!-- Battery prediction engine (shared) -->
 <script src="battery_model.js"></script>
@@ -1226,6 +1226,8 @@ function parseFeeds(rawFeeds) {
         t0Hum1:    f.humidity_1 != null ? numParse(f.humidity_1) : null,
         t0Temp2:   f.temp_2 != null ? numParse(f.temp_2) : null,
         t0Hum2:    f.humidity_2 != null ? numParse(f.humidity_2) : null,
+        t0Temp3:   f.temp_3 != null ? numParse(f.temp_3) : null,
+        t0Hum3:    f.humidity_3 != null ? numParse(f.humidity_3) : null,
         t0BatV:    f.battery_v != null ? numParse(f.battery_v) : null,
         t0Rssi:    null,
         t0Boot:    f.boot_count != null ? numParse(f.boot_count) : null,
@@ -1308,6 +1310,8 @@ function parseFeeds(rawFeeds) {
       t0Hum1:    t0Sensors[1] != null ? t0Sensors[1] : null,
       t0Temp2:   t0Sensors[2] != null ? t0Sensors[2] : null,
       t0Hum2:    t0Sensors[3] != null ? t0Sensors[3] : null,
+      t0Temp3:   t0Sensors[4] != null ? t0Sensors[4] : null,
+      t0Hum3:    t0Sensors[5] != null ? t0Sensors[5] : null,
       t0BatV:    t0Status[0]  != null ? t0Status[0]  : null,
       t0Rssi:    t0Status[1]  != null ? t0Status[1]  : null,
       t0Boot:    t0Status[2]  != null ? t0Status[2]  : null,
@@ -1376,6 +1380,34 @@ function handleNewData(data, sourceLabel, persistCache) {
   }
 }
 
+function normalizeCachedEntries(rawEntries) {
+  if (!Array.isArray(rawEntries)) return [];
+  var out = [];
+  rawEntries.forEach(function(e) {
+    if (!e || typeof e !== 'object') return;
+
+    // Case 1: already parsed station entry shape.
+    if (e.timestamp !== undefined) {
+      var parsed = Object.assign({}, e);
+      if (parsed.timestamp && !(parsed.timestamp instanceof Date)) parsed.timestamp = new Date(parsed.timestamp);
+      if (!parsed.timestamp || isNaN(parsed.timestamp.getTime())) return;
+      if (parsed.t0Temp3 === undefined && parsed.temp_3 !== undefined) parsed.t0Temp3 = parsed.temp_3 != null ? numParse(parsed.temp_3) : null;
+      if (parsed.t0Hum3 === undefined && parsed.humidity_3 !== undefined) parsed.t0Hum3 = parsed.humidity_3 != null ? numParse(parsed.humidity_3) : null;
+      out.push(parsed);
+      return;
+    }
+
+    // Case 2: structured feed shape ({created_at, temp_1..}) from shared cache writers.
+    if (e.created_at !== undefined) {
+      var conv = parseFeeds([e]);
+      if (conv && conv.length) out.push(conv[0]);
+    }
+  });
+
+  out.sort(function(a, b) { return a.timestamp - b.timestamp; });
+  return out;
+}
+
 async function fetchLiveData(silent) {
   var btn = document.getElementById('btnFetch');
   btn.innerHTML = '<span class="spinner"></span> Fetching...';
@@ -1405,12 +1437,7 @@ function refreshFromSharedCache(reason) {
     var cached = JSON.parse(raw);
     if (!cached || !Array.isArray(cached.allEntries) || !cached.allEntries.length) return;
 
-    var parsed = cached.allEntries.map(function(e) {
-      if (e && e.timestamp && !(e.timestamp instanceof Date)) e.timestamp = new Date(e.timestamp);
-      return e;
-    }).filter(function(e) {
-      return e && e.timestamp && !isNaN(e.timestamp.getTime());
-    });
+    var parsed = normalizeCachedEntries(cached.allEntries);
     if (!parsed.length) return;
 
     state.allEntries = parsed.sort(function(a, b) { return a.timestamp - b.timestamp; });
@@ -1466,7 +1493,7 @@ function exportCSV() {
   var headers = [
     'Timestamp_UTC', 'Timestamp_Local', 'Entry_ID',
     'T0_Bat%', 'T0_BatV', 'T0_RSSI', 'T0_BootCnt', 'T0_Heap',
-    'T0_Temp1', 'T0_Hum1', 'T0_Temp2', 'T0_Hum2',
+    'T0_Temp1', 'T0_Hum1', 'T0_Temp2', 'T0_Hum2', 'T0_Temp3', 'T0_Hum3',
     'SatA_BatV', 'SatA_Bat%', 'SatA_RSSI', 'SatA_SampleID',
     'SatA_Temp1', 'SatA_Hum1', 'SatA_Temp2', 'SatA_Hum2',
     'SatB_BatV', 'SatB_Bat%', 'SatB_RSSI', 'SatB_SampleID',
@@ -1481,7 +1508,7 @@ function exportCSV() {
       e.timestamp.toLocaleString('en-GB'),
       e.entryId,
       v(e.t0BatPct), v(e.t0BatV), v(e.t0Rssi), v(e.t0Boot), v(e.t0Heap),
-      v(e.t0Temp1), v(e.t0Hum1), v(e.t0Temp2), v(e.t0Hum2),
+      v(e.t0Temp1), v(e.t0Hum1), v(e.t0Temp2), v(e.t0Hum2), v(e.t0Temp3), v(e.t0Hum3),
       v(e.satABatV), v(e.satABatPct), v(e.satARssi), v(e.satASampleId),
       v(e.satATemp1), v(e.satAHum1), v(e.satATemp2), v(e.satAHum2),
       v(e.satBBatV), v(e.satBBatPct), v(e.satBRssi), v(e.satBSampleId),
@@ -1675,47 +1702,76 @@ function renderDashboard() {
 function updateSensorCards() {
   var el = document.getElementById('sensorCards');
   if (!el) return;
-  var e = state.filteredEntries.length ? state.filteredEntries : state.allEntries;
-  if (!e.length) { el.innerHTML = ''; return; }
-  var latest = e[e.length - 1];
-  var satBEnabled = isSatelliteInstalled(e, 'B');
+  var all = state.allEntries;
+  if (!all.length) { el.innerHTML = ''; return; }
+  var satBEnabled = isSatelliteInstalled(all, 'B');
+  var nowMs = Date.now();
+  var day24Ago = nowMs - (24 * 3600000);
+  var day7Ago = nowMs - (7 * 24 * 3600000);
 
   var sensors = [
     { num: 'S1', sub: 'T0.S1',  tempKey: 't0Temp1',   humKey: 't0Hum1',   color: COLORS.t0s1   },
     { num: 'S2', sub: 'T0.S2',  tempKey: 't0Temp2',   humKey: 't0Hum2',   color: COLORS.t0s2   },
-    { num: 'S3', sub: 'A-S1',   tempKey: 'satATemp1', humKey: 'satAHum1', color: COLORS.satAs1 },
-    { num: 'S4', sub: 'A-S2',   tempKey: 'satATemp2', humKey: 'satAHum2', color: COLORS.satAs2 },
-    { num: 'S5', sub: 'B-S1',   tempKey: 'satBTemp1', humKey: 'satBHum1', color: COLORS.satBs1 },
-    { num: 'S6', sub: 'B-S2',   tempKey: 'satBTemp2', humKey: 'satBHum2', color: COLORS.satBs2 },
+    { num: 'S3', sub: 'T0.S3',  tempKey: 't0Temp3',   humKey: 't0Hum3',   color: COLORS.t0s3   },
+    { num: 'S4', sub: 'A-S1',   tempKey: 'satATemp1', humKey: 'satAHum1', color: COLORS.satAs1 },
+    { num: 'S5', sub: 'A-S2',   tempKey: 'satATemp2', humKey: 'satAHum2', color: COLORS.satAs2 },
+    { num: 'S6', sub: 'B-S1',   tempKey: 'satBTemp1', humKey: 'satBHum1', color: COLORS.satBs1 },
+    { num: 'S7', sub: 'B-S2',   tempKey: 'satBTemp2', humKey: 'satBHum2', color: COLORS.satBs2 },
   ];
 
-  // Override colors (not labels) from sensor map legend if available
-  var mapKey = STATION ? STATION.sensorMap : null;
-  var legend = (mapKey && SENSOR_MAPS[mapKey]) ? SENSOR_MAPS[mapKey].legend : null;
-  if (legend) {
-    for (var li = 0; li < Math.min(legend.length, sensors.length); li++) {
-      sensors[li].color = legend[li].color;
-    }
-  }
+  // Keep card colors aligned with chart colors using the same station map palette.
+  var sensorColors = resolveSensorColors();
+  sensors[0].color = sensorColors.t0s1;
+  sensors[1].color = sensorColors.t0s2;
+  sensors[2].color = sensorColors.t0s3;
+  sensors[3].color = sensorColors.satAs1;
+  sensors[4].color = sensorColors.satAs2;
+  sensors[5].color = sensorColors.satBs1;
+  sensors[6].color = sensorColors.satBs2;
 
   var html = '';
   sensors.forEach(function (s) {
-    var temp = latest[s.tempKey];
-    var hum  = latest[s.humKey];
-    var hasData = e.some(function (x) { return x[s.tempKey] !== null || x[s.humKey] !== null; });
+    var hasData = all.some(function (x) { return x[s.tempKey] !== null || x[s.humKey] !== null; });
     if (!hasData) return; // skip sensors with no data at all
 
+    // Per-sensor snapshot: latest available point for this sensor pair.
+    var latestSensorRow = null;
+    for (var ri = all.length - 1; ri >= 0; ri--) {
+      var row = all[ri];
+      if (row[s.tempKey] !== null || row[s.humKey] !== null) {
+        latestSensorRow = row;
+        break;
+      }
+    }
+
+    // Headline values: peak over last 24h for this sensor.
+    var temp = null, hum = null;
+    all.forEach(function (x) {
+      var ts = x.timestamp ? x.timestamp.getTime() : 0;
+      if (ts < day24Ago) return;
+      var t = x[s.tempKey], r = x[s.humKey];
+      if (t !== null && (temp === null || t > temp)) temp = t;
+      if (r !== null && (hum === null || r > hum)) hum = r;
+    });
+
+    // If no 24h values, fall back to the latest sensor snapshot values.
+    if (temp === null && latestSensorRow) temp = latestSensorRow[s.tempKey];
+    if (hum === null && latestSensorRow) hum = latestSensorRow[s.humKey];
+
+    // Ranges are always fixed to last 7 days.
     var tMin = null, tMax = null, rhMin = null, rhMax = null;
-    e.forEach(function (x) {
+    all.forEach(function (x) {
+      var ts = x.timestamp ? x.timestamp.getTime() : 0;
+      if (ts < day7Ago) return;
       var t = x[s.tempKey], r = x[s.humKey];
       if (t !== null) { if (tMin === null || t < tMin) tMin = t; if (tMax === null || t > tMax) tMax = t; }
       if (r !== null) { if (rhMin === null || r < rhMin) rhMin = r; if (rhMax === null || r > rhMax) rhMax = r; }
     });
 
-    var hasLatest = temp !== null || hum !== null;
-    var cardClass  = hasLatest ? 'ok'  : 'warn';
-    var badgeClass = hasLatest ? 'badge-ok' : 'badge-warn';
-    var badgeText  = hasLatest ? 'OK'  : 'NC';
+    var hasSnapshot = temp !== null || hum !== null;
+    var cardClass  = hasSnapshot ? 'ok'  : 'warn';
+    var badgeClass = hasSnapshot ? 'badge-ok' : 'badge-warn';
+    var badgeText  = hasSnapshot ? 'OK'  : 'NC';
 
     html += '<div class="status-card ' + cardClass + '">' +
       '<div class="card-header">' +
@@ -1727,20 +1783,23 @@ function updateSensorCards() {
       '<div class="sensor-readings">' +
         '<div class="reading-block">' +
           '<div class="big-number" style="color:' + s.color + '">' + (temp !== null ? temp.toFixed(1) + '\u00B0' : '--') + '</div>' +
-          '<div class="big-label">Temperature</div>' +
+          '<div class="big-label">24h Peak Temp</div>' +
         '</div>' +
         '<div class="reading-block">' +
           '<div class="big-number" style="font-size:1.6rem">' + (hum !== null ? hum.toFixed(1) + '%' : '--') + '</div>' +
-          '<div class="big-label">Humidity</div>' +
+          '<div class="big-label">24h Peak Humidity</div>' +
         '</div>' +
       '</div>' +
       '<div class="detail-grid">' +
-        '<div><div class="detail-label">Temp Range</div><div class="detail-value">' +
+        '<div><div class="detail-label">7 Day Temp</div><div class="detail-value">' +
           (tMin !== null ? tMin.toFixed(1) + ' \u2013 ' + tMax.toFixed(1) + '\u00B0C' : '--') +
         '</div></div>' +
-        '<div><div class="detail-label">Hum Range</div><div class="detail-value">' +
+        '<div><div class="detail-label">7 Day Humidity</div><div class="detail-value">' +
           (rhMin !== null ? rhMin.toFixed(1) + ' \u2013 ' + rhMax.toFixed(1) + '%' : '--') +
         '</div></div>' +
+      '</div>' +
+      '<div class="card-footer"><span class="dot ' + (latestSensorRow ? 'dot-green' : 'dot-grey') + '"></span>' +
+        (latestSensorRow ? ('Snapshot ' + timeAgo(latestSensorRow.timestamp)) : 'Snapshot unavailable') +
       '</div>' +
     '</div>';
   });
@@ -1820,7 +1879,7 @@ function updateNetworkBar() {
   var satBText  = satBAge < 2 ? 'Syncing' : satBAge < 24 ? 'Stale' : (lastSatB ? 'Lost' : 'Never seen');
 
   var hasSensors = e.some(function (x) {
-    return x.t0Temp1 !== null || x.satATemp1 !== null || (satBEnabled && x.satBTemp1 !== null);
+    return x.t0Temp1 !== null || x.t0Temp2 !== null || x.t0Temp3 !== null || x.satATemp1 !== null || (satBEnabled && x.satBTemp1 !== null);
   });
   var sensorColor = hasSensors ? '#22c55e' : '#f59e0b';
   var sensorText  = hasSensors ? 'Data flowing' : 'All NC';
@@ -1884,7 +1943,7 @@ function updateStatusCards() {
   document.getElementById('t0Heap').textContent   = latest.t0Heap !== null ? (latest.t0Heap / 1024).toFixed(0) + ' KB' : '--';
   document.getElementById('t0LastSeen').textContent = timeAgo(latest.timestamp);
 
-  var t0HasSensors = latest.t0Temp1 !== null || latest.t0Temp2 !== null;
+  var t0HasSensors = latest.t0Temp1 !== null || latest.t0Temp2 !== null || latest.t0Temp3 !== null;
   document.getElementById('t0Sensors').textContent = t0HasSensors ? 'Connected' : 'NC';
   document.getElementById('t0Sensors').className   = 'detail-value ' + (t0HasSensors ? 'ok-text' : 'nc-text');
   var _t0Fw = latest.t0FwVersion;
@@ -2038,7 +2097,7 @@ function updateDataHealth() {
   var expectedEntries = Math.floor(totalSpan / medianMs) + 1;
   var completeness    = Math.min(100, (e.length / expectedEntries * 100)).toFixed(1);
 
-  var t0SensorN   = e.filter(function (x) { return x.t0Temp1 !== null || x.t0Temp2 !== null; }).length;
+  var t0SensorN   = e.filter(function (x) { return x.t0Temp1 !== null || x.t0Temp2 !== null || x.t0Temp3 !== null; }).length;
   var satASensorN = e.filter(function (x) { return x.satATemp1 !== null || x.satATemp2 !== null; }).length;
   var satBSensorN = e.filter(function (x) { return x.satBTemp1 !== null || x.satBTemp2 !== null; }).length;
   var satAPresent = e.filter(function (x) { return x.satABatV !== null; }).length;
@@ -2098,14 +2157,14 @@ function updatePeaksTable() {
 
   // Group: all temps first, then all humidities (sensor-data focused)
   var tempKeys = {
-    't0Temp1': 'T0 S1', 't0Temp2': 'T0 S2',
-    'satATemp1': 'SatA S1', 'satATemp2': 'SatA S2',
-    'satBTemp1': 'SatB S1', 'satBTemp2': 'SatB S2',
+    't0Temp1': 'S1', 't0Temp2': 'S2', 't0Temp3': 'S3',
+    'satATemp1': 'S4', 'satATemp2': 'S5',
+    'satBTemp1': 'S6', 'satBTemp2': 'SatB S2',
   };
   var humKeys = {
-    't0Hum1': 'T0 S1', 't0Hum2': 'T0 S2',
-    'satAHum1': 'SatA S1', 'satAHum2': 'SatA S2',
-    'satBHum1': 'SatB S1', 'satBHum2': 'SatB S2',
+    't0Hum1': 'S1', 't0Hum2': 'S2', 't0Hum3': 'S3',
+    'satAHum1': 'S4', 'satAHum2': 'S5',
+    'satBHum1': 'S6', 'satBHum2': 'SatB S2',
   };
 
   var activeTempKeys = {};
@@ -2230,12 +2289,37 @@ function updatePeaksTable() {
 "use strict";
 
 var COLORS = {
-  t0s1: '#3b82f6', t0s2: '#93c5fd',
+  t0s1: '#3b82f6', t0s2: '#93c5fd', t0s3: '#60a5fa',
   satAs1: '#10b981', satAs2: '#6ee7b7',
   satBs1: '#f59e0b', satBs2: '#fcd34d',
   t0Bat: '#3b82f6', satABat: '#10b981', satBBat: '#f59e0b',
   t0V: '#60a5fa', satAV: '#34d399', satBV: '#fbbf24',
 };
+
+function resolveSensorColors() {
+  var c = {
+    t0s1: COLORS.t0s1,
+    t0s2: COLORS.t0s2,
+    t0s3: COLORS.t0s3,
+    satAs1: COLORS.satAs1,
+    satAs2: COLORS.satAs2,
+    satBs1: COLORS.satBs1,
+    satBs2: COLORS.satBs2,
+  };
+  var mapKey = STATION ? STATION.sensorMap : null;
+  var legend = (mapKey && SENSOR_MAPS[mapKey]) ? SENSOR_MAPS[mapKey].legend : null;
+  if (!legend || !legend.length) return c;
+
+  // Legend index maps to Sensor 1..N on cards/charts.
+  if (legend[0] && legend[0].color) c.t0s1 = legend[0].color;
+  if (legend[1] && legend[1].color) c.t0s2 = legend[1].color;
+  if (legend[2] && legend[2].color) c.t0s3 = legend[2].color;
+  if (legend[3] && legend[3].color) c.satAs1 = legend[3].color;
+  if (legend[4] && legend[4].color) c.satAs2 = legend[4].color;
+  if (legend[5] && legend[5].color) c.satBs1 = legend[5].color;
+  if (legend[6] && legend[6].color) c.satBs2 = legend[6].color;
+  return c;
+}
 
 function makeDataset(entries, key, label, color, dashed) {
   var data = [];
@@ -2512,6 +2596,7 @@ function baseChartOptions(yLabel, yMin, yMax) {
 function createOrUpdateCharts() {
   var e = state.filteredEntries;
   var satBEnabled = isSatelliteInstalled(state.allEntries, 'B');
+  var sensorColors = resolveSensorColors();
   var _wxMin = e.length ? e[0].timestamp.getTime() : -Infinity;
   var _wxMax = e.length ? e[e.length - 1].timestamp.getTime() : Infinity;
   var _wxOverlayTemp = [], _wxOverlayHum = [];
@@ -2534,14 +2619,15 @@ function createOrUpdateCharts() {
 
   // -- Temperature --
   var tempDS = [
-    makeDataset(e, 't0Temp1', 'T0 Sensor 1', COLORS.t0s1, false),
-    makeDataset(e, 't0Temp2', 'T0 Sensor 2', COLORS.t0s2, true),
-    makeDataset(e, 'satATemp1', 'Sat-A Sensor 1', COLORS.satAs1, false),
-    makeDataset(e, 'satATemp2', 'Sat-A Sensor 2', COLORS.satAs2, true),
+    makeDataset(e, 't0Temp1', 'Sensor 1', sensorColors.t0s1, false),
+    makeDataset(e, 't0Temp2', 'Sensor 2', sensorColors.t0s2, true),
+    makeDataset(e, 't0Temp3', 'Sensor 3', sensorColors.t0s3, false),
+    makeDataset(e, 'satATemp1', 'Sensor 4', sensorColors.satAs1, false),
+    makeDataset(e, 'satATemp2', 'Sensor 5', sensorColors.satAs2, true),
   ];
   if (satBEnabled) {
-    tempDS.push(makeDataset(e, 'satBTemp1', 'Sat-B Sensor 1', COLORS.satBs1, false));
-    tempDS.push(makeDataset(e, 'satBTemp2', 'Sat-B Sensor 2', COLORS.satBs2, true));
+    tempDS.push(makeDataset(e, 'satBTemp1', 'Sensor 6', sensorColors.satBs1, false));
+    tempDS.push(makeDataset(e, 'satBTemp2', 'Sat-B Sensor 2', sensorColors.satBs2, true));
   }
   var hasTempData = tempDS.some(function (ds) { return ds.data.length > 0; });
   document.getElementById('tempEmpty').style.display = hasTempData ? 'none' : 'flex';
@@ -2562,14 +2648,15 @@ function createOrUpdateCharts() {
 
   // -- Humidity --
   var humDS = [
-    makeDataset(e, 't0Hum1', 'T0 Sensor 1', COLORS.t0s1, false),
-    makeDataset(e, 't0Hum2', 'T0 Sensor 2', COLORS.t0s2, true),
-    makeDataset(e, 'satAHum1', 'Sat-A Sensor 1', COLORS.satAs1, false),
-    makeDataset(e, 'satAHum2', 'Sat-A Sensor 2', COLORS.satAs2, true),
+    makeDataset(e, 't0Hum1', 'Sensor 1', sensorColors.t0s1, false),
+    makeDataset(e, 't0Hum2', 'Sensor 2', sensorColors.t0s2, true),
+    makeDataset(e, 't0Hum3', 'Sensor 3', sensorColors.t0s3, false),
+    makeDataset(e, 'satAHum1', 'Sensor 4', sensorColors.satAs1, false),
+    makeDataset(e, 'satAHum2', 'Sensor 5', sensorColors.satAs2, true),
   ];
   if (satBEnabled) {
-    humDS.push(makeDataset(e, 'satBHum1', 'Sat-B Sensor 1', COLORS.satBs1, false));
-    humDS.push(makeDataset(e, 'satBHum2', 'Sat-B Sensor 2', COLORS.satBs2, true));
+    humDS.push(makeDataset(e, 'satBHum1', 'Sensor 6', sensorColors.satBs1, false));
+    humDS.push(makeDataset(e, 'satBHum2', 'Sat-B Sensor 2', sensorColors.satBs2, true));
   }
   var hasHumData = humDS.some(function (ds) { return ds.data.length > 0; });
   document.getElementById('humEmpty').style.display = hasHumData ? 'none' : 'flex';
@@ -2811,11 +2898,15 @@ function createOrUpdateDriftChart() {
       var tag = abs <= 5 ? '\u2714 ok' : abs <= 20 ? '\u26a0 warn' : '\u26d4 high';
       return ' ' + ctx.dataset.label + ': ' + (v >= 0 ? '+' : '') + v + 's  ' + tag;
     };
+    var driftDatasets = [
+      { label: 'Sat-A Drift', data: satADrift, borderColor: '#22c55e', backgroundColor: '#22c55e22', borderWidth: 1.5, pointRadius: 2, pointHoverRadius: 5, tension: 0.2, fill: false },
+      { label: 'System Drift', data: sysDrift, borderColor: '#f59e0b', backgroundColor: '#f59e0b22', borderWidth: 1.5, pointRadius: 1, pointHoverRadius: 4, tension: 0.2, fill: false, borderDash: [4,3] },
+    ];
+    if (satBEnabled) {
+      driftDatasets.push({ label: 'Sat-B Drift', data: satBDrift, borderColor: '#3b82f6', backgroundColor: '#3b82f622', borderWidth: 1.5, pointRadius: 2, pointHoverRadius: 5, tension: 0.2, fill: false });
+    }
     state.charts.drift = new Chart(document.getElementById('driftChart'), {
-      type: 'line', data: { datasets: [
-        { label: 'Sat-A Drift', data: satADrift, borderColor: '#22c55e', backgroundColor: '#22c55e22', borderWidth: 1.5, pointRadius: 2, pointHoverRadius: 5, tension: 0.2, fill: false },
-        { label: 'System Drift', data: sysDrift, borderColor: '#f59e0b', backgroundColor: '#f59e0b22', borderWidth: 1.5, pointRadius: 1, pointHoverRadius: 4, tension: 0.2, fill: false, borderDash: [4,3] },
-      ].concat(satBEnabled ? [{ label: 'Sat-B Drift', data: satBDrift, borderColor: '#3b82f6', backgroundColor: '#3b82f622', borderWidth: 1.5, pointRadius: 2, pointHoverRadius: 5, tension: 0.2, fill: false }] : []) }, options: dOpts,
+      type: 'line', data: { datasets: driftDatasets }, options: dOpts,
     });
   }
 
@@ -2826,10 +2917,14 @@ function createOrUpdateDriftChart() {
     var rOpts = baseChartOptions('RSSI (dBm)', -100, 0);
     rOpts.animation = false;
     rOpts.plugins.tooltip.callbacks.label = function(ctx) { return ' ' + ctx.dataset.label + ': ' + ctx.parsed.y + ' dBm'; };
+    var rssiDatasets = [
+      { label: 'Sat-A RSSI', data: satARssiArr, borderColor: '#22c55e', backgroundColor: '#22c55e22', borderWidth: 1.5, pointRadius: 2, pointHoverRadius: 5, tension: 0.2, fill: false },
+    ];
+    if (satBEnabled) {
+      rssiDatasets.push({ label: 'Sat-B RSSI', data: satBRssiArr, borderColor: '#3b82f6', backgroundColor: '#3b82f622', borderWidth: 1.5, pointRadius: 2, pointHoverRadius: 5, tension: 0.2, fill: false });
+    }
     state.charts.rssi = new Chart(document.getElementById('rssiChart'), {
-      type: 'line', data: { datasets: [
-        { label: 'Sat-A RSSI', data: satARssiArr, borderColor: '#22c55e', backgroundColor: '#22c55e22', borderWidth: 1.5, pointRadius: 2, pointHoverRadius: 5, tension: 0.2, fill: false },
-      ].concat(satBEnabled ? [{ label: 'Sat-B RSSI', data: satBRssiArr, borderColor: '#3b82f6', backgroundColor: '#3b82f622', borderWidth: 1.5, pointRadius: 2, pointHoverRadius: 5, tension: 0.2, fill: false }] : []) }, options: rOpts,
+      type: 'line', data: { datasets: rssiDatasets }, options: rOpts,
     });
   } else { rssiWrap.style.display = 'none'; }
 }
@@ -3087,14 +3182,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (_cacheRawInitial) {
       var _cacheInitial = JSON.parse(_cacheRawInitial);
       if (_cacheInitial && Array.isArray(_cacheInitial.allEntries) && _cacheInitial.allEntries.length) {
-        state.allEntries = _cacheInitial.allEntries.map(function(e) {
-          if (e && e.timestamp && !(e.timestamp instanceof Date)) e.timestamp = new Date(e.timestamp);
-          return e;
-        }).filter(function(e) {
-          return e && e.timestamp && !isNaN(e.timestamp.getTime());
-        }).sort(function(a, b) {
-          return a.timestamp - b.timestamp;
-        });
+        state.allEntries = normalizeCachedEntries(_cacheInitial.allEntries);
 
         if (state.allEntries.length) {
           state.channelInfo = _cacheInitial.channelInfo || state.channelInfo || null;
@@ -3143,9 +3231,9 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         _cached.allEntries.forEach(function(e) {
-          e.timestamp = new Date(e.timestamp);
-          if (!isNaN(e.timestamp.getTime())) {
-            _entryMap.set(e.entryId, e);
+          var _normArr = normalizeCachedEntries([e]);
+          if (_normArr.length) {
+            _entryMap.set(_normArr[0].entryId, _normArr[0]);
           }
         });
 
@@ -3171,6 +3259,24 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     }
   } catch (e) { console.warn('[Cache] Merge failed:', e); }
+  }
+
+  // One-time schema backfill: if Sensor 3 is missing in loaded data, fetch fresh rows.
+  try {
+    if (state.allEntries && state.allEntries.length) {
+      var _hasS12 = state.allEntries.some(function(x) {
+        return x.t0Temp1 !== null || x.t0Temp2 !== null || x.t0Hum1 !== null || x.t0Hum2 !== null;
+      });
+      var _hasS3 = state.allEntries.some(function(x) {
+        return x.t0Temp3 !== null || x.t0Hum3 !== null;
+      });
+      if (_hasS12 && !_hasS3) {
+        console.log('[Dashboard] Sensor 3 backfill: triggering silent live refresh');
+        fetchLiveData(true);
+      }
+    }
+  } catch (_e) {
+    console.warn('[Dashboard] Sensor 3 backfill check failed:', _e);
   }
 
   // Setup auto-refresh
