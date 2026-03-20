@@ -1346,6 +1346,13 @@ function loadTableData(table) {
               entries = filterEntryArrayByResetWindow(table.id, entries);
             }
             if (entries.length) {
+              // Skip stale cache (>7 days) — fall through to static file
+              var newestMs = entries[entries.length - 1].timestamp.getTime();
+              if ((Date.now() - newestMs) > 7 * 86400000) {
+                console.log('[Overview] Cache for ' + table.id + ' too stale (' +
+                  Math.round((Date.now() - newestMs) / 86400000) + 'd), skipping to static file');
+                return false;
+              }
               _dataSource[table.id] = 'cache';
               done(entries);
               return;
