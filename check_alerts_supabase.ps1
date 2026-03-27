@@ -1,5 +1,5 @@
 # check_alerts_supabase.ps1
-# Monitors Supabase sensor_readings and opens/closes GitHub Issues for alert conditions.
+# Monitors Supabase hub rows in samples_raw and opens/closes GitHub Issues for alert conditions.
 # Called by GitHub Actions after every data download.
 #
 # Alerts checked:
@@ -82,12 +82,18 @@ if ($stationsCfg.Count -eq 0) {
 function Get-LatestReadings {
     param($deviceId, $results = 5)
     try {
-        $url = "$supabaseUrl/rest/v1/sensor_readings" +
+        $url = "$supabaseUrl/rest/v1/samples_raw" +
                "?device_id=eq.$deviceId" +
-               "&order=recorded_at.desc" +
+               "&node_id=eq.hub" +
+               "&order=sample_epoch.desc" +
                "&limit=$results" +
-               "&select=id,recorded_at,battery_pct,temp_1,temp_2,temp_3,battery_v"
+               "&select=id,sample_epoch,battery_pct,temp_1,temp_2,temp_3,battery_v"
         $rows = Invoke-RestMethod -Uri $url -Headers $supaHeaders -Method Get -TimeoutSec 20
+        foreach ($row in @($rows)) {
+            if ($null -ne $row -and $row.PSObject.Properties.Name -contains 'sample_epoch') {
+                $row | Add-Member -NotePropertyName recorded_at -NotePropertyValue $row.sample_epoch -Force
+            }
+        }
         return $rows
     } catch {
         Write-Warning "  [API] Failed to fetch readings for $deviceId : $_"

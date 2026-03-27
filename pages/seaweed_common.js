@@ -83,9 +83,12 @@ function formatKB(kb) {
 // =====================================================================
 
 /** Default Supabase project URL (override via localStorage seaweed_dashboard_config.supabaseUrl) */
-var SUPABASE_URL_DEFAULT  = 'https://qjtjmczixgjxxwmyabmk.supabase.co';   // TODO: replace with https://<project-id>.supabase.co
+var SUPABASE_URL_DEFAULT  = 'https://hzpbpvmpqdcgldhlrysv.supabase.co';
 /** Default Supabase anon key (override via localStorage) */
-var SUPABASE_ANON_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqdGptY3ppeGdqeHh3bXlhYm1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjUzMzEsImV4cCI6MjA4ODIwMTMzMX0.K7NdFhCiHJdDpwwiERhH_GVH-AMqaMizPYegaiP2tqg';  // TODO: replace with your project's anon/public key
+var SUPABASE_ANON_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh6cGJwdm1wcWRjZ2xkaGxyeXN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0OTMyNDQsImV4cCI6MjA5MDA2OTI0NH0.GD-O8PgqqgMnVvKK6YIxBPaC9haCwPeA3opesAu931I';
+/** Legacy default project values used for one-time browser config migration. */
+var SUPABASE_URL_LEGACY  = 'https://qjtjmczixgjxxwmyabmk.supabase.co';
+var SUPABASE_ANON_KEY_LEGACY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqdGptY3ppeGdqeHh3bXlhYm1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjUzMzEsImV4cCI6MjA4ODIwMTMzMX0.K7NdFhCiHJdDpwwiERhH_GVH-AMqaMizPYegaiP2tqg';
 /** Reset mode: only WROOM is allowed as a data source. */
 var WROOM_ONLY_MODE = false;
 var WROOM_ONLY_STATION_IDS = { wroom: true };
@@ -232,7 +235,6 @@ function getConfiguredDeviceProfiles(opts) {
     p.enabled = p.enabled !== false;
     p.channelId = p.channelId != null ? String(p.channelId).trim() : '';
     p.apiKey = p.apiKey != null ? String(p.apiKey).trim() : '';
-    p.dataFolder = normalizeDataFolder(p.dataFolder || ('data_' + p.id), 'data_' + p.id);
     p.installDateUtc = normalizeInstallDateUtc(p.installDateUtc || null);
     if (includeDisabled || p.enabled) out.push(p);
   });
@@ -336,8 +338,31 @@ function getSupabaseConfig() {
   var key = SUPABASE_ANON_KEY_DEFAULT;
   try {
     var s = JSON.parse(localStorage.getItem('seaweed_dashboard_config') || '{}');
-    if (s.supabaseUrl)     url = s.supabaseUrl;
-    if (s.supabaseAnonKey) key = s.supabaseAnonKey;
+    var changed = false;
+
+    if (s.supabaseUrl) {
+      var savedUrl = String(s.supabaseUrl).replace(/\/+$/, '').trim();
+      if (savedUrl && savedUrl !== SUPABASE_URL_LEGACY) {
+        url = savedUrl;
+      } else if (savedUrl === SUPABASE_URL_LEGACY) {
+        s.supabaseUrl = SUPABASE_URL_DEFAULT;
+        changed = true;
+      }
+    }
+
+    if (s.supabaseAnonKey) {
+      var savedKey = String(s.supabaseAnonKey).trim();
+      if (savedKey && savedKey !== SUPABASE_ANON_KEY_LEGACY) {
+        key = savedKey;
+      } else if (savedKey === SUPABASE_ANON_KEY_LEGACY) {
+        s.supabaseAnonKey = SUPABASE_ANON_KEY_DEFAULT;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      localStorage.setItem('seaweed_dashboard_config', JSON.stringify(s));
+    }
   } catch (e) { /* ignore */ }
   return { url: url.replace(/\/+$/, ''), key: key };
 }
@@ -373,47 +398,204 @@ function ensureUTC(ts) {
   return s + 'Z';
 }
 
+// =====================================================================
+// SAMPLES_RAW DIRECT-READ HELPERS (slot-driven, no sat_a_/sat_b_ compat)
+// =====================================================================
+
+var SAMPLES_RAW_MATCH_WINDOW_MS = 150000; // ±2.5 min for hub↔satellite pairing
+
+var SAMPLES_RAW_HUB_SELECT = 'id,device_id,sample_epoch,inserted_at,' +
+  'temp_1,humidity_1,temp_2,humidity_2,temp_3,humidity_3,' +
+  'battery_v,battery_pct,solar_v,boot_count';
+
+var SAMPLES_RAW_SAT_SELECT = 'id,device_id,node_id,slot_number,sample_epoch,inserted_at,' +
+  'temp_1,humidity_1,temp_2,humidity_2,battery_v,battery_pct,flash_pct';
+
+function sampleEpochMs(row) {
+  if (!row || !row.sample_epoch) return NaN;
+  return new Date(ensureUTC(row.sample_epoch)).getTime();
+}
+
+function insertedAtMs(row) {
+  if (!row || !row.inserted_at) return 0;
+  return new Date(ensureUTC(row.inserted_at)).getTime();
+}
+
+function dedupeSamplesRaw(rows) {
+  var byKey = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (!r || !r.sample_epoch) continue;
+    var nodeId = r.node_id || 'hub';
+    var key = nodeId + '|' + r.sample_epoch;
+    var existing = byKey[key];
+    if (!existing) { byKey[key] = r; continue; }
+    var eMs = insertedAtMs(existing), nMs = insertedAtMs(r);
+    if (nMs > eMs || (nMs === eMs && (r.id || 0) > (existing.id || 0))) {
+      byKey[key] = r;
+    }
+  }
+  var result = [];
+  for (var k in byKey) result.push(byKey[k]);
+  result.sort(function(a, b) { return sampleEpochMs(a) - sampleEpochMs(b); });
+  return result;
+}
+
+function findNearestSample(sortedRows, targetMs, windowMs) {
+  if (!sortedRows || !sortedRows.length || isNaN(targetMs)) return null;
+  var low = 0, high = sortedRows.length;
+  while (low < high) {
+    var mid = (low + high) >>> 1;
+    if (sampleEpochMs(sortedRows[mid]) < targetMs) low = mid + 1;
+    else high = mid;
+  }
+  var best = null, bestDelta = Infinity;
+  for (var i = Math.max(0, low - 1); i <= Math.min(sortedRows.length - 1, low); i++) {
+    var ms = sampleEpochMs(sortedRows[i]);
+    if (isNaN(ms)) continue;
+    var delta = Math.abs(ms - targetMs);
+    if (delta <= windowMs && delta < bestDelta) { best = sortedRows[i]; bestDelta = delta; }
+  }
+  return best;
+}
+
 /**
- * Convert a Supabase sensor_readings VIEW row into a structured feed object.
- * No more ThingSpeak field1-8 CSV encoding — properties are named directly.
- *
- * @param {Object} row - A row from the sensor_readings VIEW.
- * @returns {Object}   - Structured feed with named properties.
+ * Paginated PostgREST fetch from samples_raw.
  */
-function supabaseRowToFeed(row) {
-  function n(x) { return x != null ? x : null; }
-  return {
-    created_at: ensureUTC(row.recorded_at),
-    entry_id:   row.id,
-    // T0
-    battery_pct:    n(row.battery_pct),
-    battery_v:      n(row.battery_v),
-    boot_count:     n(row.boot_count),
-    temp_1:         n(row.temp_1),
-    humidity_1:     n(row.humidity_1),
-    temp_2:         n(row.temp_2),
-    humidity_2:     n(row.humidity_2),
-    temp_3:         n(row.temp_3),
-    humidity_3:     n(row.humidity_3),
-    // Sat-A
-    sat_a_battery_v:   n(row.sat_a_battery_v),
-    sat_a_battery_pct: n(row.sat_a_battery_pct),
-    sat_a_flash_pct:   n(row.sat_a_flash_pct),
-    sat_a_temp_1:      n(row.sat_a_temp_1),
-    sat_a_humidity_1:  n(row.sat_a_humidity_1),
-    sat_a_temp_2:      n(row.sat_a_temp_2),
-    sat_a_humidity_2:  n(row.sat_a_humidity_2),
-    // Sat-B
-    sat_b_battery_v:   n(row.sat_b_battery_v),
-    sat_b_battery_pct: n(row.sat_b_battery_pct),
-    sat_b_flash_pct:   n(row.sat_b_flash_pct),
-    sat_b_temp_1:      n(row.sat_b_temp_1),
-    sat_b_humidity_1:  n(row.sat_b_humidity_1),
-    sat_b_temp_2:      n(row.sat_b_temp_2),
-    sat_b_humidity_2:  n(row.sat_b_humidity_2),
-    // Config & firmware removed from sensor_readings view —
-    // now in upload_sessions (applied_*) and sync_sessions.
+async function fetchSamplesRawRows(stationId, selectClause, extraFilters, orderClause, limit, timeoutMs, hdrs, supaCfg) {
+  var rows = [];
+  var pageSize = 1000;
+  var offset = 0;
+  while (rows.length < limit) {
+    var batchLimit = Math.min(pageSize, limit - rows.length);
+    var url = supaCfg.url + '/rest/v1/samples_raw' +
+              '?device_id=eq.' + encodeURIComponent(stationId) +
+              '&select=' + encodeURIComponent(selectClause) +
+              extraFilters +
+              '&order=' + orderClause +
+              '&limit=' + batchLimit +
+              '&offset=' + offset;
+    var res = await fetchWithTimeout(url, timeoutMs, { headers: hdrs });
+    if (!res.ok) throw new Error('Supabase HTTP ' + res.status);
+    var batch = await res.json();
+    if (!batch.length) break;
+    rows = rows.concat(batch);
+    if (batch.length < batchLimit) break;
+    offset += batch.length;
+  }
+  return rows;
+}
+
+/**
+ * Resolve slot number for a satellite row.
+ * Priority: row.slot_number → device_slots map → A=1/B=2 fallback.
+ */
+function resolveSlotNumber(row, deviceSlotsMap) {
+  if (row.slot_number != null && row.slot_number > 0) return row.slot_number;
+  if (deviceSlotsMap && row.node_id) {
+    var nodeId = String(row.node_id).toUpperCase();
+    for (var node in deviceSlotsMap) {
+      if (String(node).toUpperCase() === nodeId) return Number(deviceSlotsMap[node]);
+    }
+  }
+  var nid = String(row.node_id || '').toUpperCase();
+  if (nid === 'A') return 1;
+  if (nid === 'B') return 2;
+  return null;
+}
+
+/**
+ * Build time-aligned feeds from hub + satellite samples_raw rows.
+ * Returns flat feed objects with slot-indexed satellite fields (sat_1_*, sat_2_*, ...).
+ */
+function buildSlotAlignedFeeds(hubRows, satRows, deviceSlotsMap) {
+  var satBySlot = {};
+  var slotNodeMap = {};
+  for (var i = 0; i < satRows.length; i++) {
+    var slot = resolveSlotNumber(satRows[i], deviceSlotsMap);
+    if (slot == null) continue;
+    if (!satBySlot[slot]) satBySlot[slot] = [];
+    satBySlot[slot].push(satRows[i]);
+    if (!slotNodeMap[slot]) slotNodeMap[slot] = String(satRows[i].node_id || '').toUpperCase();
+  }
+
+  var discoveredSlots = Object.keys(satBySlot).map(Number).sort(function(a,b){return a-b;});
+  for (var s = 0; s < discoveredSlots.length; s++) {
+    satBySlot[discoveredSlots[s]] = dedupeSamplesRaw(satBySlot[discoveredSlots[s]]);
+  }
+
+  var sortedHub = dedupeSamplesRaw(hubRows);
+  var feeds = [];
+  for (var h = 0; h < sortedHub.length; h++) {
+    var hub = sortedHub[h];
+    var hubMs = sampleEpochMs(hub);
+    var feed = {
+      created_at:   ensureUTC(hub.sample_epoch),
+      entry_id:     hub.id || (h + 1),
+      temp_1:       hub.temp_1,
+      humidity_1:   hub.humidity_1,
+      temp_2:       hub.temp_2,
+      humidity_2:   hub.humidity_2,
+      temp_3:       hub.temp_3,
+      humidity_3:   hub.humidity_3,
+      battery_v:    hub.battery_v,
+      battery_pct:  hub.battery_pct,
+      solar_v:      hub.solar_v,
+      boot_count:   hub.boot_count,
+      _discovered_slots: discoveredSlots,
+      _slot_count:  discoveredSlots.length
+    };
+    for (var si = 0; si < discoveredSlots.length; si++) {
+      var sn = discoveredSlots[si];
+      var match = findNearestSample(satBySlot[sn], hubMs, SAMPLES_RAW_MATCH_WINDOW_MS);
+      var p = 'sat_' + sn + '_';
+      feed[p + 'temp_1']     = match ? match.temp_1 : null;
+      feed[p + 'humidity_1'] = match ? match.humidity_1 : null;
+      feed[p + 'temp_2']     = match ? match.temp_2 : null;
+      feed[p + 'humidity_2'] = match ? match.humidity_2 : null;
+      feed[p + 'battery_v']  = match ? match.battery_v : null;
+      feed[p + 'battery_pct']= match ? match.battery_pct : null;
+      feed[p + 'flash_pct']  = match ? match.flash_pct : null;
+    }
+    feeds.push(feed);
+  }
+  return { feeds: feeds, discoveredSlots: discoveredSlots, slotNodeMap: slotNodeMap };
+}
+
+/**
+ * Convert a slot-indexed feed into a chart-ready entry object.
+ * Hub: t0Temp1..t0Hum3, t0BatV, t0BatPct, t0Boot
+ * Slot N: sat{N}Temp1, sat{N}Hum1, sat{N}Temp2, sat{N}Hum2, sat{N}BatV, sat{N}BatPct, sat{N}FlashPct
+ */
+function feedToEntry(f, discoveredSlots) {
+  var entry = {
+    timestamp: new Date(f.created_at),
+    entryId:   f.entry_id,
+    t0Temp1:   numParse(f.temp_1),
+    t0Hum1:    numParse(f.humidity_1),
+    t0Temp2:   numParse(f.temp_2),
+    t0Hum2:    numParse(f.humidity_2),
+    t0Temp3:   numParse(f.temp_3),
+    t0Hum3:    numParse(f.humidity_3),
+    t0BatV:    numParse(f.battery_v),
+    t0BatPct:  numParse(f.battery_pct),
+    t0SolarV:  numParse(f.solar_v),
+    t0Boot:    numParse(f.boot_count)
   };
+  var slots = discoveredSlots || f._discovered_slots || [];
+  for (var i = 0; i < slots.length; i++) {
+    var n = slots[i];
+    var p = 'sat_' + n + '_';
+    entry['sat' + n + 'Temp1']    = numParse(f[p + 'temp_1']);
+    entry['sat' + n + 'Hum1']     = numParse(f[p + 'humidity_1']);
+    entry['sat' + n + 'Temp2']    = numParse(f[p + 'temp_2']);
+    entry['sat' + n + 'Hum2']     = numParse(f[p + 'humidity_2']);
+    entry['sat' + n + 'BatV']     = numParse(f[p + 'battery_v']);
+    entry['sat' + n + 'BatPct']   = numParse(f[p + 'battery_pct']);
+    entry['sat' + n + 'FlashPct'] = numParse(f[p + 'flash_pct']);
+    entry['sat' + n + 'Installed'] = (f[p + 'battery_v'] != null || f[p + 'temp_1'] != null || f[p + 'temp_2'] != null);
+  }
+  return entry;
 }
 
 // =====================================================================
@@ -548,15 +730,13 @@ function triggerCIDownload() {
 // =====================================================================
 
 /**
- * Fetch sensor_readings (v2 VIEW over samples_raw) for one station from Supabase.
- * Returns rows as structured feed objects via supabaseRowToFeed().
+ * Fetch hub + satellite data from samples_raw, time-align by slot, return feeds + entries.
  *
  * @param {string} stationId - Device ID (e.g. 'perth', 'shangani', 'funzi')
  * @param {Object} [opts]
- * @param {number} [opts.limit=8000]   - Max rows
+ * @param {number} [opts.limit=8000]
  * @param {number} [opts.timeoutMs=30000]
- * @returns {Promise<{feeds: Object[], source: string, rows: number, rawRows: Object[]}>}
- *          Resolves with feed array + metadata.  Rejects on network/auth error.
+ * @returns {Promise<{feeds: Object[], entries: Object[], discoveredSlots: number[], slotNodeMap: Object, source: string, rows: number}>}
  */
 async function fetchStationData(stationId, opts) {
   if (!isStationAllowed(stationId)) {
@@ -564,6 +744,7 @@ async function fetchStationData(stationId, opts) {
   }
   opts = opts || {};
   var limit = opts.limit || 8000;
+  var timeoutMs = opts.timeoutMs || 30000;
   var cutoffMs = getResetCutoffMs(stationId);
   var cutoffIso = cutoffMs ? new Date(cutoffMs).toISOString() : null;
   var supaCfg = getSupabaseConfig();
@@ -572,33 +753,66 @@ async function fetchStationData(stationId, opts) {
     throw new Error('Supabase not configured');
   }
   var hdrs = supabaseHeaders(supaCfg.key);
-  var allRows = [];
-  var pageSize = 1000;
-  var offset = 0;
-  // Paginate to collect up to `limit` rows (newest first)
-  while (offset < limit) {
-    var batchLimit = Math.min(pageSize, limit - offset);
-    var url = supaCfg.url + '/rest/v1/sensor_readings' +
-              '?device_id=eq.' + encodeURIComponent(stationId) +
-              (cutoffIso ? '&recorded_at=gte.' + encodeURIComponent(cutoffIso) : '') +
-              '&order=recorded_at.desc' +
-              '&limit=' + batchLimit +
-              '&offset=' + offset;
-    var res = await fetchWithTimeout(url, opts.timeoutMs || 30000, { headers: hdrs });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    var batch = await res.json();
-    if (!batch.length) break;
-    allRows = allRows.concat(batch);
-    if (batch.length < batchLimit) break; // last page
-    offset += batch.length;
-  }
-  // Convert to structured feed format in chronological order
-  var filteredRows = allRows.filter(function(r) { return isAfterResetWindow(stationId, ensureUTC(r.recorded_at)); });
-  filteredRows.sort(function(a, b) {
-    return new Date(ensureUTC(a.recorded_at)).getTime() - new Date(ensureUTC(b.recorded_at)).getTime();
+
+  // 1. Fetch hub rows
+  var hubFilters = '&node_id=eq.hub' +
+                   (cutoffIso ? '&sample_epoch=gte.' + encodeURIComponent(cutoffIso) : '');
+  var hubRows = await fetchSamplesRawRows(
+    stationId, SAMPLES_RAW_HUB_SELECT, hubFilters,
+    'sample_epoch.desc', limit, timeoutMs, hdrs, supaCfg
+  );
+
+  hubRows = hubRows.filter(function(r) {
+    return isAfterResetWindow(stationId, ensureUTC(r && r.sample_epoch));
   });
-  var feeds = filteredRows.map(supabaseRowToFeed);
-  return { feeds: feeds, source: 'live', rows: feeds.length, rawRows: filteredRows };
+  if (!hubRows.length) {
+    return { feeds: [], entries: [], source: 'live', rows: 0, discoveredSlots: [], slotNodeMap: {} };
+  }
+
+  hubRows.sort(function(a, b) { return sampleEpochMs(a) - sampleEpochMs(b); });
+  var minHubMs = sampleEpochMs(hubRows[0]);
+  var maxHubMs = sampleEpochMs(hubRows[hubRows.length - 1]);
+
+  // 2. Fetch ALL satellite rows (node_id != hub) within hub time range ± window
+  var satRangeStart = new Date(minHubMs - SAMPLES_RAW_MATCH_WINDOW_MS).toISOString();
+  var satRangeEnd = new Date(maxHubMs + SAMPLES_RAW_MATCH_WINDOW_MS).toISOString();
+  var satLimit = Math.max(limit * 3, 3000);
+  var satRows = await fetchSamplesRawRows(
+    stationId, SAMPLES_RAW_SAT_SELECT,
+    '&node_id=neq.hub' +
+    '&sample_epoch=gte.' + encodeURIComponent(satRangeStart) +
+    '&sample_epoch=lte.' + encodeURIComponent(satRangeEnd),
+    'sample_epoch.desc', satLimit, timeoutMs, hdrs, supaCfg
+  );
+
+  // 3. Fetch device_slots for fallback slot resolution
+  var deviceSlotsMap = null;
+  try {
+    var dsUrl = supaCfg.url + '/rest/v1/device_slots' +
+                '?device_id=eq.' + encodeURIComponent(stationId) +
+                '&select=node_letter,slot_number';
+    var dsRes = await fetchWithTimeout(dsUrl, 10000, { headers: hdrs });
+    if (dsRes.ok) {
+      var dsRows = await dsRes.json();
+      if (dsRows.length) {
+        deviceSlotsMap = {};
+        dsRows.forEach(function(r) { deviceSlotsMap[r.node_letter] = r.slot_number; });
+      }
+    }
+  } catch(e) { /* device_slots lookup is optional */ }
+
+  // 4. Build slot-aligned feeds
+  var result = buildSlotAlignedFeeds(hubRows, satRows, deviceSlotsMap);
+  var entries = result.feeds.map(function(f) { return feedToEntry(f, result.discoveredSlots); });
+
+  return {
+    feeds: result.feeds,
+    entries: entries,
+    source: 'live',
+    rows: hubRows.length,
+    discoveredSlots: result.discoveredSlots,
+    slotNodeMap: result.slotNodeMap
+  };
 }
 
 // =====================================================================
@@ -812,6 +1026,166 @@ async function fetchDeviceStatus(stationId) {
   if (!stationId) return null;
   var map = await fetchDeviceStatusMap([stationId]);
   return map[stationId] || null;
+}
+
+// =====================================================================
+// SLOT-DRIVEN DASHBOARD HELPERS
+// =====================================================================
+
+async function fetchDeviceSlotsMap(stationIds) {
+  stationIds = Array.isArray(stationIds) ? stationIds.filter(Boolean) : [];
+  if (!stationIds.length) return {};
+
+  var supaCfg = getSupabaseConfig();
+  if (!supaCfg.url || !supaCfg.key ||
+      supaCfg.url === 'YOUR_SUPABASE_URL' || supaCfg.key === 'YOUR_SUPABASE_ANON_KEY') {
+    throw new Error('Supabase not configured');
+  }
+
+  var hdrs = supabaseHeaders(supaCfg.key);
+  var idList = stationIds.map(function(id) {
+    return String(id || '').trim().replace(/,/g, '');
+  }).filter(Boolean).join(',');
+  if (!idList) return {};
+
+  var url = supaCfg.url + '/rest/v1/device_slots' +
+            '?select=device_id,slot_number,node_letter' +
+            '&device_id=in.(' + encodeURIComponent(idList) + ')';
+  var res = await fetchWithTimeout(url, 15000, { headers: hdrs });
+  if (!res.ok) throw new Error('device_slots HTTP ' + res.status);
+
+  var rows = await res.json();
+  var out = {};
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i] || {};
+    if (!row.device_id || row.slot_number == null || !row.node_letter) continue;
+    var deviceId = String(row.device_id).trim().toLowerCase();
+    var nodeLetter = String(row.node_letter).trim().toUpperCase();
+    var slotNumber = Number(row.slot_number);
+    if (!deviceId || !nodeLetter || !isFinite(slotNumber)) continue;
+    if (!out[deviceId]) out[deviceId] = {};
+    out[deviceId][nodeLetter] = slotNumber;
+  }
+  return out;
+}
+
+function hasSlotData(entries, slotNumber) {
+  if (!Array.isArray(entries) || !entries.length || !slotNumber) return false;
+  var prefix = 'sat' + slotNumber;
+  function present(v) {
+    return v !== null && v !== undefined;
+  }
+  return entries.some(function(entry) {
+    return entry && (
+      present(entry[prefix + 'BatV']) ||
+      present(entry[prefix + 'BatPct']) ||
+      present(entry[prefix + 'Temp1']) ||
+      present(entry[prefix + 'Temp2']) ||
+      present(entry[prefix + 'Hum1']) ||
+      present(entry[prefix + 'Hum2'])
+    );
+  });
+}
+
+function getStationSlotAssignments(stationId, entries, deviceSlotsById) {
+  var stationKey = String(stationId || '').trim().toLowerCase();
+  var slotMap = deviceSlotsById && stationKey ? deviceSlotsById[stationKey] : null;
+  var assignments = [];
+  var seenSlots = {};
+
+  // 1. Use device_slots table mappings
+  if (slotMap) {
+    Object.keys(slotMap).forEach(function(nodeLetter) {
+      var slotNumber = Number(slotMap[nodeLetter]);
+      var nodeKey = String(nodeLetter || '').trim().toUpperCase();
+      if (!nodeKey || !isFinite(slotNumber)) return;
+      seenSlots[slotNumber] = true;
+      assignments.push({
+        nodeLetter: nodeKey,
+        slotNumber: slotNumber
+      });
+    });
+  }
+
+  // 2. Fallback: discover slots from entry data (sat1*, sat2*, ...)
+  for (var s = 1; s <= 10; s++) {
+    if (seenSlots[s]) continue;
+    if (hasSlotData(entries, s)) {
+      seenSlots[s] = true;
+      assignments.push({ nodeLetter: null, slotNumber: s });
+    }
+  }
+
+  assignments.sort(function(a, b) { return a.slotNumber - b.slotNumber; });
+
+  return assignments.map(function(item, index) {
+    return Object.assign({}, item, {
+      satelliteNumber: index + 1,
+      displayName: 'Satellite ' + (index + 1) + ' (Slot ' + item.slotNumber + ')'
+    });
+  });
+}
+
+function getStationSlotDisplayName(stationId, slotNumberOrNodeLetter, deviceSlotsById, entries) {
+  var slots = getStationSlotAssignments(stationId, entries, deviceSlotsById);
+  var input = String(slotNumberOrNodeLetter || '').trim();
+  var asNum = Number(input);
+  for (var i = 0; i < slots.length; i++) {
+    if (isFinite(asNum) && slots[i].slotNumber === asNum) return slots[i].displayName;
+    if (slots[i].nodeLetter && slots[i].nodeLetter === input.toUpperCase()) return slots[i].displayName;
+  }
+  if (isFinite(asNum)) return 'Satellite (Slot ' + asNum + ')';
+  return 'Satellite';
+}
+
+function buildStationSensorDefinitions(stationId, entries, deviceSlotsById, sensorColors) {
+  sensorColors = sensorColors || {};
+  var definitions = [
+    {
+      sensorIndex: 1, sensorId: 'S1',
+      legendLabel: 'S1 (T0.S1)', shortLabel: 'T0.S1',
+      tempKey: 't0Temp1', humKey: 't0Hum1',
+      color: sensorColors.t0s1, nodeLetter: 'H'
+    },
+    {
+      sensorIndex: 2, sensorId: 'S2',
+      legendLabel: 'S2 (T0.S2)', shortLabel: 'T0.S2',
+      tempKey: 't0Temp2', humKey: 't0Hum2',
+      color: sensorColors.t0s2, nodeLetter: 'H'
+    },
+    {
+      sensorIndex: 3, sensorId: 'S3',
+      legendLabel: 'S3 (T0.S3)', shortLabel: 'T0.S3',
+      tempKey: 't0Temp3', humKey: 't0Hum3',
+      color: sensorColors.t0s3, nodeLetter: 'H'
+    }
+  ];
+
+  var slots = getStationSlotAssignments(stationId, entries, deviceSlotsById);
+  for (var i = 0; i < slots.length; i++) {
+    var slot = slots[i];
+    var slotPrefix = 'sat' + slot.slotNumber;
+    var colorPrefix = 'slot' + slot.slotNumber + 's';
+
+    for (var sensorNumber = 1; sensorNumber <= 2; sensorNumber++) {
+      var sensorIndex = definitions.length + 1;
+      definitions.push({
+        sensorIndex: sensorIndex,
+        sensorId: 'S' + sensorIndex,
+        legendLabel: 'S' + sensorIndex + ' (' + slot.slotNumber + '.S' + sensorNumber + ')',
+        shortLabel: slot.slotNumber + '.S' + sensorNumber,
+        tempKey: slotPrefix + 'Temp' + sensorNumber,
+        humKey: slotPrefix + 'Hum' + sensorNumber,
+        color: sensorColors[colorPrefix + sensorNumber],
+        nodeLetter: slot.nodeLetter,
+        slotNumber: slot.slotNumber,
+        satelliteNumber: slot.satelliteNumber,
+        displayName: slot.displayName
+      });
+    }
+  }
+
+  return definitions;
 }
 
 /**

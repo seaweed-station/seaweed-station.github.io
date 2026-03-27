@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // battery_forecast_widget.js — Battery Prediction Panel for Live Dashboards
 // ============================================================================
 // Depends on: battery_model.js, Chart.js (already loaded by parent pages)
@@ -16,8 +16,8 @@ window.BatteryForecast = (function () {
   var anchorMode = 'auto';   // 'auto' | 'locked'
   var lockedAnchorIdx = -1;  // index into allEntries when locked
   // Previous-Calculated tracking: keep prior projection visible when auto anchor drifts
-  var _lastKnownAnchorT = { t0: -1, satA: -1, satB: -1 };
-  var _prevCalcAnchorT  = { t0: -1, satA: -1, satB: -1 };
+  var _lastKnownAnchorT = { t0: -1, slot1: -1, slot2: -1 };
+  var _prevCalcAnchorT  = { t0: -1, slot1: -1, slot2: -1 };
   var showT0  = true;   // Always true — chart legend handles show/hide
   var showSatA = true;
   var showSatB = true;
@@ -35,12 +35,12 @@ window.BatteryForecast = (function () {
     t0Actual:    '#3b82f6',
     t0Predict:   '#3b82f6',
     t0Trend:     '#93c5fd',  // lighter blue for trend
-    satAActual:  '#10b981',
-    satAPredict: '#10b981',
-    satATrend:   '#6ee7b7',  // lighter green
-    satBActual:  '#f59e0b',
-    satBPredict: '#f59e0b',
-    satBTrend:   '#fcd34d',  // lighter amber
+    slot1Actual:  '#10b981',
+    slot1Predict: '#10b981',
+    slot1Trend:   '#6ee7b7',  // lighter green
+    slot2Actual:  '#f59e0b',
+    slot2Predict: '#f59e0b',
+    slot2Trend:   '#fcd34d',  // lighter amber
     configLine:  '#ef4444',
   };
 
@@ -290,27 +290,27 @@ window.BatteryForecast = (function () {
     return -1;
   }
 
-  function getSatAAnchor(entries) {
+  function getSlot1Anchor(entries) {
     if (anchorMode === 'locked' && lockedAnchorIdx >= 0 && lockedAnchorIdx < entries.length) {
-      // Find nearest Sat-A reading at or before locked index
+      // Find nearest Slot 1 reading at or before locked index
       for (var i = lockedAnchorIdx; i >= 0; i--) {
-        if (entries[i].satABatPct !== null && entries[i].satABatPct > 0) return i;
+        if (entries[i].sat1BatPct !== null && entries[i].sat1BatPct > 0) return i;
       }
     }
     for (var i = entries.length - 1; i >= 0; i--) {
-      if (entries[i].satABatPct !== null && entries[i].satABatPct > 0) return i;
+      if (entries[i].sat1BatPct !== null && entries[i].sat1BatPct > 0) return i;
     }
     return -1;
   }
 
-  function getSatBAnchor(entries) {
+  function getSlot2Anchor(entries) {
     if (anchorMode === 'locked' && lockedAnchorIdx >= 0 && lockedAnchorIdx < entries.length) {
       for (var i = lockedAnchorIdx; i >= 0; i--) {
-        if (entries[i].satBBatPct !== null && entries[i].satBBatPct > 0) return i;
+        if (entries[i].sat2BatPct !== null && entries[i].sat2BatPct > 0) return i;
       }
     }
     for (var i = entries.length - 1; i >= 0; i--) {
-      if (entries[i].satBBatPct !== null && entries[i].satBBatPct > 0) return i;
+      if (entries[i].sat2BatPct !== null && entries[i].sat2BatPct > 0) return i;
     }
     return -1;
   }
@@ -377,7 +377,7 @@ window.BatteryForecast = (function () {
     var t0Cfg = cfg || {
       deployMode: 1, sleepEnable: true, samplePeriod_s: 600,
       tsBulkInterval_s: 900, tsBulkFreqHours: 24,
-      espnowSyncPeriod_s: 3600, satAInstalled: true, satBInstalled: false,
+      espnowSyncPeriod_s: 3600, sat1Installed: true, sat2Installed: false,
     };
 
     var t0Result  = BatteryModel.calcT0Daily(t0Cfg);
@@ -389,9 +389,9 @@ window.BatteryForecast = (function () {
 
     var datasets = [];
     var info = {
-      t0DaysLeft: null, satADaysLeft: null, satBDaysLeft: null,
-      t0TrendDaysLeft: null, satATrendDaysLeft: null, satBTrendDaysLeft: null,
-      t0Mae: null, satAMae: null, satBMae: null,
+      t0DaysLeft: null, slot1DaysLeft: null, slot2DaysLeft: null,
+      t0TrendDaysLeft: null, slot1TrendDaysLeft: null, slot2TrendDaysLeft: null,
+      t0Mae: null, slot1Mae: null, slot2Mae: null,
       configAvailable: !!cfg,
       configSummary: BatteryModel.configSummary(cfg),
       configChanges: changes,
@@ -499,81 +499,81 @@ window.BatteryForecast = (function () {
       }
     }
 
-    // --- Sat-A ---
+    // --- Slot 1 ---
     if (showSatA) {
-      var satAActual = [];
+      var slot1Actual = [];
       entries.forEach(function (e) {
-        if (e.satABatPct !== null && e.satABatPct > 0) satAActual.push({ x: e.timestamp, y: e.satABatPct });
+        if (e.sat1BatPct !== null && e.sat1BatPct > 0) slot1Actual.push({ x: e.timestamp, y: e.sat1BatPct });
       });
       datasets.push({
-        label: 'Sat-A Actual (' + satAActual.length + ')',
-        data: satAActual,
-        borderColor: C.satAActual,
-        backgroundColor: C.satAActual + '22',
+        label: 'Slot 1 Actual (' + slot1Actual.length + ')',
+        data: slot1Actual,
+        borderColor: C.slot1Actual,
+        backgroundColor: C.slot1Actual + '22',
         borderWidth: 2,
         pointRadius: 0,
         pointHoverRadius: 4,
         tension: 0.3,
         fill: false,
-        hidden: satAActual.length === 0,
+        hidden: slot1Actual.length === 0,
       });
 
-      var satAAnchorIdx = getSatAAnchor(entries);
-      if (satAAnchorIdx >= 0) {
-        var satAEntry = entries[satAAnchorIdx];
+      var slot1AnchorIdx = getSlot1Anchor(entries);
+      if (slot1AnchorIdx >= 0) {
+        var slot1Entry = entries[slot1AnchorIdx];
         var teProj = BatteryModel.projectCurve(
-          satAEntry.satABatPct,
-          satAEntry.timestamp,
+          slot1Entry.sat1BatPct,
+          slot1Entry.timestamp,
           teResult.dailyTotal_mAh,
           teResult.batteryCapacity,
           teResult.derating
         );
-        var satAPredData = teProj.map(function (p) { return { x: p.time, y: p.pct }; });
+        var slot1PredData = teProj.map(function (p) { return { x: p.time, y: p.pct }; });
         datasets.push({
-          label: 'Sat-A Calculated',
-          data: satAPredData,
-          borderColor: C.satAPredict,
+          label: 'Slot 1 Calculated',
+          data: slot1PredData,
+          borderColor: C.slot1Predict,
           backgroundColor: 'transparent',
           borderWidth: 1.5,
           borderDash: [6, 4],
           pointRadius: 0,
           tension: 0.3,
           fill: false,
-          hidden: satAActual.length === 0,
+          hidden: slot1Actual.length === 0,
         });
         // Days remaining
-        var latestSatA = getSatAAnchor(entries);
-        if (latestSatA >= 0) {
-          var saEntry = entries[latestSatA];
-          var saRemain = (saEntry.satABatPct / 100.0) * teResult.usable_mAh;
-          info.satADaysLeft = teResult.dailyTotal_mAh > 0 ? saRemain / teResult.dailyTotal_mAh : null;
+        var latestSlot1 = getSlot1Anchor(entries);
+        if (latestSlot1 >= 0) {
+          var saEntry = entries[latestSlot1];
+          var saRemain = (saEntry.sat1BatPct / 100.0) * teResult.usable_mAh;
+          info.slot1DaysLeft = teResult.dailyTotal_mAh > 0 ? saRemain / teResult.dailyTotal_mAh : null;
         }
-        info.satAMae = computeMAE(entries, satAAnchorIdx, teProj, 'satABatPct');
+        info.slot1Mae = computeMAE(entries, slot1AnchorIdx, teProj, 'sat1BatPct');
       }
       // Previous Calculated
-      if (anchorMode === 'auto' && satAAnchorIdx >= 0) {
-        var _curSaT = entries[satAAnchorIdx].timestamp.getTime();
-        if (_lastKnownAnchorT.satA < 0) {
-          _lastKnownAnchorT.satA = _curSaT;
-        } else if (_curSaT !== _lastKnownAnchorT.satA) {
-          _prevCalcAnchorT.satA = _lastKnownAnchorT.satA;
-          _lastKnownAnchorT.satA = _curSaT;
+      if (anchorMode === 'auto' && slot1AnchorIdx >= 0) {
+        var _curSaT = entries[slot1AnchorIdx].timestamp.getTime();
+        if (_lastKnownAnchorT.slot1 < 0) {
+          _lastKnownAnchorT.slot1 = _curSaT;
+        } else if (_curSaT !== _lastKnownAnchorT.slot1) {
+          _prevCalcAnchorT.slot1 = _lastKnownAnchorT.slot1;
+          _lastKnownAnchorT.slot1 = _curSaT;
         }
-        if (_prevCalcAnchorT.satA > 0) {
+        if (_prevCalcAnchorT.slot1 > 0) {
           var _psai = -1, _psad = Infinity;
           for (var psi = 0; psi < entries.length; psi++) {
-            var _dsa = Math.abs(entries[psi].timestamp.getTime() - _prevCalcAnchorT.satA);
-            if (_dsa < _psad && entries[psi].satABatPct > 0) { _psad = _dsa; _psai = psi; }
+            var _dsa = Math.abs(entries[psi].timestamp.getTime() - _prevCalcAnchorT.slot1);
+            if (_dsa < _psad && entries[psi].sat1BatPct > 0) { _psad = _dsa; _psai = psi; }
           }
           if (_psai >= 0) {
             var _psaProj = BatteryModel.projectCurve(
-              entries[_psai].satABatPct, entries[_psai].timestamp,
+              entries[_psai].sat1BatPct, entries[_psai].timestamp,
               teResult.dailyTotal_mAh, teResult.batteryCapacity, teResult.derating
             );
             datasets.push({
-              label: 'Sat-A Calc. (prior)',
+              label: 'Slot 1 Calc. (prior)',
               data:  _psaProj.map(function (p) { return { x: p.time, y: p.pct }; }),
-              borderColor: C.satAPredict + '44',
+              borderColor: C.slot1Predict + '44',
               backgroundColor: 'transparent',
               borderWidth: 1,
               borderDash: [2, 6],
@@ -585,90 +585,90 @@ window.BatteryForecast = (function () {
         }
       }
       // Trending
-      var satATrend = buildTrendDataset(satAActual, 'Sat-A', C.satATrend);
-      if (satATrend.dataset) {
-        datasets.push(satATrend.dataset);
-        info.satATrendDaysLeft = satATrend.trendDaysLeft;
-        info._trendConfidence.push({ label: 'Sat-A', windowLabel: satATrend.windowLabel, r2: satATrend.r2, color: C.satATrend, slope_pct_per_day: satATrend.slope_pct_per_day, trendDaysLeft: satATrend.trendDaysLeft });
+      var slot1Trend = buildTrendDataset(slot1Actual, 'Slot 1', C.slot1Trend);
+      if (slot1Trend.dataset) {
+        datasets.push(slot1Trend.dataset);
+        info.slot1TrendDaysLeft = slot1Trend.trendDaysLeft;
+        info._trendConfidence.push({ label: 'Slot 1', windowLabel: slot1Trend.windowLabel, r2: slot1Trend.r2, color: C.slot1Trend, slope_pct_per_day: slot1Trend.slope_pct_per_day, trendDaysLeft: slot1Trend.trendDaysLeft });
       } else {
-        if (satAActual.length > 0) info._trendInsufficient.push({ label: 'Sat-A', reason: satATrend.reason, color: C.satATrend });
+        if (slot1Actual.length > 0) info._trendInsufficient.push({ label: 'Slot 1', reason: slot1Trend.reason, color: C.slot1Trend });
       }
     }
 
-    // --- Sat-B ---
+    // --- Slot 2 ---
     if (showSatB) {
-      var satBActual = [];
+      var slot2Actual = [];
       entries.forEach(function (e) {
-        if (e.satBBatPct !== null && e.satBBatPct > 0) satBActual.push({ x: e.timestamp, y: e.satBBatPct });
+        if (e.sat2BatPct !== null && e.sat2BatPct > 0) slot2Actual.push({ x: e.timestamp, y: e.sat2BatPct });
       });
       datasets.push({
-        label: 'Sat-B Actual (' + satBActual.length + ')',
-        data: satBActual,
-        borderColor: C.satBActual,
-        backgroundColor: C.satBActual + '22',
+        label: 'Slot 2 Actual (' + slot2Actual.length + ')',
+        data: slot2Actual,
+        borderColor: C.slot2Actual,
+        backgroundColor: C.slot2Actual + '22',
         borderWidth: 2,
         pointRadius: 0,
         pointHoverRadius: 4,
         tension: 0.3,
         fill: false,
-        hidden: satBActual.length === 0,
+        hidden: slot2Actual.length === 0,
       });
 
-      var satBAnchorIdx = getSatBAnchor(entries);
-      if (satBAnchorIdx >= 0) {
-        var satBEntry = entries[satBAnchorIdx];
+      var slot2AnchorIdx = getSlot2Anchor(entries);
+      if (slot2AnchorIdx >= 0) {
+        var slot2Entry = entries[slot2AnchorIdx];
         var teProjB = BatteryModel.projectCurve(
-          satBEntry.satBBatPct,
-          satBEntry.timestamp,
+          slot2Entry.sat2BatPct,
+          slot2Entry.timestamp,
           teResult.dailyTotal_mAh,
           teResult.batteryCapacity,
           teResult.derating
         );
-        var satBPredData = teProjB.map(function (p) { return { x: p.time, y: p.pct }; });
+        var slot2PredData = teProjB.map(function (p) { return { x: p.time, y: p.pct }; });
         datasets.push({
-          label: 'Sat-B Calculated',
-          data: satBPredData,
-          borderColor: C.satBPredict,
+          label: 'Slot 2 Calculated',
+          data: slot2PredData,
+          borderColor: C.slot2Predict,
           backgroundColor: 'transparent',
           borderWidth: 1.5,
           borderDash: [6, 4],
           pointRadius: 0,
           tension: 0.3,
           fill: false,
-          hidden: satBActual.length === 0,
+          hidden: slot2Actual.length === 0,
         });
-        var latestSatB = getSatBAnchor(entries);
-        if (latestSatB >= 0) {
-          var sbEntry = entries[latestSatB];
-          var sbRemain = (sbEntry.satBBatPct / 100.0) * teResult.usable_mAh;
-          info.satBDaysLeft = teResult.dailyTotal_mAh > 0 ? sbRemain / teResult.dailyTotal_mAh : null;
+        var latestSlot2 = getSlot2Anchor(entries);
+        if (latestSlot2 >= 0) {
+          var sbEntry = entries[latestSlot2];
+          var sbRemain = (sbEntry.sat2BatPct / 100.0) * teResult.usable_mAh;
+          info.slot2DaysLeft = teResult.dailyTotal_mAh > 0 ? sbRemain / teResult.dailyTotal_mAh : null;
         }
-        info.satBMae = computeMAE(entries, satBAnchorIdx, teProjB, 'satBBatPct');
+        info.slot2Mae = computeMAE(entries, slot2AnchorIdx, teProjB, 'sat2BatPct');
       }
       // Previous Calculated
-      if (anchorMode === 'auto' && satBAnchorIdx >= 0) {
-        var _curSbT = entries[satBAnchorIdx].timestamp.getTime();
-        if (_lastKnownAnchorT.satB < 0) {
-          _lastKnownAnchorT.satB = _curSbT;
-        } else if (_curSbT !== _lastKnownAnchorT.satB) {
-          _prevCalcAnchorT.satB = _lastKnownAnchorT.satB;
-          _lastKnownAnchorT.satB = _curSbT;
+      if (anchorMode === 'auto' && slot2AnchorIdx >= 0) {
+        var _curSbT = entries[slot2AnchorIdx].timestamp.getTime();
+        if (_lastKnownAnchorT.slot2 < 0) {
+          _lastKnownAnchorT.slot2 = _curSbT;
+        } else if (_curSbT !== _lastKnownAnchorT.slot2) {
+          _prevCalcAnchorT.slot2 = _lastKnownAnchorT.slot2;
+          _lastKnownAnchorT.slot2 = _curSbT;
         }
-        if (_prevCalcAnchorT.satB > 0) {
+        if (_prevCalcAnchorT.slot2 > 0) {
           var _psbi = -1, _psbd = Infinity;
           for (var pbsi = 0; pbsi < entries.length; pbsi++) {
-            var _dsb = Math.abs(entries[pbsi].timestamp.getTime() - _prevCalcAnchorT.satB);
-            if (_dsb < _psbd && entries[pbsi].satBBatPct > 0) { _psbd = _dsb; _psbi = pbsi; }
+            var _dsb = Math.abs(entries[pbsi].timestamp.getTime() - _prevCalcAnchorT.slot2);
+            if (_dsb < _psbd && entries[pbsi].sat2BatPct > 0) { _psbd = _dsb; _psbi = pbsi; }
           }
           if (_psbi >= 0) {
             var _psbProj = BatteryModel.projectCurve(
-              entries[_psbi].satBBatPct, entries[_psbi].timestamp,
+              entries[_psbi].sat2BatPct, entries[_psbi].timestamp,
               teResult.dailyTotal_mAh, teResult.batteryCapacity, teResult.derating
             );
             datasets.push({
-              label: 'Sat-B Calc. (prior)',
+              label: 'Slot 2 Calc. (prior)',
               data:  _psbProj.map(function (p) { return { x: p.time, y: p.pct }; }),
-              borderColor: C.satBPredict + '44',
+              borderColor: C.slot2Predict + '44',
               backgroundColor: 'transparent',
               borderWidth: 1,
               borderDash: [2, 6],
@@ -680,13 +680,13 @@ window.BatteryForecast = (function () {
         }
       }
       // Trending
-      var satBTrend = buildTrendDataset(satBActual, 'Sat-B', C.satBTrend);
-      if (satBTrend.dataset) {
-        datasets.push(satBTrend.dataset);
-        info.satBTrendDaysLeft = satBTrend.trendDaysLeft;
-        info._trendConfidence.push({ label: 'Sat-B', windowLabel: satBTrend.windowLabel, r2: satBTrend.r2, color: C.satBTrend, slope_pct_per_day: satBTrend.slope_pct_per_day, trendDaysLeft: satBTrend.trendDaysLeft });
+      var slot2Trend = buildTrendDataset(slot2Actual, 'Slot 2', C.slot2Trend);
+      if (slot2Trend.dataset) {
+        datasets.push(slot2Trend.dataset);
+        info.slot2TrendDaysLeft = slot2Trend.trendDaysLeft;
+        info._trendConfidence.push({ label: 'Slot 2', windowLabel: slot2Trend.windowLabel, r2: slot2Trend.r2, color: C.slot2Trend, slope_pct_per_day: slot2Trend.slope_pct_per_day, trendDaysLeft: slot2Trend.trendDaysLeft });
       } else {
-        if (satBActual.length > 0) info._trendInsufficient.push({ label: 'Sat-B', reason: satBTrend.reason, color: C.satBTrend });
+        if (slot2Actual.length > 0) info._trendInsufficient.push({ label: 'Slot 2', reason: slot2Trend.reason, color: C.slot2Trend });
       }
     }
 
@@ -836,8 +836,8 @@ window.BatteryForecast = (function () {
       if (oldC.samplePeriod_s   !== newC.samplePeriod_s)   d.push('Sample ' + fmtSec(newC.samplePeriod_s));
       if (oldC.tsBulkFreqHours  !== newC.tsBulkFreqHours)  d.push('Web ' + fmtSec(newC.tsBulkFreqHours * 3600));
       if (oldC.espnowSyncPeriod_s !== newC.espnowSyncPeriod_s) d.push('Sat sync ' + fmtSec(newC.espnowSyncPeriod_s));
-      var oldSats = (oldC.satAInstalled ? 1 : 0) + (oldC.satBInstalled ? 1 : 0);
-      var newSats = (newC.satAInstalled ? 1 : 0) + (newC.satBInstalled ? 1 : 0);
+      var oldSats = (oldC.sat1Installed ? 1 : 0) + (oldC.sat2Installed ? 1 : 0);
+      var newSats = (newC.sat1Installed ? 1 : 0) + (newC.sat2Installed ? 1 : 0);
       if (oldSats !== newSats) d.push(newSats + ' sat');
       return d.join(', ') || '?';
     }
@@ -915,8 +915,8 @@ window.BatteryForecast = (function () {
 
     html += '<div class="fc-cards">';
     html += daysCard('T0 Gateway',  info.t0DaysLeft,   info.t0Mae,   C.t0Actual,   info.t0TrendDaysLeft);
-    html += daysCard('Satellite A', info.satADaysLeft, info.satAMae, C.satAActual, info.satATrendDaysLeft);
-    html += daysCard('Satellite B', info.satBDaysLeft, info.satBMae, C.satBActual, info.satBTrendDaysLeft);
+    html += daysCard('Slot 1', info.slot1DaysLeft, info.slot1Mae, C.slot1Actual, info.slot1TrendDaysLeft);
+    html += daysCard('Slot 2', info.slot2DaysLeft, info.slot2Mae, C.slot2Actual, info.slot2TrendDaysLeft);
     html += '</div>';
 
     var el = document.getElementById('fcInfoCards');
@@ -1190,8 +1190,8 @@ window.BatteryForecast = (function () {
   function reset() {
     anchorMode = 'auto';
     lockedAnchorIdx = -1;
-    _lastKnownAnchorT = { t0: -1, satA: -1, satB: -1 };
-    _prevCalcAnchorT  = { t0: -1, satA: -1, satB: -1 };
+    _lastKnownAnchorT = { t0: -1, slot1: -1, slot2: -1 };
+    _prevCalcAnchorT  = { t0: -1, slot1: -1, slot2: -1 };
   }
 
   return {

@@ -46,8 +46,8 @@ function parseField8ConfigUnified(rawField8) {
     tsBulkInterval_s:  legacyLayout ? (parseInt(tokens[3], 10) || 900) : 900,
     tsBulkFreqHours:   legacyLayout ? (parseInt(tokens[4], 10) || 24) : 24,
     espnowSyncPeriod_s:legacyLayout ? (parseInt(tokens[5], 10) || 3600) : 3600,
-    satAInstalled:     legacyLayout ? (parseInt(tokens[6], 10) === 1) : true,
-    satBInstalled:     legacyLayout ? (parseInt(tokens[7], 10) === 1) : true
+    slot1Installed:    legacyLayout ? (parseInt(tokens[6], 10) === 1) : true,
+    slot2Installed:    legacyLayout ? (parseInt(tokens[7], 10) === 1) : true
   };
 }
 
@@ -55,7 +55,7 @@ function parseField8ConfigUnified(rawField8) {
  * Extract satellite sync configuration from field8.
  *
  * @param {string} rawField8
- * @returns {{ periodMs: number, satAInstalled: boolean, satBInstalled: boolean }|null}
+ * @returns {{ periodMs: number, slot1Installed: boolean, slot2Installed: boolean }|null}
  */
 function parseSyncConfigFromField8(rawField8) {
   var cfg = parseField8ConfigUnified(rawField8);
@@ -65,8 +65,8 @@ function parseSyncConfigFromField8(rawField8) {
   periodSec = Math.max(60, Math.min(24 * 3600, periodSec));
   return {
     periodMs:       periodSec * 1000,
-    satAInstalled:  !!cfg.satAInstalled,
-    satBInstalled:  !!cfg.satBInstalled
+    slot1Installed: !!cfg.slot1Installed,
+    slot2Installed: !!cfg.slot2Installed
   };
 }
 
@@ -75,7 +75,7 @@ function parseSyncConfigFromField8(rawField8) {
  * Falls back to legacy field8 parsing for older datasets.
  *
  * @param {Object} entry
- * @returns {{ periodMs: number, satAInstalled: boolean, satBInstalled: boolean }|null}
+ * @returns {{ periodMs: number, slot1Installed: boolean, slot2Installed: boolean }|null}
  */
 function parseSyncConfigFromEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
@@ -83,16 +83,16 @@ function parseSyncConfigFromEntry(entry) {
   var periodSec = parseInt(entry.espnowSyncPeriod_s, 10);
   if (isFinite(periodSec) && periodSec > 0) {
     periodSec = Math.max(60, Math.min(24 * 3600, periodSec));
-    var satAInstalled = (entry.satAInstalled !== null && entry.satAInstalled !== undefined)
-      ? !!entry.satAInstalled
-      : (entry.satASampleId != null);
-    var satBInstalled = (entry.satBInstalled !== null && entry.satBInstalled !== undefined)
-      ? !!entry.satBInstalled
-      : (entry.satBSampleId != null);
+    var slot1Installed = (entry.sat1Installed !== null && entry.sat1Installed !== undefined)
+      ? !!entry.sat1Installed
+      : (entry.sat1SampleId != null);
+    var slot2Installed = (entry.sat2Installed !== null && entry.sat2Installed !== undefined)
+      ? !!entry.sat2Installed
+      : (entry.sat2SampleId != null);
     return {
       periodMs: periodSec * 1000,
-      satAInstalled: satAInstalled,
-      satBInstalled: satBInstalled
+      slot1Installed: slot1Installed,
+      slot2Installed: slot2Installed
     };
   }
 
@@ -109,7 +109,7 @@ function parseSyncConfigFromEntry(entry) {
  * value appears at valueKey.
  *
  * @param {Array}  entries       - Parsed entry objects with .timestamp.
- * @param {string} sampleIdKey   - Property name for sample-ID (e.g. 'satASampleId').
+ * @param {string} sampleIdKey   - Property name for sample-ID (e.g. 'sat1SampleId').
  * @param {string} valueKey      - Fallback property to detect activity.
  * @returns {number[]} Array of epoch-ms timestamps.
  */
@@ -173,7 +173,7 @@ function estimateSyncPeriodMs(eventTimes, defaultPeriodMs) {
  * @param {string} sampleIdKey
  * @param {string} valueKey
  * @param {number} defaultPeriodMs
- * @returns {Array<{ ts: number, periodMs: number, satAInstalled: boolean, satBInstalled: boolean }>}
+ * @returns {Array<{ ts: number, periodMs: number, slot1Installed: boolean, slot2Installed: boolean }>}
  */
 function buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs) {
   var eventTimes       = collectSyncEventTimes(entries, sampleIdKey, valueKey);
@@ -184,32 +184,32 @@ function buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs
     : estimateSyncPeriodMs(eventTimes, 3 * 3600000);
   var timeline = [];
   var lastPeriod       = inferredPeriodMs;
-  var lastSatAInstalled = true;
-  var lastSatBInstalled = true;
+  var lastSlot1Installed = true;
+  var lastSlot2Installed = true;
 
   timeline.push({
     ts: entries[0].timestamp.getTime(),
     periodMs: inferredPeriodMs,
-    satAInstalled: true,
-    satBInstalled: true
+    slot1Installed: true,
+    slot2Installed: true
   });
 
   for (var i = 0; i < entries.length; i++) {
     var syncCfg = parseSyncConfigFromEntry(entries[i]);
     if (!syncCfg) continue;
     var changed = syncCfg.periodMs !== lastPeriod ||
-                  syncCfg.satAInstalled !== lastSatAInstalled ||
-                  syncCfg.satBInstalled !== lastSatBInstalled;
+                  syncCfg.slot1Installed !== lastSlot1Installed ||
+                  syncCfg.slot2Installed !== lastSlot2Installed;
     if (changed) {
       timeline.push({
         ts:             entries[i].timestamp.getTime(),
         periodMs:       syncCfg.periodMs,
-        satAInstalled:  syncCfg.satAInstalled,
-        satBInstalled:  syncCfg.satBInstalled
+        slot1Installed: syncCfg.slot1Installed,
+        slot2Installed: syncCfg.slot2Installed
       });
-      lastPeriod        = syncCfg.periodMs;
-      lastSatAInstalled = syncCfg.satAInstalled;
-      lastSatBInstalled = syncCfg.satBInstalled;
+      lastPeriod         = syncCfg.periodMs;
+      lastSlot1Installed = syncCfg.slot1Installed;
+      lastSlot2Installed = syncCfg.slot2Installed;
     }
   }
 
@@ -222,15 +222,15 @@ function buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs
  * @param {number} tsMs           - Epoch-ms to query.
  * @param {Array}  timeline       - Output of buildSyncPeriodTimeline().
  * @param {number} defaultPeriodMs
- * @returns {{ periodMs: number, satAInstalled: boolean, satBInstalled: boolean }}
+ * @returns {{ periodMs: number, slot1Installed: boolean, slot2Installed: boolean }}
  */
 function syncCfgAt(tsMs, timeline, defaultPeriodMs) {
-  var cfg = { periodMs: defaultPeriodMs, satAInstalled: true, satBInstalled: true };
+  var cfg = { periodMs: defaultPeriodMs, slot1Installed: true, slot2Installed: true };
   for (var i = 0; i < timeline.length; i++) {
     if (timeline[i].ts <= tsMs) {
       cfg.periodMs       = timeline[i].periodMs;
-      cfg.satAInstalled  = timeline[i].satAInstalled;
-      cfg.satBInstalled  = timeline[i].satBInstalled;
+      cfg.slot1Installed = timeline[i].slot1Installed;
+      cfg.slot2Installed = timeline[i].slot2Installed;
     } else {
       break;
     }
@@ -247,7 +247,7 @@ function syncCfgAt(tsMs, timeline, defaultPeriodMs) {
  * counts plus individual slot details.
  *
  * @param {Array}  entries         - Parsed entry objects.
- * @param {string} sampleIdKey     - e.g. 'satASampleId'.
+ * @param {string} sampleIdKey     - e.g. 'sat1SampleId'.
  * @param {string} valueKey        - Fallback key for activity detection.
  * @param {number} startMs         - Epoch-ms start of evaluation range.
  * @param {number} endMs           - Epoch-ms end of evaluation range.

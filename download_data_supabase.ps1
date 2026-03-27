@@ -3,8 +3,8 @@
     Downloads station data from Supabase for the Seaweed Station Dashboard.
 .DESCRIPTION
     Phase 3 replacement for download_data.ps1 (ThingSpeak).
-    Queries Supabase PostgREST for sensor_readings, maps columns back to the
-    ThingSpeak field1-8 shape so existing dashboard pages work unmodified.
+    Queries Supabase PostgREST for samples_raw and flattens hub + satellite rows
+    into the structured dashboard feed shape used by the current pages.
     Output: data/<dataFolder>/merged_data.js → window.STATION_DATA = {...}
     Also downloads Open-Meteo weather data for each station location.
 .PARAMETER MaxResults
@@ -140,7 +140,7 @@ Write-Host "  Time       : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Write-Host ""
 
 # ═══════════════════════════════════════════════════════════════════
-# HELPER: Map a Supabase row to structured feed object (v2)
+# HELPER: Map a compatibility row to structured feed object (v2)
 # ═══════════════════════════════════════════════════════════════════
 function ConvertTo-StructuredFeed {
     param($row)
@@ -156,35 +156,207 @@ function ConvertTo-StructuredFeed {
         humidity_1       = $row.humidity_1
         temp_2           = $row.temp_2
         humidity_2       = $row.humidity_2
-        # Sat-A
-        sat_a_battery_v   = $row.sat_a_battery_v
-        sat_a_battery_pct = $row.sat_a_battery_pct
-        sat_a_flash_pct   = $row.sat_a_flash_pct
-        sat_a_temp_1      = $row.sat_a_temp_1
-        sat_a_humidity_1  = $row.sat_a_humidity_1
-        sat_a_temp_2      = $row.sat_a_temp_2
-        sat_a_humidity_2  = $row.sat_a_humidity_2
-        # Sat-B
-        sat_b_battery_v   = $row.sat_b_battery_v
-        sat_b_battery_pct = $row.sat_b_battery_pct
-        sat_b_flash_pct   = $row.sat_b_flash_pct
-        sat_b_temp_1      = $row.sat_b_temp_1
-        sat_b_humidity_1  = $row.sat_b_humidity_1
-        sat_b_temp_2      = $row.sat_b_temp_2
-        sat_b_humidity_2  = $row.sat_b_humidity_2
-        # Config
-        deploy_mode          = $row.deploy_mode
-        sample_period_s      = $row.sample_period_s
-        sleep_enable         = $row.sleep_enable
-        espnow_sync_period_s = $row.espnow_sync_period_s
-        sat_a_installed      = $row.sat_a_installed
-        sat_b_installed      = $row.sat_b_installed
-        # Firmware
-        fw_version    = $row.fw_version
-        fw_date       = $row.fw_date
-        sat_a_fw_ver  = $row.sat_a_fw_ver
-        sat_b_fw_ver  = $row.sat_b_fw_ver
+        temp_3           = $row.temp_3
+        humidity_3       = $row.humidity_3
+        # Slot 1
+        sat_1_battery_v   = $row.sat_1_battery_v
+        sat_1_battery_pct = $row.sat_1_battery_pct
+        sat_1_flash_pct   = $row.sat_1_flash_pct
+        sat_1_temp_1      = $row.sat_1_temp_1
+        sat_1_humidity_1  = $row.sat_1_humidity_1
+        sat_1_temp_2      = $row.sat_1_temp_2
+        sat_1_humidity_2  = $row.sat_1_humidity_2
+        # Slot 2
+        sat_2_battery_v   = $row.sat_2_battery_v
+        sat_2_battery_pct = $row.sat_2_battery_pct
+        sat_2_flash_pct   = $row.sat_2_flash_pct
+        sat_2_temp_1      = $row.sat_2_temp_1
+        sat_2_humidity_1  = $row.sat_2_humidity_1
+        sat_2_temp_2      = $row.sat_2_temp_2
+        sat_2_humidity_2  = $row.sat_2_humidity_2
+        # Config / firmware now come from upload_sessions + sync_sessions.
+        deploy_mode          = $null
+        sample_period_s      = $null
+        sleep_enable         = $null
+        espnow_sync_period_s = $null
+        sat_1_installed      = $null
+        sat_2_installed      = $null
+        fw_version    = $null
+        fw_date       = $null
+        sat_1_fw_ver  = $null
+        sat_2_fw_ver  = $null
+        _discovered_slots = @(1, 2)
     }
+}
+
+function Get-SamplesRawRows {
+    param(
+        [string]$DeviceId,
+        [string]$NodeFilter,
+        [string]$SelectClause,
+        [string]$OrderClause,
+        [int]$Limit,
+        [string]$SampleEpochGte = "",
+        [string]$SampleEpochLte = ""
+    )
+
+    $rows = @()
+    $offset = 0
+    $pageSize = 1000
+
+    while ($rows.Count -lt $Limit) {
+        $batchLimit = [Math]::Min($pageSize, $Limit - $rows.Count)
+        $url = "$($cfg.supabaseUrl)/rest/v1/samples_raw" +
+               "?device_id=eq.$DeviceId" +
+               "&$NodeFilter" +
+               "&select=$SelectClause" +
+               $(if ($SampleEpochGte) { "&sample_epoch=gte.$SampleEpochGte" } else { "" }) +
+               $(if ($SampleEpochLte) { "&sample_epoch=lte.$SampleEpochLte" } else { "" }) +
+               "&order=$OrderClause" +
+               "&limit=$batchLimit" +
+               "&offset=$offset"
+
+        $response = Invoke-RestMethod -Uri $url -Headers $supaHeaders -Method Get -TimeoutSec 30
+        $batch = if ($response -is [array]) { @($response) } elseif ($null -ne $response) { @($response) } else { @() }
+        if ($batch.Count -eq 0) { break }
+
+        $rows += $batch
+        if ($batch.Count -lt $batchLimit) { break }
+        $offset += $batch.Count
+    }
+
+    return $rows
+}
+
+function Get-TimeMs {
+    param($Value)
+    if (-not $Value) { return [double]::NaN }
+    try {
+        return [DateTimeOffset]::Parse([string]$Value).ToUnixTimeMilliseconds()
+    } catch {
+        return [double]::NaN
+    }
+}
+
+function Get-LatestInsertedRow {
+    param($Current, $Candidate)
+    if ($null -eq $Current) { return $Candidate }
+
+    $currentInserted = Get-TimeMs $Current.inserted_at
+    $candidateInserted = Get-TimeMs $Candidate.inserted_at
+    if ($candidateInserted -gt $currentInserted) { return $Candidate }
+    if ($candidateInserted -lt $currentInserted) { return $Current }
+
+    $currentId = if ($Current.id -ne $null) { [int64]$Current.id } else { -1 }
+    $candidateId = if ($Candidate.id -ne $null) { [int64]$Candidate.id } else { -1 }
+    if ($candidateId -gt $currentId) { return $Candidate }
+    return $Current
+}
+
+function Get-DedupedNodeRows {
+    param([array]$Rows)
+
+    $byKey = @{}
+    foreach ($row in $Rows) {
+        if ($null -eq $row -or -not $row.node_id -or -not $row.sample_epoch) { continue }
+        $key = ([string]$row.node_id).ToUpperInvariant() + '|' + [string]$row.sample_epoch
+        $byKey[$key] = Get-LatestInsertedRow $byKey[$key] $row
+    }
+
+    return @($byKey.Values | Sort-Object { Get-TimeMs $_.sample_epoch })
+}
+
+function Find-ClosestNodeSample {
+    param(
+        [array]$Rows,
+        [double]$TargetMs,
+        [double]$WindowMs = 150000
+    )
+
+    if (-not $Rows -or $Rows.Count -eq 0 -or [double]::IsNaN($TargetMs)) { return $null }
+
+    $low = 0
+    $high = $Rows.Count
+    while ($low -lt $high) {
+        $mid = [Math]::Floor(($low + $high) / 2)
+        if ((Get-TimeMs $Rows[$mid].sample_epoch) -lt $TargetMs) { $low = $mid + 1 }
+        else { $high = $mid }
+    }
+
+    $best = $null
+    $bestDelta = [double]::PositiveInfinity
+    foreach ($idx in @($low - 1, $low)) {
+        if ($idx -lt 0 -or $idx -ge $Rows.Count) { continue }
+        $rowMs = Get-TimeMs $Rows[$idx].sample_epoch
+        if ([double]::IsNaN($rowMs)) { continue }
+        $delta = [Math]::Abs($rowMs - $TargetMs)
+        if ($delta -le $WindowMs -and $delta -lt $bestDelta) {
+            $best = $Rows[$idx]
+            $bestDelta = $delta
+        }
+    }
+
+    return $best
+}
+
+function ConvertTo-CompatRowsFromSamplesRaw {
+    param(
+        [array]$HubRows,
+        [array]$SatRows
+    )
+
+    $rowsByNode = @{ A = @(); B = @() }
+    foreach ($row in $SatRows) {
+        if ($null -eq $row -or -not $row.node_id) { continue }
+        $nodeId = ([string]$row.node_id).ToUpperInvariant()
+        if ($rowsByNode.ContainsKey($nodeId)) {
+            $rowsByNode[$nodeId] += $row
+        }
+    }
+
+    $slot1Rows = Get-DedupedNodeRows $rowsByNode['A']
+    $slot2Rows = Get-DedupedNodeRows $rowsByNode['B']
+    $orderedHub = @($HubRows | Sort-Object { Get-TimeMs $_.sample_epoch })
+    $out = @()
+
+    for ($i = 0; $i -lt $orderedHub.Count; $i++) {
+        $hub = $orderedHub[$i]
+        $hubMs = Get-TimeMs $hub.sample_epoch
+        $match1 = Find-ClosestNodeSample $slot1Rows $hubMs
+        $match2 = Find-ClosestNodeSample $slot2Rows $hubMs
+
+        $out += [ordered]@{
+            id                = if ($hub.id -ne $null) { $hub.id } else { $i + 1 }
+            device_id         = $hub.device_id
+            recorded_at       = $hub.sample_epoch
+            inserted_at       = $hub.inserted_at
+            temp_1            = $hub.temp_1
+            humidity_1        = $hub.humidity_1
+            temp_2            = $hub.temp_2
+            humidity_2        = $hub.humidity_2
+            temp_3            = $hub.temp_3
+            humidity_3        = $hub.humidity_3
+            battery_pct       = $hub.battery_pct
+            battery_v         = $hub.battery_v
+            boot_count        = $hub.boot_count
+            sat_1_temp_1      = if ($match1) { $match1.temp_1 } else { $null }
+            sat_1_humidity_1  = if ($match1) { $match1.humidity_1 } else { $null }
+            sat_1_temp_2      = if ($match1) { $match1.temp_2 } else { $null }
+            sat_1_humidity_2  = if ($match1) { $match1.humidity_2 } else { $null }
+            sat_1_battery_v   = if ($match1) { $match1.battery_v } else { $null }
+            sat_1_battery_pct = if ($match1) { $match1.battery_pct } else { $null }
+            sat_1_flash_pct   = if ($match1) { $match1.flash_pct } else { $null }
+            sat_2_temp_1      = if ($match2) { $match2.temp_1 } else { $null }
+            sat_2_humidity_1  = if ($match2) { $match2.humidity_1 } else { $null }
+            sat_2_temp_2      = if ($match2) { $match2.temp_2 } else { $null }
+            sat_2_humidity_2  = if ($match2) { $match2.humidity_2 } else { $null }
+            sat_2_battery_v   = if ($match2) { $match2.battery_v } else { $null }
+            sat_2_battery_pct = if ($match2) { $match2.battery_pct } else { $null }
+            sat_2_flash_pct   = if ($match2) { $match2.flash_pct } else { $null }
+        }
+    }
+
+    return $out
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -207,47 +379,40 @@ foreach ($station in $stations) {
     }
 
     # -- Step 1: Query Supabase PostgREST ------------------------------------
-    # Fetch all readings for this station within the retention window.
-    # PostgREST returns max 1000 rows by default; use Range header for pagination.
-    $allRows = @()
-    $offset  = 0
-    $pageSize = 1000
-    $maxRows  = $cfg.maxResults
+    $compatRows = @()
 
-    Write-Host "    [1/3] Downloading from Supabase (device_id=$($station.id))..."
+    Write-Host "    [1/3] Downloading from Supabase samples_raw (device_id=$($station.id))..."
     try {
-        while ($allRows.Count -lt $maxRows) {
-            $rangeEnd = $offset + $pageSize - 1
-            $url = "$($cfg.supabaseUrl)/rest/v1/sensor_readings" +
-                   "?device_id=eq.$($station.id)" +
-                   "&recorded_at=gte.$cutoffISO" +
-                   "&order=recorded_at.asc" +
-                   "&limit=$pageSize" +
-                   "&offset=$offset"
+        $hubRows = Get-SamplesRawRows -DeviceId $station.id `
+                          -NodeFilter 'node_id=eq.hub' `
+                          -SelectClause 'id,device_id,sample_epoch,inserted_at,temp_1,humidity_1,temp_2,humidity_2,temp_3,humidity_3,battery_v,battery_pct,boot_count' `
+                          -OrderClause 'sample_epoch.asc' `
+                          -Limit $cfg.maxResults `
+                          -SampleEpochGte $cutoffISO
 
-            $headers = $supaHeaders.Clone()
-            $headers["Prefer"] = "count=exact"
-
-            $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get -TimeoutSec 30
-
-            if ($response -is [array]) {
-                $allRows += $response
-                if ($response.Count -lt $pageSize) { break }  # Last page
-                $offset += $pageSize
-            } else {
-                # Single row returned as object
-                if ($null -ne $response) { $allRows += $response }
-                break
-            }
+        if ($hubRows.Count -gt 0) {
+            $minHubIso = [string]$hubRows[0].sample_epoch
+            $maxHubIso = [string]$hubRows[$hubRows.Count - 1].sample_epoch
+            $minHub = [DateTimeOffset]::Parse($minHubIso).AddSeconds(-150).ToString('yyyy-MM-ddTHH:mm:ssZ')
+            $maxHub = [DateTimeOffset]::Parse($maxHubIso).AddSeconds(150).ToString('yyyy-MM-ddTHH:mm:ssZ')
+            $satRows = Get-SamplesRawRows -DeviceId $station.id `
+                                          -NodeFilter 'node_id=in.(A,B)' `
+                                          -SelectClause 'id,device_id,node_id,sample_id,sample_epoch,inserted_at,temp_1,humidity_1,temp_2,humidity_2,battery_v,battery_pct,flash_pct' `
+                                          -OrderClause 'sample_epoch.asc' `
+                                          -Limit ([Math]::Max($cfg.maxResults * 3, 3000)) `
+                                          -SampleEpochGte $minHub `
+                                          -SampleEpochLte $maxHub
+            $compatRows = ConvertTo-CompatRowsFromSamplesRaw -HubRows $hubRows -SatRows $satRows
         }
-        Write-Host "          Downloaded: $($allRows.Count) rows"
+
+        Write-Host "          Downloaded: $($hubRows.Count) hub rows -> $($compatRows.Count) flattened rows"
     } catch {
         Write-Host "    [!] Supabase download FAILED: $_" -ForegroundColor Red
         $stationResults += @{ name = $station.name; status = "FAILED"; entries = 0 }
         continue
     }
 
-    if ($allRows.Count -eq 0) {
+    if ($compatRows.Count -eq 0) {
         Write-Host "    [!] No data returned for $($station.id)" -ForegroundColor Yellow
         $stationResults += @{ name = $station.name; status = "empty"; entries = 0 }
         continue
@@ -256,9 +421,9 @@ foreach ($station in $stations) {
     # -- Step 2: Archive raw Supabase response --------------------------------
     $archiveFile = Join-Path $archiveFolder $archiveName
     try {
-        $allRows | ConvertTo-Json -Depth 10 -Compress | Set-Content $archiveFile -Encoding UTF8
+        $compatRows | ConvertTo-Json -Depth 10 -Compress | Set-Content $archiveFile -Encoding UTF8
         $archiveSize = [math]::Round((Get-Item $archiveFile).Length / 1024, 1)
-        Write-Host "    [2/3] Archived: $archiveName ($archiveSize KB, $($allRows.Count) rows)"
+        Write-Host "    [2/3] Archived: $archiveName ($archiveSize KB, $($compatRows.Count) rows)"
     } catch {
         Write-Host "    [!] Archive write failed: $_" -ForegroundColor Yellow
     }
@@ -267,7 +432,7 @@ foreach ($station in $stations) {
     Write-Host "    [3/3] Building merged_data.js..."
 
     $feeds = @()
-    foreach ($row in $allRows) {
+    foreach ($row in $compatRows) {
         $feeds += ConvertTo-StructuredFeed $row
     }
 

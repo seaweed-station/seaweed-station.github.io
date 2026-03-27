@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -464,36 +464,36 @@ function parseEntry(f) {
       t0BatV: numParse(f.battery_v),
       t0Temp1: numParse(f.temp_1), t0Temp2: numParse(f.temp_2), t0Temp3: null,
       t0Hum1: numParse(f.humidity_1), t0Hum2: numParse(f.humidity_2), t0Hum3: null,
-      satABatPct: numParse(f.sat_a_battery_pct), satABatV: numParse(f.sat_a_battery_v),
-      satATemp1: numParse(f.sat_a_temp_1), satATemp2: numParse(f.sat_a_temp_2),
-      satAHum1: numParse(f.sat_a_humidity_1), satAHum2: numParse(f.sat_a_humidity_2),
-      satBBatPct: numParse(f.sat_b_battery_pct), satBBatV: numParse(f.sat_b_battery_v),
-      satBTemp1: numParse(f.sat_b_temp_1), satBTemp2: numParse(f.sat_b_temp_2),
-      satBHum1: numParse(f.sat_b_humidity_1), satBHum2: numParse(f.sat_b_humidity_2),
+      sat1BatPct: numParse(f.sat_1_battery_pct), sat1BatV: numParse(f.sat_1_battery_v),
+      sat1Temp1: numParse(f.sat_1_temp_1), sat1Temp2: numParse(f.sat_1_temp_2),
+      sat1Hum1: numParse(f.sat_1_humidity_1), sat1Hum2: numParse(f.sat_1_humidity_2),
+      sat2BatPct: numParse(f.sat_2_battery_pct), sat2BatV: numParse(f.sat_2_battery_v),
+      sat2Temp1: numParse(f.sat_2_temp_1), sat2Temp2: numParse(f.sat_2_temp_2),
+      sat2Hum1: numParse(f.sat_2_humidity_1), sat2Hum2: numParse(f.sat_2_humidity_2),
       t0FwVersion: f.fw_version ? String(f.fw_version) : null,
       t0BuildDate: f.fw_date ? String(f.fw_date) : null,
-      satAFwVersion: f.sat_a_fw_ver ? String(f.sat_a_fw_ver) : null,
-      satBFwVersion: f.sat_b_fw_ver ? String(f.sat_b_fw_ver) : null,
+      sat1FwVersion: f.sat_1_fw_ver ? String(f.sat_1_fw_ver) : null,
+      sat2FwVersion: f.sat_2_fw_ver ? String(f.sat_2_fw_ver) : null,
     };
   }
 
   var ts = new Date(f.created_at);
   var t0Sensors = csvParse(f.field2);
   var t0Status  = csvParse(f.field3);
-  var satAStat  = csvParse(f.field4);
-  var satASens  = csvParse(f.field5);
-  var satBStat  = csvParse(f.field6);
-  var satBSens  = csvParse(f.field7);
+  var slot1Stat  = csvParse(f.field4);
+  var slot1Sens  = csvParse(f.field5);
+  var slot2Stat  = csvParse(f.field6);
+  var slot2Sens  = csvParse(f.field7);
 
   // Extract firmware versions (string values, not numeric)
-  var satAFw = null, satBFw = null, t0Fw = null, t0BuildDate = null;
+  var slot1Fw = null, slot2Fw = null, t0Fw = null, t0BuildDate = null;
   if (f.field4) {
     var parts4 = f.field4.split(',');
-    if (parts4.length > 6 && parts4[6]) satAFw = parts4[6].trim();
+    if (parts4.length > 6 && parts4[6]) slot1Fw = parts4[6].trim();
   }
   if (f.field6) {
     var parts6 = f.field6.split(',');
-    if (parts6.length > 6 && parts6[6]) satBFw = parts6[6].trim();
+    if (parts6.length > 6 && parts6[6]) slot2Fw = parts6[6].trim();
   }
   if (f.field8) {
     var sections = f.field8.split('|');
@@ -510,14 +510,14 @@ function parseEntry(f) {
     t0BatV: t0Status[0] || null,
     t0Temp1: t0Sensors[0], t0Temp2: t0Sensors[2], t0Temp3: t0Sensors[4],
     t0Hum1: t0Sensors[1], t0Hum2: t0Sensors[3], t0Hum3: t0Sensors[5],
-    satABatPct: satAStat[1], satABatV: satAStat[0],
-    satATemp1: satASens[0], satATemp2: satASens[2],
-    satBBatPct: satBStat[1], satBBatV: satBStat[0],
-    satBTemp1: satBSens[0], satBTemp2: satBSens[2],
+    sat1BatPct: slot1Stat[1], sat1BatV: slot1Stat[0],
+    sat1Temp1: slot1Sens[0], sat1Temp2: slot1Sens[2],
+    sat2BatPct: slot2Stat[1], sat2BatV: slot2Stat[0],
+    sat2Temp1: slot2Sens[0], sat2Temp2: slot2Sens[2],
     t0FwVersion: t0Fw,
     t0BuildDate: t0BuildDate,
-    satAFwVersion: satAFw,
-    satBFwVersion: satBFw,
+    sat1FwVersion: slot1Fw,
+    sat2FwVersion: slot2Fw,
   };
 }
 
@@ -686,8 +686,8 @@ function computeSummary(entries) {
   }
 
   // Compute across any available sensor values (T0 + satellite channels).
-  var tempKeys = ['t0Temp1', 't0Temp2', 't0Temp3', 'satATemp1', 'satATemp2', 'satBTemp1', 'satBTemp2'];
-  var humKeys = ['t0Hum1', 't0Hum2', 't0Hum3', 'satAHum1', 'satAHum2', 'satBHum1', 'satBHum2'];
+  var tempKeys = ['t0Temp1', 't0Temp2', 't0Temp3', 'sat1Temp1', 'sat1Temp2', 'sat2Temp1', 'sat2Temp2'];
+  var humKeys = ['t0Hum1', 't0Hum2', 't0Hum3', 'sat1Hum1', 'sat1Hum2', 'sat2Hum1', 'sat2Hum2'];
 
   // Freshness: online <=24h, stale 24-48h, offline >48h.
   var ageMins = (now - latest.timestamp.getTime()) / 60000;
@@ -695,8 +695,8 @@ function computeSummary(entries) {
 
   // Node health
   var lastT0  = findLast(entries, 't0BatPct');
-  var lastSatA = findLast(entries, 'satABatPct');
-  var lastSatB = findLast(entries, 'satBBatPct');
+  var lastSlot1 = findLast(entries, 'sat1BatPct');
+  var lastSlot2 = findLast(entries, 'sat2BatPct');
 
   function nodeHealth(lastEntry, batKey, fwKey) {
     if (!lastEntry) return { status: 'nc', bat: null, lastSeen: null, fw: null };
@@ -715,8 +715,8 @@ function computeSummary(entries) {
     lastUpdate: latest.timestamp,
     entries: entries.length,
     t0: nodeHealth(lastT0, 't0BatPct', 't0FwVersion'),
-    satA: nodeHealth(lastSatA, 'satABatPct', 'satAFwVersion'),
-    satB: nodeHealth(lastSatB, 'satBBatPct', 'satBFwVersion'),
+    slot1: nodeHealth(lastSlot1, 'sat1BatPct', 'sat1FwVersion'),
+    slot2: nodeHealth(lastSlot2, 'sat2BatPct', 'sat2FwVersion'),
     dataHealth: health,
     dayTempHigh:  peak(h24, tempKeys),
     dayTempLow:   minVal(h24, tempKeys),
@@ -1049,8 +1049,8 @@ function renderTableCard(table, summary) {
     summary = {
       freshness: 'nc', lastUpdate: null, entries: 0,
       t0:   { status: 'nc', bat: null, lastSeen: null, fw: null },
-      satA: { status: 'nc', bat: null, lastSeen: null, fw: null },
-      satB: { status: 'nc', bat: null, lastSeen: null, fw: null },
+      slot1: { status: 'nc', bat: null, lastSeen: null, fw: null },
+      slot2: { status: 'nc', bat: null, lastSeen: null, fw: null },
       dataHealth: { actual: 0, expected: 0, pct: null },
       dayTempHigh: null, dayTempLow: null, dayHumHigh: null,
       weekTempHigh: null, weekHumHigh: null,
@@ -1079,16 +1079,16 @@ function renderTableCard(table, summary) {
   };
   var satLabel = '--';
   var satPctForTone = null;
-  var satAVal = summary.satA && summary.satA.bat != null ? Math.round(summary.satA.bat) + '%' : null;
-  var satBVal = summary.satB && summary.satB.bat != null ? Math.round(summary.satB.bat) + '%' : null;
-  var satAValNum = summary.satA && summary.satA.bat != null ? Number(summary.satA.bat) : null;
-  var satBValNum = summary.satB && summary.satB.bat != null ? Number(summary.satB.bat) : null;
-  if (satAVal && satBVal) satLabel = 'A ' + satAVal + ' / B ' + satBVal;
-  else if (satAVal) satLabel = satAVal;
-  else if (satBVal) satLabel = satBVal;
-  if (satAValNum !== null && satBValNum !== null) satPctForTone = Math.min(satAValNum, satBValNum);
-  else if (satAValNum !== null) satPctForTone = satAValNum;
-  else if (satBValNum !== null) satPctForTone = satBValNum;
+  var slot1Val = summary.slot1 && summary.slot1.bat != null ? Math.round(summary.slot1.bat) + '%' : null;
+  var slot2Val = summary.slot2 && summary.slot2.bat != null ? Math.round(summary.slot2.bat) + '%' : null;
+  var slot1ValNum = summary.slot1 && summary.slot1.bat != null ? Number(summary.slot1.bat) : null;
+  var slot2ValNum = summary.slot2 && summary.slot2.bat != null ? Number(summary.slot2.bat) : null;
+  if (slot1Val && slot2Val) satLabel = '1 ' + slot1Val + ' / 2 ' + slot2Val;
+  else if (slot1Val) satLabel = slot1Val;
+  else if (slot2Val) satLabel = slot2Val;
+  if (slot1ValNum !== null && slot2ValNum !== null) satPctForTone = Math.min(slot1ValNum, slot2ValNum);
+  else if (slot1ValNum !== null) satPctForTone = slot1ValNum;
+  else if (slot2ValNum !== null) satPctForTone = slot2ValNum;
 
   // Prefer latest sample battery; fallback to device_status when sample is missing.
   var statusRow = _deviceStatusById && _deviceStatusById[table.id] ? _deviceStatusById[table.id] : null;
@@ -1179,8 +1179,8 @@ function rebuildSparklines(tableId, rangeMs) {
       if (latest['t' + s] != null) { tempKey = 't' + s; humKey = 'rh' + s; break; }
     }
   } else {
-    tempKey = findLast(entries, 'satATemp1') ? 'satATemp1' : 't0Temp1';
-    humKey  = findLast(entries, 'satAHum1')  ? 'satAHum1'  : 't0Hum1';
+    tempKey = findLast(entries, 'sat1Temp1') ? 'sat1Temp1' : 't0Temp1';
+    humKey  = findLast(entries, 'sat1Hum1')  ? 'sat1Hum1'  : 't0Hum1';
   }
 
   var sparkTemp = filtered.map(function(e) { return { x: e.timestamp.getTime(), y: e[tempKey] }; }).filter(function(p) { return p.y != null; });

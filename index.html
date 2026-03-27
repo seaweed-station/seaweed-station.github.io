@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -288,20 +288,20 @@ function parseEntry(f) {
   var ts = new Date(f.created_at);
   var t0Sensors = csvParse(f.field2);
   var t0Status  = csvParse(f.field3);
-  var satAStat  = csvParse(f.field4);
-  var satASens  = csvParse(f.field5);
-  var satBStat  = csvParse(f.field6);
-  var satBSens  = csvParse(f.field7);
+  var slot1Stat  = csvParse(f.field4);
+  var slot1Sens  = csvParse(f.field5);
+  var slot2Stat  = csvParse(f.field6);
+  var slot2Sens  = csvParse(f.field7);
 
   // Extract firmware versions (string values, not numeric)
-  var satAFw = null, satBFw = null, t0Fw = null, t0BuildDate = null;
+  var slot1Fw = null, slot2Fw = null, t0Fw = null, t0BuildDate = null;
   if (f.field4) {
     var parts4 = f.field4.split(',');
-    if (parts4.length > 6 && parts4[6]) satAFw = parts4[6].trim();
+    if (parts4.length > 6 && parts4[6]) slot1Fw = parts4[6].trim();
   }
   if (f.field6) {
     var parts6 = f.field6.split(',');
-    if (parts6.length > 6 && parts6[6]) satBFw = parts6[6].trim();
+    if (parts6.length > 6 && parts6[6]) slot2Fw = parts6[6].trim();
   }
   if (f.field8) {
     var sections = f.field8.split('|');
@@ -318,14 +318,14 @@ function parseEntry(f) {
     t0BatV: t0Status[0] || null,
     t0Temp1: t0Sensors[0], t0Temp2: t0Sensors[2], t0Temp3: t0Sensors[4],
     t0Hum1: t0Sensors[1], t0Hum2: t0Sensors[3], t0Hum3: t0Sensors[5],
-    satABatPct: satAStat[1], satABatV: satAStat[0],
-    satATemp1: satASens[0], satATemp2: satASens[2],
-    satBBatPct: satBStat[1], satBBatV: satBStat[0],
-    satBTemp1: satBSens[0], satBTemp2: satBSens[2],
+    sat1BatPct: slot1Stat[1], sat1BatV: slot1Stat[0],
+    sat1Temp1: slot1Sens[0], sat1Temp2: slot1Sens[2],
+    sat2BatPct: slot2Stat[1], sat2BatV: slot2Stat[0],
+    sat2Temp1: slot2Sens[0], sat2Temp2: slot2Sens[2],
     t0FwVersion: t0Fw,
     t0BuildDate: t0BuildDate,
-    satAFwVersion: satAFw,
-    satBFwVersion: satBFw,
+    sat1FwVersion: slot1Fw,
+    sat2FwVersion: slot2Fw,
   };
 }
 
@@ -373,9 +373,9 @@ function computeSummary(entries) {
     return min;
   }
 
-  // Most relevant temp sensor (try Sat-A Sensor 1 first, then T0 Sensor 1)
-  var tempKey  = findLast(entries, 'satATemp1') ? 'satATemp1' : 't0Temp1';
-  var humKey   = findLast(entries, 'satAHum1')  ? 'satAHum1'  : 't0Hum1';
+  // Most relevant temp sensor (try Slot 1 Sensor 1 first, then T0 Sensor 1)
+  var tempKey  = findLast(entries, 'sat1Temp1') ? 'sat1Temp1' : 't0Temp1';
+  var humKey   = findLast(entries, 'sat1Hum1')  ? 'sat1Hum1'  : 't0Hum1';
 
   // Freshness: how old is the latest entry?
   var ageMins = (now - latest.timestamp.getTime()) / 60000;
@@ -383,8 +383,8 @@ function computeSummary(entries) {
 
   // Node health
   var lastT0  = findLast(entries, 't0BatPct');
-  var lastSatA = findLast(entries, 'satABatPct');
-  var lastSatB = findLast(entries, 'satBBatPct');
+  var lastSlot1 = findLast(entries, 'sat1BatPct');
+  var lastSlot2 = findLast(entries, 'sat2BatPct');
 
   function nodeHealth(lastEntry, batKey, fwKey) {
     if (!lastEntry) return { status: 'nc', bat: null, lastSeen: null, fw: null };
@@ -400,8 +400,8 @@ function computeSummary(entries) {
     lastUpdate: latest.timestamp,
     entries: entries.length,
     t0: nodeHealth(lastT0, 't0BatPct', 't0FwVersion'),
-    satA: nodeHealth(lastSatA, 'satABatPct', 'satAFwVersion'),
-    satB: nodeHealth(lastSatB, 'satBBatPct', 'satBFwVersion'),
+    slot1: nodeHealth(lastSlot1, 'sat1BatPct', 'sat1FwVersion'),
+    slot2: nodeHealth(lastSlot2, 'sat2BatPct', 'sat2FwVersion'),
     dayTempHigh:  peak(h24, tempKey),
     dayTempLow:   minVal(h24, tempKey),
     dayHumHigh:   peak(h24, humKey),
@@ -723,8 +723,8 @@ function renderTableCard(table, summary) {
     summary = {
       freshness: 'nc', lastUpdate: null, entries: 0,
       t0:   { status: 'nc', bat: null, lastSeen: null, fw: null },
-      satA: { status: 'nc', bat: null, lastSeen: null, fw: null },
-      satB: { status: 'nc', bat: null, lastSeen: null, fw: null },
+      slot1: { status: 'nc', bat: null, lastSeen: null, fw: null },
+      slot2: { status: 'nc', bat: null, lastSeen: null, fw: null },
       dayTempHigh: null, dayTempLow: null, dayHumHigh: null,
       weekTempHigh: null, weekHumHigh: null,
       monthTempHigh: null, monthHumHigh: null,
@@ -753,8 +753,8 @@ function renderTableCard(table, summary) {
     // Node health chips
     '<div class="node-row">' +
       renderNodeChip('T0', summary.t0) +
-      renderNodeChip('Sat-A', summary.satA) +
-      renderNodeChip('Sat-B', summary.satB) +
+      renderNodeChip('Slot 1', summary.slot1) +
+      renderNodeChip('Slot 2', summary.slot2) +
     '</div>' +
 
     // Metrics
@@ -827,8 +827,8 @@ function rebuildSparklines(tableId, rangeMs) {
       if (latest['t' + s] != null) { tempKey = 't' + s; humKey = 'rh' + s; break; }
     }
   } else {
-    tempKey = findLast(entries, 'satATemp1') ? 'satATemp1' : 't0Temp1';
-    humKey  = findLast(entries, 'satAHum1')  ? 'satAHum1'  : 't0Hum1';
+    tempKey = findLast(entries, 'sat1Temp1') ? 'sat1Temp1' : 't0Temp1';
+    humKey  = findLast(entries, 'sat1Hum1')  ? 'sat1Hum1'  : 't0Hum1';
   }
 
   var sparkTemp = filtered.map(function(e) { return { x: e.timestamp.getTime(), y: e[tempKey] }; }).filter(function(p) { return p.y != null; });

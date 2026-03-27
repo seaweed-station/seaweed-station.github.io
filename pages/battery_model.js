@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // battery_model.js — Shared Battery Lifetime Prediction Engine
 // ============================================================================
 // Single source of truth for T0 and T-Energy energy models.
@@ -103,7 +103,7 @@ window.BatteryModel = (function () {
   // T0 ENERGY MODEL  (from battery_estimator.html runT0Estimate)
   // ========================================================================
   // cfg = { deployMode, sleepEnable, samplePeriod_s, tsBulkInterval_s,
-  //         tsBulkFreqHours, espnowSyncPeriod_s, satAInstalled, satBInstalled }
+  //         tsBulkFreqHours, espnowSyncPeriod_s, sat1Installed, sat2Installed }
   // hwOverrides (optional) can override any key from HW_T0
   function calcT0Daily(cfg, hwOverrides) {
     var hw = Object.assign({}, HW_T0, hwOverrides || {});
@@ -114,7 +114,7 @@ window.BatteryModel = (function () {
     var bulkInterval_s  = Math.max(60, cfg.tsBulkInterval_s || 900);
     var syncFreqHours   = Math.max(1, cfg.tsBulkFreqHours || 24);
     var syncPeriod_s    = Math.max(60, cfg.espnowSyncPeriod_s || 3600);
-    var tEnergyNodes    = (cfg.satAInstalled ? 1 : 0) + (cfg.satBInstalled ? 1 : 0);
+    var tEnergyNodes    = (cfg.sat1Installed ? 1 : 0) + (cfg.sat2Installed ? 1 : 0);
     var battCap         = hw.batteryCapacity_mAh;
     var derating        = hw.batteryDerating;
 
@@ -423,7 +423,7 @@ window.BatteryModel = (function () {
   // ========================================================================
   // field8 format: "sdFreeKB,csq,uploadOk,drift|dm,sl,sp,bi,bf,es,sA,sB|fwVer,buildDate"
   // Returns { deployMode, sleepEnable, samplePeriod_s, tsBulkInterval_s,
-  //           tsBulkFreqHours, espnowSyncPeriod_s, satAInstalled, satBInstalled }
+  //           tsBulkFreqHours, espnowSyncPeriod_s, sat1Installed, sat2Installed }
   // or null if no config block present.
   function parseField8Config(field8str) {
     if (!field8str || typeof field8str !== 'string') return null;
@@ -440,8 +440,8 @@ window.BatteryModel = (function () {
       tsBulkInterval_s:    parseInt(tokens[3], 10) || 900,
       tsBulkFreqHours:     parseInt(tokens[4], 10) || 24,
       espnowSyncPeriod_s:  parseInt(tokens[5], 10) || 3600,
-      satAInstalled:       parseInt(tokens[6], 10) === 1,
-      satBInstalled:       parseInt(tokens[7], 10) === 1,
+      sat1Installed:       parseInt(tokens[6], 10) === 1,
+      sat2Installed:       parseInt(tokens[7], 10) === 1,
     };
   }
 
@@ -456,8 +456,8 @@ window.BatteryModel = (function () {
            cfgA.tsBulkInterval_s !== cfgB.tsBulkInterval_s ||
            cfgA.tsBulkFreqHours !== cfgB.tsBulkFreqHours ||
            cfgA.espnowSyncPeriod_s !== cfgB.espnowSyncPeriod_s ||
-           cfgA.satAInstalled !== cfgB.satAInstalled ||
-           cfgA.satBInstalled !== cfgB.satBInstalled;
+           cfgA.sat1Installed !== cfgB.sat1Installed ||
+           cfgA.sat2Installed !== cfgB.sat2Installed;
   }
 
   // ========================================================================
@@ -470,7 +470,7 @@ window.BatteryModel = (function () {
     var sp    = cfg.samplePeriod_s >= 3600
       ? (cfg.samplePeriod_s / 3600).toFixed(1) + 'h'
       : (cfg.samplePeriod_s / 60).toFixed(0) + 'm';
-    var sats  = (cfg.satAInstalled ? 1 : 0) + (cfg.satBInstalled ? 1 : 0);
+    var sats  = (cfg.sat1Installed ? 1 : 0) + (cfg.sat2Installed ? 1 : 0);
     var webSync = cfg.tsBulkFreqHours != null
       ? (cfg.tsBulkFreqHours >= 1
           ? cfg.tsBulkFreqHours.toFixed(0) + 'h'
