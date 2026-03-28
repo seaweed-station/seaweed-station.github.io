@@ -606,6 +606,23 @@ function isSatelliteInstalled(entries, slotNumber) {
   return hasSatelliteSignals(entries, slotNumber);
 }
 
+function isSatelliteConfiguredSlot(stationId, slotNumber) {
+  var sid = stationId ? String(stationId).trim().toLowerCase() : '';
+  if (!sid || !_deviceSlotsById || !_deviceSlotsById[sid]) return false;
+  var slotNum = Number(slotNumber);
+  if (!isFinite(slotNum)) return false;
+  var slotMap = _deviceSlotsById[sid];
+  var nodeKeys = Object.keys(slotMap);
+  for (var i = 0; i < nodeKeys.length; i++) {
+    if (Number(slotMap[nodeKeys[i]]) === slotNum) return true;
+  }
+  return false;
+}
+
+function isSatelliteVisible(stationId, entries, slotNumber) {
+  return isSatelliteInstalled(entries, slotNumber) || isSatelliteConfiguredSlot(stationId, slotNumber);
+}
+
 function buildStationRangeBar(stationId, range) {
   var rangeBar = document.createElement('div');
   rangeBar.className = 'station-range';
@@ -716,7 +733,8 @@ function parseStationData(raw, station) {
     var f3p = f3Str.split('|');
     var f3 = (f3p[0] || '').split(',');
     entry.t0BatV = parseFloat(f3[0]); if (isNaN(entry.t0BatV)) entry.t0BatV = null;
-    entry.t0SolarV = null;
+    entry.t0SolarV = parseFloat(f3[4]);
+    if (isNaN(entry.t0SolarV)) entry.t0SolarV = null;
     entry.t0Rssi = parseInt(f3[1]);   if (isNaN(entry.t0Rssi)) entry.t0Rssi = null;
     entry.t0Boot = parseInt(f3[2]);   if (isNaN(entry.t0Boot)) entry.t0Boot = null;
     entry.t0Heap = parseInt(f3[3]);   if (isNaN(entry.t0Heap)) entry.t0Heap = null;
@@ -1058,6 +1076,13 @@ function renderStationSection(station, data) {
     srcLabel = 'Cache' + (srcInfo.savedAt ? ' (' + timeAgo(new Date(srcInfo.savedAt)) + ' ago)' : '');
   }
   var srcBadgeHtml = srcLabel ? ' <span class="data-src ' + srcClass + '">' + srcLabel + '</span>' : '';
+  var nonLiveNoticeHtml = '';
+  if (srcInfo.source === 'ci' || srcInfo.source === 'cache') {
+    nonLiveNoticeHtml =
+      '<div style="margin:8px 0 0;font-size:.72rem;color:var(--warning);">' +
+      'Note: Non-live source can hide latest solar_v updates. Click Fetch Live for direct samples_raw data.' +
+      '</div>';
+  }
 
   sec.innerHTML =
     '<div class="station-header" onclick="toggleStation(\'' + stationId + '\')">' +
@@ -1069,6 +1094,7 @@ function renderStationSection(station, data) {
       '<span class="chevron" id="chev_' + stationId + '">&#9660;</span>' +
     '</div>' +
     '<div class="station-body" id="body_' + stationId + '" style="display:none">' +
+      nonLiveNoticeHtml +
       (hasData ? '' : '<p style="color:var(--text-muted);text-align:center;padding:20px">No data loaded for this station</p>') +
     '</div>';
 
@@ -1503,8 +1529,8 @@ function renderStationConfigChangeLog(container, entries, stationId) {
 function renderSummaryCards(container, entries, stationId) {
   var e = entries;
   var latest = e[e.length - 1];
-  var slot1Enabled = isSatelliteInstalled(e, 1);
-  var slot2Enabled = isSatelliteInstalled(e, 2);
+  var slot1Enabled = isSatelliteVisible(stationId, e, 1);
+  var slot2Enabled = isSatelliteVisible(stationId, e, 2);
   var nextCheck = estimateStationNextCheckIn(e, stationId);
   var slot1Label = satelliteDisplayName(stationId, 1);
   var slot2Label = satelliteDisplayName(stationId, 2);
@@ -1805,7 +1831,7 @@ function batColor(pct) {
 // ============================================================
 function renderBatteryCharts(container, entries, stationId, range) {
   if (!entries || !entries.length) return;
-  var slot2Enabled = isSatelliteInstalled(entries, 2);
+  var slot2Enabled = isSatelliteVisible(stationId, entries, 2);
   var firstTs = entries[0].timestamp;
   var lastTs = entries[entries.length - 1].timestamp;
   var CUTOFF_V = 3.3;
@@ -2495,8 +2521,8 @@ function renderSyncCharts(container, entries, stationId, range) {
   var stationEntries = (stationData[stationId] && Array.isArray(stationData[stationId].entries) && stationData[stationId].entries.length)
     ? stationData[stationId].entries
     : entries;
-  var slot1Enabled = isSatelliteInstalled(stationEntries, 1);
-  var slot2Enabled = isSatelliteInstalled(stationEntries, 2);
+  var slot1Enabled = isSatelliteVisible(stationId, stationEntries, 1);
+  var slot2Enabled = isSatelliteVisible(stationId, stationEntries, 2);
   var slot1Label = satelliteDisplayName(stationId, 1);
   var slot2Label = satelliteDisplayName(stationId, 2);
   var slot1Node = satelliteNodeLetter(stationId, 1);
@@ -2610,26 +2636,23 @@ function renderSyncCharts(container, entries, stationId, range) {
   var hasSyncData = rangeEntries.some(function(e) {
     return (slot1Enabled && e.sat1BatV !== null) || (slot2Enabled && e.sat2BatV !== null);
   });
-  if (!hasDrift && !hasSystemDrift && !hasRssi && !hasSyncData) return;
-
-  if (hasSyncData) {
-    syncBoxWrap = document.createElement('div');
-    syncBoxWrap.className = 'chart-box';
-    var latestCfg = parseField8ConfigUnified(stationEntries[stationEntries.length - 1]._rawField8);
-    var cfgSyncTxt = '--';
-    var defaultSyncPeriodMs = 3 * 3600000;
-    if (latestCfg && latestCfg.espnowSyncPeriod_s) {
-      var cfgSyncSecNum = Number(latestCfg.espnowSyncPeriod_s);
-      if (isFinite(cfgSyncSecNum) && cfgSyncSecNum > 0) {
-        defaultSyncPeriodMs = cfgSyncSecNum * 1000;
-      }
-      cfgSyncTxt = latestCfg.espnowSyncPeriod_s >= 3600
-        ? (latestCfg.espnowSyncPeriod_s / 3600).toFixed(1) + 'h'
-        : Math.round(latestCfg.espnowSyncPeriod_s / 60) + 'm';
+  syncBoxWrap = document.createElement('div');
+  syncBoxWrap.className = 'chart-box';
+  var latestCfg = parseField8ConfigUnified(stationEntries[stationEntries.length - 1]._rawField8);
+  var cfgSyncTxt = '--';
+  var defaultSyncPeriodMs = 3 * 3600000;
+  if (latestCfg && latestCfg.espnowSyncPeriod_s) {
+    var cfgSyncSecNum = Number(latestCfg.espnowSyncPeriod_s);
+    if (isFinite(cfgSyncSecNum) && cfgSyncSecNum > 0) {
+      defaultSyncPeriodMs = cfgSyncSecNum * 1000;
     }
-    syncBoxWrap.innerHTML = '<h4>Satellite Sync Reliability (' + rangeLabel(range) + ')</h4><div class="chart-subhead">Configured Sat sync: ' + cfgSyncTxt + '</div>';
-    var syncCanvas = document.createElement('canvas');
-    syncBoxWrap.appendChild(syncCanvas);
+    cfgSyncTxt = latestCfg.espnowSyncPeriod_s >= 3600
+      ? (latestCfg.espnowSyncPeriod_s / 3600).toFixed(1) + 'h'
+      : Math.round(latestCfg.espnowSyncPeriod_s / 60) + 'm';
+  }
+  syncBoxWrap.innerHTML = '<h4>Satellite Sync Reliability (' + rangeLabel(range) + ')</h4><div class="chart-subhead">Configured Sat sync: ' + cfgSyncTxt + '</div>';
+  var syncCanvas = document.createElement('canvas');
+  syncBoxWrap.appendChild(syncCanvas);
     function isSuccessfulSyncRow(row) {
       if (!row) return false;
       var okNum = Number(row.sync_ok);
@@ -2768,24 +2791,19 @@ function renderSyncCharts(container, entries, stationId, range) {
         }
       }
     }, { stationId: stationId, chartKey: 'sync_reliability' });
-  }
 
-  if (hasDrift || hasSystemDrift) {
-    driftCanvas = document.createElement('canvas');
-    driftBox = document.createElement('div');
-    driftBox.className = 'chart-box';
-    driftBox.innerHTML = '<h4>Satellite Sync Drift (' + rangeLabel(range) + ')</h4>';
-    driftBox.appendChild(driftCanvas);
-    container.appendChild(driftBox);
-  }
+  driftCanvas = document.createElement('canvas');
+  driftBox = document.createElement('div');
+  driftBox.className = 'chart-box';
+  driftBox.innerHTML = '<h4>Satellite Sync Drift (' + rangeLabel(range) + ')</h4>';
+  driftBox.appendChild(driftCanvas);
+  container.appendChild(driftBox);
 
-  if (hasRssi) {
-    rssiCanvas = document.createElement('canvas');
-    rssiBox = document.createElement('div');
-    rssiBox.className = 'chart-box';
-    rssiBox.innerHTML = '<h4>RSSI (' + rangeLabel(range) + ')</h4>';
-    rssiBox.appendChild(rssiCanvas);
-  }
+  rssiCanvas = document.createElement('canvas');
+  rssiBox = document.createElement('div');
+  rssiBox.className = 'chart-box';
+  rssiBox.innerHTML = '<h4>RSSI (' + rangeLabel(range) + ')</h4>';
+  rssiBox.appendChild(rssiCanvas);
 
   if (syncBoxWrap) container.appendChild(syncBoxWrap);
   if (rssiBox) container.appendChild(rssiBox);
@@ -2936,7 +2954,7 @@ function renderSyncCharts(container, entries, stationId, range) {
     return { x: pt.x, y: yPlot };
   });
 
-  if ((hasDrift || hasSystemDrift) && driftCanvas) {
+  if (driftCanvas) {
     var dOpts = chartOpts('Drift (s)', undefined, undefined, range, stationId, rangeStartMs, rangeEndMs);
     dOpts.scales.y.ticks = { callback: function(v) { return (v>=0?'+':'')+v+'s'; }, color: '#94a3b8', font: { size: 10 } };
     dOpts.plugins = dOpts.plugins || {};
@@ -2977,7 +2995,7 @@ function renderSyncCharts(container, entries, stationId, range) {
     }, { stationId: stationId, chartKey: 'sync_drift' });
   }
 
-  if (hasRssi && rssiCanvas) {
+  if (rssiCanvas) {
     makeLiveChart(rssiBox, rssiCanvas, 'RSSI \u2013 ' + rangeLabel(range), {
       type: 'line',
       data: { datasets: (function() {
@@ -3505,8 +3523,8 @@ function renderDailyHealth(container, entries, stationId) {
   if (!_stationLogsVisibleDays[stationId] || _stationLogsVisibleDays[stationId] < STATION_LOG_ROWS_STEP) {
     _stationLogsVisibleDays[stationId] = STATION_LOG_ROWS_STEP;
   }
-  var slot1Enabled = isSatelliteInstalled(entries, 1);
-  var slot2Enabled = isSatelliteInstalled(entries, 2);
+  var slot1Enabled = isSatelliteVisible(stationId, entries, 1);
+  var slot2Enabled = isSatelliteVisible(stationId, entries, 2);
   var slot1Label = satelliteDisplayName(stationId, 1);
   var slot2Label = satelliteDisplayName(stationId, 2);
   var slot1Node = satelliteNodeLetter(stationId, 1);
