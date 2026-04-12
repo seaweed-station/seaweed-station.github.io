@@ -5,10 +5,6 @@
 <script>if(sessionStorage.getItem('sw_auth')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seaweed Station Overview</title>
-<!-- Chart.js + Luxon date adapter -->
-<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1/dist/chartjs-adapter-luxon.umd.min.js"></script>
 <script src="pages/seaweed_common.js"></script>
 <style>
 /* -- CSS Variables ------------------------------------------------- */
@@ -83,17 +79,17 @@ a:hover { text-decoration: underline; }
   border-color: var(--border);
   background: var(--bg-card);
 }
-.table-card.status-ok::before { background: #a9cfc5; }
+.table-card.status-ok::before { background: var(--success); }
 .table-card.status-warn {
   border-color: var(--border);
   background: var(--bg-card);
 }
-.table-card.status-warn::before { background: #a9cfc5; }
+.table-card.status-warn::before { background: var(--warning); }
 .table-card.status-err {
   border-color: var(--border);
   background: var(--bg-card);
 }
-.table-card.status-err::before { background: #a9cfc5; }
+.table-card.status-err::before { background: var(--danger); }
 .table-card.status-nc {
   border-color: var(--border);
   background: var(--bg-card);
@@ -210,6 +206,81 @@ a:hover { text-decoration: underline; }
 /* -- Footer -------------------------------------------------------- */
 .footer { text-align: center; padding: 20px; font-size: 0.75rem; color: var(--text-muted); }
 
+/* -- Diagnostics --------------------------------------------------- */
+.diag-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.diag-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-sec);
+}
+.diag-panel summary::-webkit-details-marker { display: none; }
+.diag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+.diag-item {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.diag-label {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.diag-value {
+  margin-top: 2px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+.diag-value-warn { color: var(--warning); }
+.diag-value-error { color: var(--danger); }
+.diag-value-good { color: var(--success); }
+.diag-pill {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.diag-good { background: var(--success-dim); color: var(--success); }
+.diag-warn { background: var(--warning-dim); color: var(--warning); }
+.diag-error { background: var(--danger-dim); color: var(--danger); }
+.diag-muted { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+.diag-message {
+  margin: 0 16px 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.76rem;
+}
+.diag-message-note {
+  background: var(--bg);
+  color: var(--text-sec);
+}
+.diag-message-error {
+  background: var(--danger-dim);
+  color: var(--danger);
+}
+
 /* -- Responsive ---------------------------------------------------- */
 @media (max-width: 768px) {
   .header { padding: 12px 16px; }
@@ -266,6 +337,8 @@ a:hover { text-decoration: underline; }
     <!-- Cards injected by JS -->
   </div>
 
+  <details class="diag-panel" id="dashboardDiagnosticsPanel"></details>
+
 </main>
 
 <footer class="footer">
@@ -277,91 +350,33 @@ a:hover { text-decoration: underline; }
 // TABLE DEFINITIONS
 // =====================================================================
 
-// Read per-channel config from settings (channels array in localStorage)
-function getChannelConfig(tableId) {
+// Read per-device profile config from settings (deviceProfiles in localStorage)
+function getDeviceProfileConfig(tableId) {
   try {
     var s = JSON.parse(localStorage.getItem('seaweed_dashboard_config'));
-    if (s && s.channels && s.channels.length) {
-      var ch = s.channels.find(function(c) { return c.id === tableId; });
-      if (ch) return ch;
-    }
     if (s && s.deviceProfiles && s.deviceProfiles.length) {
       var p = s.deviceProfiles.find(function(dp) { return dp.id === tableId; });
       if (p) {
         return {
-          channelId: p.channelId || '',
-          apiKey: p.apiKey || '',
           dataFolder: p.dataFolder || ''
         };
       }
-    }
-    // Legacy fallback: single channelId → perth only
-    if (s && s.channelId && tableId === 'perth') {
-      return { channelId: s.channelId, apiKey: s.apiKey || '' };
     }
   } catch (e) {}
   return null;
 }
 
-var TABLES_DEFAULT = [
-  {
-    id: 'shangani',
-    name: 'Shangani',
-    location: 'Kwale County, Kenya',
-    page: 'pages/station.html?table=shangani',
-    dataFile: 'data/data_Shangani/merged_data.js',
-    weather: { lat: -4.55, lon: 39.50 },
-    channelId: '',
-    apiKey: '',
-    hasSatellite: true,
-  },
-  {
-    id: 'funzi',
-    name: 'Funzi',
-    location: 'Funzi Island, Kenya',
-    page: 'pages/station.html?table=funzi',
-    dataFile: 'data/data_Funzi/merged_data.js',
-    weather: { lat: -4.55, lon: 39.45 },
-    channelId: '',
-    apiKey: '',
-    hasSatellite: true,
-  },
-  {
-    id: 'spare',
-    name: 'Spare',
-    location: 'Spare Station',
-    page: 'pages/station.html?table=spare',
-    dataFile: 'data/data_spare/merged_data.js',
-    weather: { lat: 0, lon: 0 },
-    channelId: '',
-    apiKey: '',
-    hasSatellite: true,
-  },
-  {
-    id: 'perth',
-    name: 'Perth Test',
-    location: 'Noranda, WA',
-    page: 'pages/station.html?table=perth',
-    dataFile: 'data/data_3262071_TT/merged_data.js',
-    weather: { lat: -31.87, lon: 115.90 },
-    channelId: '3262071',
-    apiKey: 'VVHUX39KINYPLCVI',
-    hasSatellite: true,
-  },
-  {
-    id: 'wroom',
-    name: 'Perth WROOM',
-    location: 'Noranda, WA (WROOM-32E)',
-    page: 'pages/perth_wroom.html',
-    dataFile: 'data/data_WROOM_PTT/merged_data.js',
-    weather: { lat: -31.87, lon: 115.90 },
-    channelId: '3246116',
-    apiKey: '7K00B1Y8DNOTEIM0',
-    temp: true,
-    legacy: true, /* WROOM: ThingSpeak legacy, retiring soon */
-    hasSatellite: false,
-  },
-];
+var TABLES_DEFAULT = STATION_REGISTRY.map(function(s) {
+  return {
+    id: s.id,
+    name: s.name,
+    location: s.location,
+    page: 'pages/station.html?table=' + encodeURIComponent(s.id),
+    dataFile: 'data/' + s.dataFolder + '/merged_data.js',
+    weather: (s.lat != null && s.lon != null) ? { lat: s.lat, lon: s.lon } : { lat: 0, lon: 0 },
+    hasSatellite: s.hasSatellite !== false
+  };
+});
 
 function buildConfiguredTables() {
   var baseMap = {};
@@ -384,18 +399,12 @@ function buildConfiguredTables() {
         page: 'pages/station.html?table=' + encodeURIComponent(p.id),
         dataFile: 'data/' + (p.dataFolder || ('data_' + p.id)) + '/merged_data.js',
         weather: { lat: 0, lon: 0 },
-        channelId: '',
-        apiKey: '',
         hasSatellite: true
       };
       var out = Object.assign({}, base);
       if (p.name) out.name = p.name;
-      if (p.channelId != null) out.channelId = p.channelId;
-      if (p.apiKey != null) out.apiKey = p.apiKey;
       if (p.dataFolder) out.dataFile = 'data/' + p.dataFolder + '/merged_data.js';
-      if (!out.page || out.page.indexOf('perth_wroom.html') === -1) {
-        out.page = p.id === 'wroom' ? 'pages/perth_wroom.html' : ('pages/station.html?table=' + encodeURIComponent(p.id));
-      }
+      out.page = 'pages/station.html?table=' + encodeURIComponent(p.id);
       if (typeof p.hasSatellite === 'boolean') out.hasSatellite = p.hasSatellite;
       return out;
     });
@@ -404,11 +413,9 @@ function buildConfiguredTables() {
   }
 
   tables.forEach(function(t) {
-    var ch = getChannelConfig(t.id);
-    if (ch) {
-      if (ch.channelId) t.channelId = ch.channelId;
-      if (ch.apiKey)    t.apiKey    = ch.apiKey;
-      if (ch.dataFolder) t.dataFile = 'data/' + ch.dataFolder + '/merged_data.js';
+    var dp = getDeviceProfileConfig(t.id);
+    if (dp) {
+      if (dp.dataFolder) t.dataFile = 'data/' + dp.dataFolder + '/merged_data.js';
     }
   });
 
@@ -426,11 +433,9 @@ if (typeof applyNavVisibility === 'function') applyNavVisibility();
 if (!TABLES.length) {
   TABLES = TABLES_DEFAULT.map(function(t) {
     var c = Object.assign({}, t);
-    var ch = getChannelConfig(c.id);
-    if (ch) {
-      if (ch.channelId) c.channelId = ch.channelId;
-      if (ch.apiKey) c.apiKey = ch.apiKey;
-      if (ch.dataFolder) c.dataFile = 'data/' + ch.dataFolder + '/merged_data.js';
+    var dp = getDeviceProfileConfig(c.id);
+    if (dp) {
+      if (dp.dataFolder) c.dataFile = 'data/' + dp.dataFolder + '/merged_data.js';
     }
     return c;
   });
@@ -438,7 +443,7 @@ if (!TABLES.length) {
 
 TABLES.forEach(function(t) {
   if (!t.page) {
-    t.page = t.id === 'wroom' ? 'pages/perth_wroom.html' : ('pages/station.html?table=' + encodeURIComponent(t.id));
+    t.page = 'pages/station.html?table=' + encodeURIComponent(t.id);
   }
 });
 
@@ -450,6 +455,7 @@ function parseEntry(f) {
   if (f && f.timestamp !== undefined && f.t0BatPct !== undefined) {
     var parsedTs = f.timestamp instanceof Date ? f.timestamp : new Date(f.timestamp);
     if (isNaN(parsedTs.getTime()) && f.created_at) parsedTs = new Date(f.created_at);
+    if (isFutureTimestamp(parsedTs)) return null;
     var out = Object.assign({}, f);
     out.timestamp = parsedTs;
     return out;
@@ -458,6 +464,7 @@ function parseEntry(f) {
   // Structured feed object (named properties)
   if (f && f.field1 === undefined && (f.battery_pct !== undefined || f.recorded_at !== undefined)) {
     var st = new Date(f.created_at || f.recorded_at);
+    if (isFutureTimestamp(st)) return null;
     return {
       timestamp: st,
       t0BatPct: numParse(f.battery_pct),
@@ -478,6 +485,7 @@ function parseEntry(f) {
   }
 
   var ts = new Date(f.created_at);
+  if (isFutureTimestamp(ts)) return null;
   var t0Sensors = csvParse(f.field2);
   var t0Status  = csvParse(f.field3);
   var slot1Stat  = csvParse(f.field4);
@@ -506,7 +514,7 @@ function parseEntry(f) {
 
   return {
     timestamp: ts,
-    t0BatPct: parseFloat(f.field1) || null,
+    t0BatPct: numParse(f.field1),
     t0BatV: t0Status[0] || null,
     t0Temp1: t0Sensors[0], t0Temp2: t0Sensors[2], t0Temp3: t0Sensors[4],
     t0Hum1: t0Sensors[1], t0Hum2: t0Sensors[3], t0Hum3: t0Sensors[5],
@@ -725,315 +733,7 @@ function computeSummary(entries) {
     weekHumHigh:  peak(w7, humKeys),
     monthTempHigh: peak(m30, tempKeys),
     monthHumHigh:  peak(m30, humKeys),
-    // Last 24h of temp data for sparkline
-    sparkTemp: h24.map(function(e) {
-      for (var i = 0; i < tempKeys.length; i++) {
-        var v = e[tempKeys[i]];
-        if (v != null) return { x: e.timestamp.getTime(), y: v };
-      }
-      return null;
-    }).filter(function(p) { return p && p.y != null; }),
-    sparkHum:  h24.map(function(e) {
-      for (var i = 0; i < humKeys.length; i++) {
-        var v = e[humKeys[i]];
-        if (v != null) return { x: e.timestamp.getTime(), y: v };
-      }
-      return null;
-    }).filter(function(p) { return p && p.y != null; }),
   };
-}
-
-// =====================================================================
-// RENDER TABLE CARD
-// =====================================================================
-// =====================================================================
-// WROOM DUAL-CHANNEL PARSER (temp + hum from separate ThingSpeak channels)
-// =====================================================================
-function parseWroomDualChannel(tempFeeds, humFeeds) {
-  var entries = {};
-  function roundMin(ts) { return Math.round(ts.getTime() / 60000); }
-  function numParse(v) {
-    if (v === null || v === undefined || v === '' || v === 'null') return null;
-    var n = parseFloat(v);
-    return isNaN(n) ? null : n;
-  }
-  if (tempFeeds && tempFeeds.length) {
-    tempFeeds.forEach(function(f) {
-      var ts = new Date(f.created_at);
-      if (isNaN(ts.getTime())) return;
-      var key = roundMin(ts);
-      if (!entries[key]) entries[key] = { timestamp: ts };
-      var e = entries[key];
-      for (var s = 1; s <= 5; s++) {
-        var val = numParse(f['field' + s]);
-        e['t' + s] = val;
-        if (e['ok' + s] === undefined) e['ok' + s] = (val !== null && val !== 0) ? 1 : 0;
-      }
-    });
-  }
-  if (humFeeds && humFeeds.length) {
-    humFeeds.forEach(function(f) {
-      var ts = new Date(f.created_at);
-      if (isNaN(ts.getTime())) return;
-      var key = roundMin(ts);
-      if (!entries[key]) entries[key] = { timestamp: ts };
-      var e = entries[key];
-      for (var s = 1; s <= 5; s++) {
-        var val = numParse(f['field' + s]);
-        e['rh' + s] = val;
-        if (val !== null && val !== 0) e['ok' + s] = 1;
-      }
-    });
-  }
-  return Object.values(entries).map(function(e) {
-    for (var s = 1; s <= 5; s++) {
-      if (e['t' + s]  === undefined) e['t' + s]  = null;
-      if (e['rh' + s] === undefined) e['rh' + s] = null;
-      if (e['ok' + s] === undefined) e['ok' + s] = 0;
-    }
-    return e;
-  }).filter(function(e) { return !isNaN(e.timestamp.getTime()); })
-    .sort(function(a, b) { return a.timestamp - b.timestamp; });
-}
-
-// =====================================================================
-// WROOM-SPECIFIC SUMMARY + CARD
-// =====================================================================
-function computeWroomSummary(entries) {
-  if (!entries || entries.length === 0) return null;
-  var latest = entries[entries.length - 1];
-  var now = Date.now();
-  var h24 = entries.filter(function(e) { return (now - e.timestamp.getTime()) < 86400000; });
-  var w7  = entries.filter(function(e) { return (now - e.timestamp.getTime()) < 7 * 86400000; });
-  var health = computeDataHealth(entries, now);
-
-  function peak(arr, keys) {
-    var max = null;
-    for (var i = 0; i < arr.length; i++) {
-      for (var k = 0; k < keys.length; k++) {
-        var v = arr[i][keys[k]];
-        if (v != null && (max === null || v > max)) max = v;
-      }
-    }
-    return max;
-  }
-  function minVal(arr, keys) {
-    var min = null;
-    for (var i = 0; i < arr.length; i++) {
-      for (var k = 0; k < keys.length; k++) {
-        var v = arr[i][keys[k]];
-        if (v != null && (min === null || v < min)) min = v;
-      }
-    }
-    return min;
-  }
-  function avg(arr, keys) {
-    var sum = 0, n = 0;
-    for (var i = 0; i < arr.length; i++) {
-      for (var k = 0; k < keys.length; k++) {
-        var v = arr[i][keys[k]];
-        if (v != null) { sum += v; n++; }
-      }
-    }
-    return n ? sum / n : null;
-  }
-
-  var tKeys = ['t1','t2','t3','t4','t5'];
-  var hKeys = ['rh1','rh2','rh3','rh4','rh5'];
-
-  var ageMins = (now - latest.timestamp.getTime()) / 60000;
-  var freshness = ageMins <= (24 * 60) ? 'ok' : (ageMins <= (48 * 60) ? 'warn' : 'err');
-
-  // Count active sensors from latest
-  var activeSensors = 0;
-  for (var s = 1; s <= 5; s++) {
-    if (latest['t' + s] != null || latest['rh' + s] != null) activeSensors++;
-  }
-
-  // Sparkline from first available sensor
-  var sparkKey = 't1';
-  var sparkHumKey = 'rh1';
-  for (var sk = 1; sk <= 5; sk++) {
-    if (latest['t' + sk] != null) { sparkKey = 't' + sk; sparkHumKey = 'rh' + sk; break; }
-  }
-  var sparkTemp = h24.map(function(e) { return { x: e.timestamp.getTime(), y: e[sparkKey] }; }).filter(function(p) { return p.y != null; });
-  var sparkHum  = h24.map(function(e) { return { x: e.timestamp.getTime(), y: e[sparkHumKey] }; }).filter(function(p) { return p.y != null; });
-
-  return {
-    freshness: freshness,
-    lastUpdate: latest.timestamp,
-    entries: entries.length,
-    activeSensors: activeSensors,
-    dataHealth: health,
-    dayTempHigh:  peak(h24, tKeys),
-    dayTempLow:   minVal(h24, tKeys),
-    dayTempAvg:   avg(h24, tKeys),
-    dayHumHigh:   peak(h24, hKeys),
-    dayHumAvg:    avg(h24, hKeys),
-    weekTempHigh: peak(w7, tKeys),
-    weekHumHigh:  peak(w7, hKeys),
-    sparkTemp: sparkTemp,
-    sparkHum: sparkHum,
-  };
-}
-
-function renderWroomCard(table, summary) {
-  var card = document.createElement('div');
-  card.className = 'table-card';
-  card.onclick = function() { window.location.href = table.page; };
-
-  if (!summary) {
-    card.innerHTML =
-      '<div class="table-card-header">' +
-        '<div><h2>' + table.name + '</h2><div class="location">' + table.location + '</div></div>' +
-        '<span class="table-badge badge-nc">No Data</span>' +
-      '</div>' +
-      '<div class="loading-text">No cached data. Open the <a href="' + table.page + '">WROOM page</a> and fetch data first.</div>';
-    return card;
-  }
-
-  var badgeClass = summary.freshness === 'ok' ? 'badge-ok' : (summary.freshness === 'warn' ? 'badge-warn' : 'badge-err');
-  var badgeText  = summary.freshness === 'ok' ? 'Online' : (summary.freshness === 'warn' ? 'Stale' : 'Offline');
-  card.className = 'table-card status-' + summary.freshness;
-  var fmt = function(v, unit, dp) {
-    if (v === null || v === undefined) return '--';
-    return v.toFixed(dp !== undefined ? dp : 1) + (unit || '');
-  };
-
-  var healthValue = summary.dataHealth && summary.dataHealth.pct != null ? summary.dataHealth.pct.toFixed(0) + '%' : '--';
-  var healthSub = summary.dataHealth && summary.dataHealth.pct != null ?
-    (summary.dataHealth.actual + '/' + summary.dataHealth.expected + ' samples (24h)') :
-    'No samples in last 24h';
-  var updateInfo = formatDatasetUpdate(summary.lastUpdate);
-  var nextCheck = formatNextCheckIn(table.id, summary.lastUpdate, summary.dataHealth);
-
-  card.innerHTML =
-    '<div class="table-card-header">' +
-      '<div><h2>' + table.name + '</h2><div class="location">' + table.location + '</div></div>' +
-      '<div class="table-card-right">' +
-        '<span class="table-badge ' + badgeClass + '">' + badgeText + '</span>' +
-        '<span class="status-time">' + formatStatusTime(updateInfo) + ' | ' + nextCheck.html + '</span>' +
-      '</div>' +
-    '</div>' +
-    '<div class="station-metrics">' +
-      metricBox('T0 Batt', '--', 'Not available on WROOM') +
-      metricBox('Data Health', healthValue, healthSub) +
-      metricGroup('Peak 24h',
-        metricBox('Temp', fmt(summary.dayTempHigh, '\u00B0C')) +
-        metricBox('Humidity', fmt(summary.dayHumHigh, '%'))
-      ) +
-      metricGroup('Peak 7 Days',
-        metricBox('Temp', fmt(summary.weekTempHigh, '\u00B0C')) +
-        metricBox('Humidity', fmt(summary.weekHumHigh, '%'))
-      ) +
-    '</div>';
-
-  return card;
-}
-
-// =====================================================================
-// WEATHER-ONLY CARD (for tables with no sensor data)
-// =====================================================================
-var WMO_CODES = {
-  0:'Clear sky', 1:'Mainly clear', 2:'Partly cloudy', 3:'Overcast',
-  45:'Foggy', 48:'Rime fog', 51:'Light drizzle', 53:'Drizzle', 55:'Dense drizzle',
-  56:'Freezing drizzle', 57:'Dense freezing drizzle',
-  61:'Slight rain', 63:'Moderate rain', 65:'Heavy rain',
-  66:'Freezing rain', 67:'Heavy freezing rain',
-  71:'Slight snow', 73:'Moderate snow', 75:'Heavy snow', 77:'Snow grains',
-  80:'Slight showers', 81:'Moderate showers', 82:'Violent showers',
-  85:'Slight snow showers', 86:'Heavy snow showers',
-  95:'Thunderstorm', 96:'Thunderstorm w/ hail', 99:'Thunderstorm w/ heavy hail',
-};
-var WMO_ICONS = {
-  0:'\u2600',1:'\u26C5',2:'\u26C5',3:'\u2601',
-  45:'\uD83C\uDF2B',48:'\uD83C\uDF2B',
-  51:'\uD83C\uDF26',53:'\uD83C\uDF27',55:'\uD83C\uDF27',56:'\u2744',57:'\u2744',
-  61:'\uD83C\uDF26',63:'\uD83C\uDF27',65:'\uD83C\uDF27',66:'\u2744',67:'\u2744',
-  71:'\uD83C\uDF28',73:'\uD83C\uDF28',75:'\uD83C\uDF28',77:'\u2744',
-  80:'\uD83C\uDF26',81:'\uD83C\uDF27',82:'\uD83C\uDF27',85:'\uD83C\uDF28',86:'\uD83C\uDF28',
-  95:'\u26C8',96:'\u26C8',99:'\u26C8',
-};
-
-async function fetchWeatherCard(table) {
-  if (!table.weather) return null;
-  try {
-    var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + table.weather.lat +
-      '&longitude=' + table.weather.lon +
-      '&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,precipitation' +
-      '&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_sum' +
-      '&forecast_days=7&timezone=auto';
-    var resp = await fetch(url);
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch (e) { return null; }
-}
-
-function renderWeatherOnlyCard(table, weather) {
-  var card = document.createElement('div');
-  card.className = 'table-card';
-  card.onclick = function() { window.location.href = table.page; };
-
-  var headerHtml =
-    '<div class="table-card-header">' +
-      '<div><h2>' + table.name + '</h2><div class="location">' + table.location + '</div></div>' +
-      '<span class="table-badge badge-nc">No Data</span>' +
-    '</div>';
-
-  if (!weather || !weather.current) {
-    card.innerHTML = headerHtml +
-      '<div class="loading-text">No sensor data. Set up this table in <a href="pages/settings.html">Settings</a>, or click to open the page.</div>';
-    return card;
-  }
-
-  var c = weather.current;
-  var code = c.weather_code || 0;
-  var icon = WMO_ICONS[code] || '\u2601';
-  var desc = WMO_CODES[code] || 'Unknown';
-
-  var currentHtml =
-    '<div class="weather-summary">' +
-    '<div class="wx-current">' +
-      '<div class="wx-icon">' + icon + '</div>' +
-      '<div>' +
-        '<div class="wx-temp">' + c.temperature_2m.toFixed(1) + '\u00B0C</div>' +
-        '<div class="wx-desc">' + desc + '</div>' +
-      '</div>' +
-      '<div style="margin-left:auto;text-align:right">' +
-        '<div class="wx-detail">Humidity: ' + c.relative_humidity_2m + '%</div>' +
-        '<div class="wx-detail">Wind: ' + c.wind_speed_10m.toFixed(1) + ' km/h</div>' +
-        (c.precipitation > 0 ? '<div class="wx-detail">Precip: ' + c.precipitation.toFixed(1) + ' mm</div>' : '') +
-      '</div>' +
-    '</div>';
-
-  // 7-day forecast row
-  var forecastHtml = '';
-  if (weather.daily && weather.daily.time) {
-    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    forecastHtml = '<div class="wx-forecast-row">';
-    for (var i = 0; i < Math.min(7, weather.daily.time.length); i++) {
-      var d = new Date(weather.daily.time[i] + 'T00:00:00');
-      var dayName = i === 0 ? 'Today' : days[d.getDay()];
-      var fCode = weather.daily.weather_code[i] || 0;
-      var fIcon = WMO_ICONS[fCode] || '\u2601';
-      var hi = weather.daily.temperature_2m_max[i];
-      var lo = weather.daily.temperature_2m_min[i];
-      var precip = weather.daily.precipitation_sum ? weather.daily.precipitation_sum[i] : 0;
-      forecastHtml += '<div class="wx-forecast-day">' +
-        '<div class="wx-f-day">' + dayName + '</div>' +
-        '<div class="wx-f-icon">' + fIcon + '</div>' +
-        '<div class="wx-f-temp">' + hi.toFixed(0) + '\u00B0</div>' +
-        '<div class="wx-f-lo">' + lo.toFixed(0) + '\u00B0' + (precip > 0 ? ' \uD83D\uDCA7' + precip.toFixed(1) : '') + '</div>' +
-      '</div>';
-    }
-    forecastHtml += '</div>';
-  }
-
-  card.innerHTML = headerHtml + currentHtml + forecastHtml +
-    '<div style="font-size:0.68rem;color:var(--text-muted);text-align:right;margin-top:4px">Weather via Open-Meteo &bull; Click to open page</div>' +
-    '</div>';
-
-  return card;
 }
 
 // =====================================================================
@@ -1055,7 +755,6 @@ function renderTableCard(table, summary) {
       dayTempHigh: null, dayTempLow: null, dayHumHigh: null,
       weekTempHigh: null, weekHumHigh: null,
       monthTempHigh: null, monthHumHigh: null,
-      sparkTemp: [], sparkHum: [],
     };
   }
 
@@ -1121,27 +820,24 @@ function renderTableCard(table, summary) {
       metricBox('Humidity', fmt(summary.weekHumHigh, '%'))
     );
 
+  var sourceTag = '';
+  var src = _dataSource[table.id];
+  if (src === 'edge')  sourceTag = '<span class="source-badge source-live">Edge</span>';
+  else if (src === 'live')  sourceTag = '<span class="source-badge source-live">Live</span>';
+  else if (src === 'cache') sourceTag = '<span class="source-badge source-cache">Cache</span>';
+  else if (src === 'file')  sourceTag = '<span class="source-badge source-file">File</span>';
+
   card.innerHTML =
     '<div class="table-card-header">' +
       '<div><h2>' + table.name + '</h2><div class="location">' + table.location + '</div></div>' +
       '<div class="table-card-right">' +
-        '<span class="table-badge ' + badgeClass + '">' + badgeText + '</span>' +
+        '<span class="table-badge ' + badgeClass + '">' + badgeText + '</span>' + sourceTag +
         '<span class="status-time">' + formatStatusTime(updateInfo) + ' | ' + nextCheck.html + '</span>' +
       '</div>' +
     '</div>' +
     '<div class="station-metrics">' + metrics + '</div>';
 
   return card;
-}
-
-function renderNodeChip(name, node) {
-  if (!node || node.status === 'nc') {
-    return '<div class="node-chip"><span class="dot dot-grey"></span><span class="node-name">' + name + '</span><span class="node-bat">--</span></div>';
-  }
-  var dotClass = 'dot-' + node.status;
-  var batStr = node.bat !== null ? Math.round(node.bat) + '%' : '--';
-  var fwStr = node.fw ? '<span class="node-fw" title="Firmware version">v' + node.fw + '</span>' : '';
-  return '<div class="node-chip"><span class="dot ' + dotClass + '"></span><span class="node-name">' + name + '</span><span class="node-bat">' + batStr + '</span>' + fwStr + '</div>';
 }
 
 function metricBox(label, value, sub, valueClass) {
@@ -1157,334 +853,470 @@ function metricGroup(title, contentHtml) {
 }
 
 // =====================================================================
-// SPARKLINE RANGE CONTROLS
-// =====================================================================
-var tableEntries = {};  // tableId -> entries[]
-var SPARK_RANGE_MS = { 'Day': 86400000, 'Week': 7*86400000, 'Month': 30*86400000, 'All': 0 };
-
-function rebuildSparklines(tableId, rangeMs) {
-  var entries = tableEntries[tableId];
-  if (!entries || !entries.length) return;
-  var now = Date.now();
-  var filtered = rangeMs === 0 ? entries : entries.filter(function(e) {
-    return (now - e.timestamp.getTime()) < rangeMs;
-  });
-
-  var tempKey, humKey;
-  if (tableId === 'wroom') {
-    // WROOM uses t1..t5, rh1..rh5
-    tempKey = 't1'; humKey = 'rh1';
-    var latest = entries[entries.length - 1];
-    for (var s = 1; s <= 5; s++) {
-      if (latest['t' + s] != null) { tempKey = 't' + s; humKey = 'rh' + s; break; }
-    }
-  } else {
-    tempKey = findLast(entries, 'sat1Temp1') ? 'sat1Temp1' : 't0Temp1';
-    humKey  = findLast(entries, 'sat1Hum1')  ? 'sat1Hum1'  : 't0Hum1';
-  }
-
-  var sparkTemp = filtered.map(function(e) { return { x: e.timestamp.getTime(), y: e[tempKey] }; }).filter(function(p) { return p.y != null; });
-  var sparkHum  = filtered.map(function(e) { return { x: e.timestamp.getTime(), y: e[humKey] };  }).filter(function(p) { return p.y != null; });
-  var c1 = Chart.getChart('spark-temp-' + tableId); if (c1) c1.destroy();
-  var c2 = Chart.getChart('spark-hum-'  + tableId); if (c2) c2.destroy();
-  renderSparkline('spark-temp-' + tableId, sparkTemp, '#ef4444');
-  renderSparkline('spark-hum-'  + tableId, sparkHum,  '#3b82f6');
-}
-
-function setSparkRange(tableId, label, event) {
-  event.stopPropagation();
-  var rangeMs = SPARK_RANGE_MS[label] !== undefined ? SPARK_RANGE_MS[label] : 86400000;
-  var btns = document.querySelectorAll('.spark-range-btn[data-table="' + tableId + '"]');
-  for (var i = 0; i < btns.length; i++) {
-    btns[i].classList.toggle('active', btns[i].dataset.range === label);
-  }
-  rebuildSparklines(tableId, rangeMs);
-}
-
-function renderSparkline(canvasId, data, color) {
-  var el = document.getElementById(canvasId);
-  if (!el || !data || data.length < 2) return;
-  new Chart(el, {
-    type: 'line',
-    data: {
-      datasets: [{
-        data: data, borderColor: color, backgroundColor: color + '22',
-        borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true,
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      scales: {
-        x: { type: 'time', display: false },
-        y: { display: false },
-      },
-      animation: false,
-    },
-  });
-}
-
-// =====================================================================
 // DATA LOADING
 // =====================================================================
-function loadTableData(table) {
-  // WROOM: load from merged_data.js on disk (dual-channel format), fallback to localStorage
-  if (table.id === 'wroom') {
-    return new Promise(function(resolve) {
-      var settled = false;
-      var hardTimeout = setTimeout(function() {
-        if (!settled) {
-          settled = true;
-          resolveFromCache();
-        }
-      }, 8000);
+var tableEntries = {};  // tableId -> entries[]
 
-      function done(val) {
-        if (settled) return;
-        settled = true;
-        clearTimeout(hardTimeout);
-        resolve(val);
-      }
+var _dataSource = {};  // tableId -> 'edge'
+var _autoRefreshTimer = null;
+var _deviceStatusById = {}; // tableId -> device_status row summary
+var _edgePayload = null;    // cached Edge Function payload
+var _edgePayloadAt = 0;     // Date.now() when _edgePayload was fetched
+var _overviewDiagState = { source: 'idle' };
+var OVERVIEW_STALE_SUMMARY_MAX_AGE_MIN = 90;
+var OVERVIEW_DETAIL_POINTS = 2000;
 
-      // Try disk file first
-      if (table.dataFile) {
-        var script = document.createElement('script');
-        script.src = table.dataFile;
-        script.onload = function() {
-          script.remove();
-          if (window.STATION_DATA) {
-            var tsData = window.STATION_DATA;
-            delete window.STATION_DATA;
-            var tf = tsData.tempFeeds || tsData.feeds || [];
-            var hf = tsData.humFeeds || [];
-            if (tf.length || hf.length) {
-              var entries = parseWroomDualChannel(tf, hf);
-              if (typeof filterEntryArrayByResetWindow === 'function') {
-                entries = filterEntryArrayByResetWindow(table.id, entries);
-              }
-              if (entries.length) { done(entries); return; }
-            }
-          }
-          resolveFromCache();
-        };
-        script.onerror = function() { script.remove(); resolveFromCache(); };
-        document.head.appendChild(script);
-      } else {
-        resolveFromCache();
-      }
-      function resolveFromCache() {
-        try {
-          var raw = localStorage.getItem('seaweed_cache_wroom');
-          if (raw) {
-            var cached = JSON.parse(raw);
-            if (cached.allEntries && cached.allEntries.length) {
-              var entries = cached.allEntries.map(function(e) {
-                e.timestamp = new Date(e.timestamp);
-                return e;
-              });
-              if (typeof filterEntryArrayByResetWindow === 'function') {
-                entries = filterEntryArrayByResetWindow(table.id, entries);
-              }
-              done(entries);
-              return;
-            }
-          }
-        } catch (e) {}
-        done(null);
-      }
-    });
-  }
+function overviewDiagTone(source, error) {
+  if (error) return 'error';
+  if (source === 'edge') return 'good';
+  if (source === 'edge-cache' || source === 'loading' || source === 'edge-detail-fallback') return 'warn';
+  return 'muted';
+}
 
-  // --- Supabase-first data loading with fallbacks ---
-  // Priority: 1) Supabase live fetch  2) localStorage cache  3) merged_data.js file
-  return new Promise(async function(resolve) {
-    var settled = false;
-    var hardTimeout = setTimeout(function() {
-      if (!settled) {
-        settled = true;
-        resolve(null);
-      }
-    }, 15000);
-
-    function done(val) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(hardTimeout);
-      resolve(val);
-    }
-
-    // --- 1. Try Supabase live fetch ---
-    try {
-      var result = await fetchStationData(table.id, { limit: 2000, timeoutMs: 20000 });
-      if (result && result.feeds && result.feeds.length) {
-        var entries = result.feeds.map(parseEntry).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
-          if (typeof filterEntryArrayByResetWindow === 'function') {
-            entries = filterEntryArrayByResetWindow(table.id, entries);
-          }
-          if (entries.length) {
-          saveStationCache(table.id, entries, { source: 'live' });
-          _dataSource[table.id] = 'live';
-          done(entries);
-          return;
-        }
-      }
-    } catch (e) {
-      console.log('[Overview] Supabase fetch failed for ' + table.id + ': ' + e.message);
-    }
-
-    // --- 2. Try localStorage cache ---
-    function resolveFromCache() {
-      try {
-        var raw = localStorage.getItem('seaweed_cache_' + table.id);
-        if (raw) {
-          var cached = JSON.parse(raw);
-          var arr = cached.allEntries || cached;
-          if (Array.isArray(arr) && arr.length) {
-            // Cache may contain legacy feeds, structured feeds, or parsed entries.
-            var entries = arr.map(parseEntry).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
-            if (typeof filterEntryArrayByResetWindow === 'function') {
-              entries = filterEntryArrayByResetWindow(table.id, entries);
-            }
-            if (entries.length) {
-              // Skip stale cache (>7 days) — fall through to static file
-              var newestMs = entries[entries.length - 1].timestamp.getTime();
-              if ((Date.now() - newestMs) > 7 * 86400000) {
-                console.log('[Overview] Cache for ' + table.id + ' too stale (' +
-                  Math.round((Date.now() - newestMs) / 86400000) + 'd), skipping to static file');
-                return false;
-              }
-              _dataSource[table.id] = 'cache';
-              done(entries);
-              return;
-            }
-          }
-        }
-      } catch (e) {}
-      return false;
-    }
-    if (resolveFromCache() !== false) return;
-
-    // --- 3. Fall back to static merged_data.js file ---
-    var jsUrl = table.dataFile;
-    if (!jsUrl) { done(null); return; }
-
-    var script = document.createElement('script');
-    script.src = jsUrl;
-    script.onload = function() {
-      if (window.STATION_DATA) {
-        var data = window.STATION_DATA;
-        delete window.STATION_DATA;
-        var entries = (data.feeds || []).map(parseEntry).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
-        if (typeof filterEntryArrayByResetWindow === 'function') {
-          entries = filterEntryArrayByResetWindow(table.id, entries);
-        }
-        if (entries.length) {
-          _dataSource[table.id] = 'file';
-          done(entries);
-        } else {
-          done(null);
-        }
-      } else {
-        done(null);
-      }
-      script.remove();
-    };
-    script.onerror = function() {
-      done(null);
-      script.remove();
-    };
-    document.head.appendChild(script);
+function updateOverviewDiagnostics(patch) {
+  _overviewDiagState = Object.assign({}, _overviewDiagState, patch || {});
+  renderDashboardDiagnostics('dashboardDiagnosticsPanel', {
+    summary: 'Overview Diagnostics',
+    pill: _overviewDiagState.error ? 'Error' : (_overviewDiagState.source === 'edge' ? 'Live' : (_overviewDiagState.source === 'loading' ? 'Loading' : 'Cache')),
+    pillTone: overviewDiagTone(_overviewDiagState.source, _overviewDiagState.error),
+    rows: [
+      { label: 'Source', value: _overviewDiagState.source || '--', tone: _overviewDiagState.error ? 'error' : (_overviewDiagState.source === 'edge' ? 'good' : '') },
+      { label: 'Generated', value: dashboardDiagFormatUtc(_overviewDiagState.generatedAt) },
+      { label: 'Data as of', value: dashboardDiagFormatUtc(_overviewDiagState.dataAsOf) },
+      { label: 'Schema', value: _overviewDiagState.schemaVersion != null ? String(_overviewDiagState.schemaVersion) : '--' },
+      { label: 'Partial', value: _overviewDiagState.partial == null ? '--' : (_overviewDiagState.partial ? 'true' : 'false'), tone: _overviewDiagState.partial ? 'warn' : 'good' },
+      { label: 'Stations', value: _overviewDiagState.stationCount != null ? String(_overviewDiagState.stationCount) : '--' },
+      { label: 'Fetch', value: dashboardDiagFormatDuration(_overviewDiagState.fetchDurationMs) },
+      { label: 'Cache age', value: _overviewDiagState.cacheAgeS != null ? (_overviewDiagState.cacheAgeS + ' s') : '--' },
+      { label: 'Last refresh', value: dashboardDiagFormatUtc(_overviewDiagState.lastRefreshAt) }
+    ],
+    error: _overviewDiagState.error || '',
+    note: _overviewDiagState.note || ''
   });
 }
 
-var _dataSource = {};  // tableId -> 'live' | 'cache' | 'file'
-var _autoRefreshTimer = null;
-var _deviceStatusById = {}; // tableId -> device_status row summary
+// =====================================================================
+// EDGE FUNCTION PATH (Sprint 2)
+// =====================================================================
 
-async function refreshDeviceStatusMap() {
-  try {
-    var ids = TABLES.map(function(t) { return t.id; }).filter(function(id) { return id !== 'wroom'; });
-    _deviceStatusById = await fetchDeviceStatusMap(ids);
-  } catch (e) {
-    console.warn('[Overview] device_status fetch failed:', e.message || e);
+/**
+ * Adapt one station object from dashboard_overview() RPC
+ * into the summary shape that renderTableCard() expects.
+ */
+function edgeStationToSummary(st) {
+  // Map RPC alert_state → the freshness key that renderTableCard expects.
+  // Legacy uses: 'ok' | 'warn' | 'err' | (null → noData path).
+  // RPC returns:  'ok' | 'warn' | 'err' | 'nc'.
+  // 'nc' means "no contact / no data" — return null so renderTableCard
+  // takes the noData branch (badge-nc, "No Data").
+  var alertState = st.alert_state || 'nc';
+  if (alertState === 'nc') return null;
+
+  var freshness = alertState;
+  var lastUpdate = st.last_sample_epoch ? new Date(st.last_sample_epoch) : null;
+
+  // T0 battery from root-level battery_pct (hub's latest sample)
+  var t0Bat = st.battery_pct != null ? Number(st.battery_pct) : null;
+
+  // Satellite slot batteries from satellite_summary
+  var slot1 = { status: 'nc', bat: null, lastSeen: null, fw: null };
+  var slot2 = { status: 'nc', bat: null, lastSeen: null, fw: null };
+  if (Array.isArray(st.satellite_summary)) {
+    for (var i = 0; i < st.satellite_summary.length; i++) {
+      var sl = st.satellite_summary[i];
+      var target = sl.slot_number === 1 ? slot1 : (sl.slot_number === 2 ? slot2 : null);
+      if (!target) continue;
+      // Get battery from sensor_summary for this node rather than sync session
+      var nodeKey = sl.node_id; // 'A' or 'B'
+      var nodeSensor = st.sensor_summary && st.sensor_summary[nodeKey] ? st.sensor_summary[nodeKey] : null;
+      var slotBat = nodeSensor && nodeSensor.battery_pct != null ? Number(nodeSensor.battery_pct) : null;
+      var slotStatus = slotBat != null ? (slotBat > 80 ? 'green' : (slotBat < 30 ? 'red' : 'yellow')) : 'nc';
+      target.status = slotStatus;
+      target.bat = slotBat;
+      target.lastSeen = sl.last_sync ? new Date(sl.last_sync) : null;
+      target.fw = sl.fw_ver || null;
+    }
+  }
+
+  // Data health from upload_count_24h
+  var actual = st.upload_count_24h || 0;
+  var expected = 144; // 24h / 10min = 144
+  var healthPct = expected > 0 ? Math.min(100, (actual / expected) * 100) : null;
+
+  // Sensor aggregates from sensor_summary
+  var dayTempHigh = null, dayHumHigh = null;
+  if (st.sensor_summary) {
+    var keys = Object.keys(st.sensor_summary);
+    for (var k = 0; k < keys.length; k++) {
+      var node = st.sensor_summary[keys[k]];
+      if (node && node.agg_24h) {
+        var a = node.agg_24h;
+        if (a.temp_1_max != null && (dayTempHigh === null || a.temp_1_max > dayTempHigh))
+          dayTempHigh = Number(a.temp_1_max);
+        if (a.humidity_1_max != null && (dayHumHigh === null || a.humidity_1_max > dayHumHigh))
+          dayHumHigh = Number(a.humidity_1_max);
+      }
+    }
+  }
+
+  return {
+    freshness: freshness,
+    lastUpdate: lastUpdate,
+    entries: actual,
+    t0: {
+      status: t0Bat != null ? (t0Bat > 80 ? 'green' : (t0Bat < 30 ? 'red' : 'yellow')) : 'nc',
+      bat: t0Bat,
+      lastSeen: lastUpdate,
+      fw: st.fw_version || null
+    },
+    slot1: slot1,
+    slot2: slot2,
+    dataHealth: { actual: actual, expected: expected, pct: healthPct },
+    dayTempHigh: dayTempHigh,
+    dayTempLow: null,   // RPC returns max; low is not shown on card
+    dayHumHigh: dayHumHigh,
+    weekTempHigh: null,  // Not available from overview RPC (24h only)
+    weekHumHigh: null,
+    monthTempHigh: null,
+    monthHumHigh: null,
+  };
+}
+
+/**
+ * Look up the TABLES entry for a given station_id.
+ */
+function findTableForStation(stationId) {
+  for (var i = 0; i < TABLES.length; i++) {
+    if (TABLES[i].id === stationId) return TABLES[i];
+  }
+  return null;
+}
+
+/**
+ * Fetch from the dashboard-overview Edge Function and render cards.
+ * Returns the payload, or null on failure.
+ */
+async function fetchEdgeOverview() {
+  var startedAt = Date.now();
+  var supaCfg = getSupabaseConfig();
+  var url = supaCfg.url + '/functions/v1/dashboard-overview';
+  var res = await fetchWithTimeout(url, 15000, {
+    headers: {
+      'Authorization': 'Bearer ' + supaCfg.key,
+      'apikey': supaCfg.key
+    }
+  });
+  if (!res.ok) {
+    var body = null;
+    try { body = await res.json(); } catch (_) {}
+    var errMsg = body && body.error ? body.error : ('HTTP ' + res.status);
+    throw new Error('Edge Function: ' + errMsg);
+  }
+  var payload = await res.json();
+  payload._response_duration_ms = Date.now() - startedAt;
+  return payload;
+}
+
+function getOverviewDataAgeMinutes(payload) {
+  if (!payload || !payload.data_as_of) return null;
+  var dataAsOf = new Date(payload.data_as_of);
+  if (isNaN(dataAsOf.getTime())) return null;
+  return (Date.now() - dataAsOf.getTime()) / 60000;
+}
+
+function isOverviewPayloadStale(payload) {
+  var ageMin = getOverviewDataAgeMinutes(payload);
+  return ageMin != null && ageMin > OVERVIEW_STALE_SUMMARY_MAX_AGE_MIN;
+}
+
+async function fetchStationDetailOverviewPayload(stationId) {
+  var startedAt = Date.now();
+  var supaCfg = getSupabaseConfig();
+  var url = supaCfg.url + '/functions/v1/station-detail' +
+    '?station_id=' + encodeURIComponent(stationId) +
+    '&points=' + encodeURIComponent(String(OVERVIEW_DETAIL_POINTS));
+  var res = await fetchWithTimeout(url, 20000, {
+    headers: {
+      'Authorization': 'Bearer ' + supaCfg.key,
+      'apikey': supaCfg.key
+    }
+  });
+  if (!res.ok) {
+    var body = null;
+    try { body = await res.json(); } catch (_) {}
+    var errMsg = body && body.error ? body.error : ('HTTP ' + res.status);
+    throw new Error('Edge Function (station-detail ' + stationId + '): ' + errMsg);
+  }
+  var payload = await res.json();
+  if (payload && payload.source === 'error') {
+    throw new Error(payload.error || ('station-detail failed for ' + stationId));
+  }
+  payload._response_duration_ms = Date.now() - startedAt;
+  return payload;
+}
+
+function stationDetailPayloadToOverviewSummary(payload) {
+  var feeds = payload && Array.isArray(payload.feeds) ? payload.feeds : [];
+  var entries = [];
+  for (var i = 0; i < feeds.length; i++) {
+    var parsed = parseEntry(feeds[i]);
+    if (parsed) entries.push(parsed);
+  }
+  entries.sort(function(a, b) { return a.timestamp - b.timestamp; });
+  return {
+    entries: entries,
+    summary: computeSummary(entries),
+    deviceStatus: payload && payload.device_status ? payload.device_status : null,
+    dataAsOf: payload && payload.data_as_of ? payload.data_as_of : null,
+    fetchDurationMs: payload && payload._response_duration_ms != null ? payload._response_duration_ms : null
+  };
+}
+
+async function renderOverviewFromStationDetails(basePayload, contextLabel) {
+  var grid = document.getElementById('tableGrid');
+  var btn = document.getElementById('btnFetchAll');
+  var statusEl = document.getElementById('fetchStatus');
+  var startedAt = Date.now();
+
+  if (btn) {
+    btn.innerHTML = '<span class="spinner"></span> Refreshing...';
+    btn.disabled = true;
+  }
+  if (statusEl) {
+    statusEl.innerHTML = '<span style="color:var(--warning)">Overview summary is stale — rebuilding cards from station-detail feeds…</span>';
+  }
+
+  var stationsById = {};
+  if (basePayload && Array.isArray(basePayload.stations)) {
+    for (var i = 0; i < basePayload.stations.length; i++) {
+      stationsById[basePayload.stations[i].station_id] = basePayload.stations[i];
+    }
+  }
+
+  var jobs = TABLES.map(function(table) {
+    return fetchStationDetailOverviewPayload(table.id)
+      .then(function(payload) {
+        return { table: table, ok: true, payload: payload };
+      })
+      .catch(function(err) {
+        return { table: table, ok: false, error: err };
+      });
+  });
+
+  var results = await Promise.all(jobs);
+  var renderedCount = 0;
+  var failureIds = [];
+  var latestDataAsOfMs = null;
+  var totalFetchDurationMs = 0;
+  grid.innerHTML = '';
+
+  for (var r = 0; r < results.length; r++) {
+    var result = results[r];
+    var table = result.table;
+    var card = null;
+
+    if (result.ok) {
+      var derived = stationDetailPayloadToOverviewSummary(result.payload);
+      if (derived.deviceStatus) {
+        _deviceStatusById[table.id] = {
+          batteryPct: derived.deviceStatus.battery_pct,
+          nextCheckInAt: derived.deviceStatus.next_check_in ? new Date(derived.deviceStatus.next_check_in) : null,
+          lastSeenAt: derived.deviceStatus.last_seen ? new Date(derived.deviceStatus.last_seen) : null,
+          lastUploadAt: derived.deviceStatus.last_upload_at ? new Date(derived.deviceStatus.last_upload_at) : null,
+          raw: derived.deviceStatus
+        };
+      }
+      tableEntries[table.id] = derived.entries;
+      _dataSource[table.id] = 'live';
+      card = renderTableCard(table, derived.summary);
+      renderedCount++;
+      totalFetchDurationMs += derived.fetchDurationMs || 0;
+      if (derived.dataAsOf) {
+        var asOfMs = new Date(derived.dataAsOf).getTime();
+        if (!isNaN(asOfMs) && (latestDataAsOfMs === null || asOfMs > latestDataAsOfMs)) {
+          latestDataAsOfMs = asOfMs;
+        }
+      }
+    } else {
+      failureIds.push(table.id);
+      var fallbackStation = stationsById[table.id] || null;
+      if (fallbackStation) {
+        _dataSource[table.id] = 'edge';
+        card = renderTableCard(table, edgeStationToSummary(fallbackStation));
+      } else {
+        card = renderTableCard(table, null);
+      }
+      console.error('[Overview] station-detail fallback failed for ' + table.id + ':', result.error);
+    }
+
+    grid.appendChild(card);
+  }
+
+  if (btn) {
+    btn.innerHTML = '&#128752; Fetch Live';
+    btn.disabled = false;
+  }
+
+  var latestDataAsOf = latestDataAsOfMs != null ? new Date(latestDataAsOfMs).toISOString() : (basePayload ? basePayload.data_as_of : null);
+  if (statusEl) {
+    var refreshTs = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
+    var liveTs = latestDataAsOf
+      ? new Date(latestDataAsOf).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'})
+      : '?';
+    var warnText = failureIds.length
+      ? (' — partial fallback, failed: ' + failureIds.join(', '))
+      : '';
+    statusEl.innerHTML = '<span style="color:var(--warning)">' + renderedCount +
+      ' stations via station-detail fallback — data as of ' + liveTs + ' — ' + refreshTs + warnText + '</span>';
+  }
+
+  updateOverviewDiagnostics({
+    source: 'edge-detail-fallback',
+    generatedAt: new Date(startedAt).toISOString(),
+    dataAsOf: latestDataAsOf,
+    schemaVersion: basePayload ? basePayload.schema_version : null,
+    partial: failureIds.length > 0,
+    stationCount: renderedCount,
+    fetchDurationMs: Date.now() - startedAt,
+    cacheAgeS: 0,
+    lastRefreshAt: Date.now(),
+    error: failureIds.length ? ('Fallback failed for: ' + failureIds.join(', ')) : '',
+    note: 'dashboard-overview is stale, so cards were rebuilt from fresh station-detail feeds (' + contextLabel + ').'
+  });
+
+  return renderedCount > 0;
+}
+
+async function upgradeOverviewIfStale(payload, contextLabel) {
+  if (!isOverviewPayloadStale(payload)) return false;
+  return renderOverviewFromStationDetails(payload, contextLabel);
+}
+
+/**
+ * Render overview cards from a cached Edge Function payload.
+ */
+function renderEdgeCards(payload) {
+  var grid = document.getElementById('tableGrid');
+  grid.innerHTML = '';
+
+  if (!payload || !payload.stations || !payload.stations.length) {
+    grid.innerHTML = '<div class="loading-text">No station data available.</div>';
+    return;
+  }
+
+  var stations = payload.stations;
+  for (var i = 0; i < stations.length; i++) {
+    var st = stations[i];
+    var table = findTableForStation(st.station_id);
+    if (!table) continue; // skip stations not in TABLES (disabled by user)
+    var summary = edgeStationToSummary(st);
+    _dataSource[st.station_id] = 'edge';
+    var card = renderTableCard(table, summary);
+    grid.appendChild(card);
   }
 }
 
-async function fetchAllLive() {
+/**
+ * Edge Function fetch-all (sole data path for dashboard overview).
+ */
+async function fetchAllEdge() {
   var btn = document.getElementById('btnFetchAll');
   var statusEl = document.getElementById('fetchStatus');
   btn.innerHTML = '<span class="spinner"></span> Fetching...';
   btn.disabled = true;
   statusEl.textContent = '';
+  updateOverviewDiagnostics({ source: 'loading', lastRefreshAt: Date.now(), error: '', note: 'Waiting for dashboard-overview payload…' });
 
-  var fetched = 0, errors = [];
   try {
-    if (!TABLES.length) {
-      renderAllCards();
-      statusEl.innerHTML = '<span style="color:var(--text-muted)">No stations enabled in Settings.</span>';
-      return;
-    }
+    var payload = await fetchEdgeOverview();
+    _edgePayload = payload;
+    _edgePayloadAt = Date.now();
 
-    await refreshDeviceStatusMap();
-    var liveTables = TABLES.filter(function(table) { return !table.legacy; });
-    if (!liveTables.length) {
-      renderAllCards();
-      statusEl.innerHTML = '<span style="color:var(--text-muted)">No live stations to fetch.</span>';
-      return;
-    }
-    statusEl.textContent = 'Fetching ' + liveTables.length + ' stations...';
-
-    var tasks = liveTables.map(function(table) {
-      return (async function() {
-        var result = await fetchStationData(table.id, { limit: 2000, timeoutMs: 20000 });
-        var entries = (result && result.feeds ? result.feeds : [])
-          .map(parseEntry)
-          .filter(function(e) { return !isNaN(e.timestamp.getTime()); });
-        if (entries.length) {
-          tableEntries[table.id] = entries;
-          saveStationCache(table.id, entries, { source: 'live' });
-          _dataSource[table.id] = 'live';
-          return { table: table, updated: true };
-        }
-        return { table: table, updated: false };
-      })();
-    });
-
-    var settled = await Promise.allSettled(tasks);
-    for (var i = 0; i < settled.length; i++) {
-      var s = settled[i];
-      if (s.status === 'fulfilled') {
-        if (s.value && s.value.updated) fetched++;
-      } else {
-        var t = liveTables[i];
-        var msg = s.reason && s.reason.message ? s.reason.message : 'Unknown error';
-        console.error('[Overview] Fetch failed for ' + t.name + ':', s.reason);
-        errors.push(t.name + ': ' + msg);
+    // Also update _deviceStatusById from the edge payload so card rendering
+    // has status data without a separate device_status fetch
+    if (payload.stations) {
+      for (var i = 0; i < payload.stations.length; i++) {
+        var st = payload.stations[i];
+        _deviceStatusById[st.station_id] = {
+          batteryPct: st.battery_pct,
+          nextCheckInAt: null,
+          lastSeenAt: st.last_seen ? new Date(st.last_seen) : null,
+          lastUploadAt: null,
+          raw: st
+        };
       }
     }
 
-    // Re-render all cards
-    renderAllCards();
-    if (fetched > 0) {
-      var updatedIds = liveTables.map(function(t) { return t.id; });
-      notifyDashboardDataRefresh(updatedIds, 'overview.fetchAllLive');
+    var usedFallback = false;
+    if (isOverviewPayloadStale(payload)) {
+      usedFallback = await upgradeOverviewIfStale(payload, 'manual refresh');
+      if (usedFallback) return;
     }
 
+    renderEdgeCards(payload);
+
+    var count = payload.stations ? payload.stations.length : 0;
+    var partial = payload.partial ? ' (partial)' : '';
     var ts = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
-    if (errors.length) {
-      statusEl.innerHTML = '<span style="color:var(--warning)">' + fetched + ' OK, ' + errors.length + ' failed &mdash; ' + ts + '</span>';
-    } else if (fetched > 0) {
-      statusEl.innerHTML = '<span style="color:var(--success)">' + fetched + ' stations updated &mdash; ' + ts + '</span>';
-    } else {
-      statusEl.innerHTML = '<span style="color:var(--text-muted)">No updates &mdash; ' + ts + '</span>';
-    }
+    var dataOf = payload.data_as_of
+      ? new Date(payload.data_as_of).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'})
+      : '?';
+    statusEl.innerHTML = '<span style="color:var(--success)">' + count +
+      ' stations via Edge Function' + partial + ' — data as of ' + dataOf + ' — ' + ts + '</span>';
+    updateOverviewDiagnostics({
+      source: 'edge',
+      generatedAt: payload.generated_at,
+      dataAsOf: payload.data_as_of,
+      schemaVersion: payload.schema_version,
+      partial: payload.partial === true,
+      stationCount: count,
+      fetchDurationMs: payload._response_duration_ms,
+      cacheAgeS: 0,
+      lastRefreshAt: Date.now(),
+      error: '',
+      note: 'Single Edge Function payload. Browser should not query raw station tables on this page.'
+    });
   } catch (err) {
-    console.error('[Overview] Fetch/render failure:', err);
-    statusEl.innerHTML = '<span style="color:var(--danger)">Fetch failed: ' + (err && err.message ? err.message : 'Unknown error') + '</span>';
+    console.error('[Overview] Edge Function fetch failed:', err);
+    // Stale-while-revalidate: re-render from cached payload if available
+    if (_edgePayload) {
+      renderEdgeCards(_edgePayload);
+      var staleAge = Math.round((Date.now() - _edgePayloadAt) / 1000);
+      statusEl.innerHTML = '<span style="color:var(--warning)">Edge failed — showing cached data (' + staleAge + 's old): ' +
+        (err.message || 'Unknown error') + '</span>';
+      updateOverviewDiagnostics({
+        source: 'edge-cache',
+        generatedAt: _edgePayload.generated_at,
+        dataAsOf: _edgePayload.data_as_of,
+        schemaVersion: _edgePayload.schema_version,
+        partial: _edgePayload.partial === true,
+        stationCount: _edgePayload.stations ? _edgePayload.stations.length : null,
+        fetchDurationMs: _edgePayload._response_duration_ms,
+        cacheAgeS: staleAge,
+        lastRefreshAt: Date.now(),
+        error: err.message || 'Edge fetch failed',
+        note: 'Cached overview payload reused after live fetch failure.'
+      });
+    } else {
+      statusEl.innerHTML = '<span style="color:var(--danger)">Edge Function unavailable: ' +
+        (err.message || 'Unknown error') + '</span>';
+      updateOverviewDiagnostics({
+        source: 'error',
+        stationCount: null,
+        lastRefreshAt: Date.now(),
+        error: err.message || 'Edge fetch failed',
+        note: 'No cached overview payload available.'
+      });
+    }
   } finally {
     btn.innerHTML = '&#128752; Fetch Live';
     btn.disabled = false;
   }
+}
+
+/** Fetch all station data via Edge Function. */
+function fetchAllLive() {
+  return fetchAllEdge();
 }
 
 function renderAllCards() {
@@ -1498,10 +1330,7 @@ function renderAllCards() {
     var table = TABLES[i];
     var entries = tableEntries[table.id];
     var card;
-    if (table.id === 'wroom') {
-      var wroomSummary = computeWroomSummary(entries);
-      card = renderWroomCard(table, wroomSummary);
-    } else if (entries && entries.length) {
+    if (entries && entries.length) {
       var summary = computeSummary(entries);
       card = renderTableCard(table, summary);
     } else {
@@ -1514,19 +1343,19 @@ function renderAllCards() {
 function setupAutoRefresh() {
   if (_autoRefreshTimer) clearInterval(_autoRefreshTimer);
   _autoRefreshTimer = null;
-  var mins = 15;  // 15-minute auto-refresh
   var label = document.getElementById('autoRefreshLabel');
   _autoRefreshTimer = setInterval(function() {
     console.log('[Overview] Auto-refresh triggered');
     fetchAllLive();
-  }, mins * 60000);
-  if (label) label.textContent = 'Auto-refresh: every ' + mins + 'm';
+  }, 60000);
+  if (label) label.textContent = 'Auto-refresh: every 1m';
 }
 
 // =====================================================================
 // INITIALIZATION
 // =====================================================================
 async function init() {
+  updateOverviewDiagnostics({ source: 'loading', lastRefreshAt: Date.now(), error: '', note: 'Overview page booting…' });
   document.body.classList.add('loading-state');
   var mainEl = document.querySelector('.main');
   if (mainEl) mainEl.classList.add('loading-state');
@@ -1535,39 +1364,70 @@ async function init() {
 
   if (!TABLES.length) {
     renderAllCards();
+    updateOverviewDiagnostics({ source: 'idle', stationCount: 0, error: '', note: 'No enabled stations in current role/config.' });
     document.body.classList.remove('loading-state');
     if (mainEl) mainEl.classList.remove('loading-state');
     setupAutoRefresh();
     return;
   }
 
-  await refreshDeviceStatusMap();
-
-  var loadTasks = TABLES.map(function(table) {
-    return loadTableData(table);
-  });
-  var settled = await Promise.allSettled(loadTasks);
-
-  grid.innerHTML = '';
-  for (var i = 0; i < TABLES.length; i++) {
-    var table = TABLES[i];
-    var s = settled[i];
-    var entries = null;
-    if (s && s.status === 'fulfilled') {
-      entries = s.value;
-    } else if (s && s.reason) {
-      console.warn('[Overview] Initial load failed for ' + table.id + ':', s.reason);
+  // ── Load from Edge Function ─────────────────────────────────
+  try {
+    var payload = await fetchEdgeOverview();
+    _edgePayload = payload;
+    _edgePayloadAt = Date.now();
+    if (payload.stations) {
+      for (var ei = 0; ei < payload.stations.length; ei++) {
+        var est = payload.stations[ei];
+        _deviceStatusById[est.station_id] = {
+          batteryPct: est.battery_pct,
+          nextCheckInAt: null,
+          lastSeenAt: est.last_seen ? new Date(est.last_seen) : null,
+          lastUploadAt: null,
+          raw: est
+        };
+      }
     }
 
-    if (entries) tableEntries[table.id] = entries;
-
-    var card;
-    if (table.id === 'wroom') {
-      card = renderWroomCard(table, computeWroomSummary(entries));
-    } else {
-      card = renderTableCard(table, entries ? computeSummary(entries) : null);
+    var initUsedFallback = false;
+    if (isOverviewPayloadStale(payload)) {
+      initUsedFallback = await upgradeOverviewIfStale(payload, 'initial page load');
+      if (initUsedFallback) {
+        console.warn('[Overview] dashboard-overview payload stale; using station-detail fallback');
+        setupAutoRefresh();
+        document.body.classList.remove('loading-state');
+        if (mainEl) mainEl.classList.remove('loading-state');
+        return;
+      }
     }
-    grid.appendChild(card);
+
+    renderEdgeCards(payload);
+
+    console.log('[Overview] Loaded from Edge Function, ' +
+      (payload.stations ? payload.stations.length : 0) + ' stations');
+    updateOverviewDiagnostics({
+      source: 'edge',
+      generatedAt: payload.generated_at,
+      dataAsOf: payload.data_as_of,
+      schemaVersion: payload.schema_version,
+      partial: payload.partial === true,
+      stationCount: payload.stations ? payload.stations.length : null,
+      fetchDurationMs: payload._response_duration_ms,
+      cacheAgeS: 0,
+      lastRefreshAt: Date.now(),
+      error: '',
+      note: 'Initial page load completed from dashboard-overview Edge Function.'
+    });
+  } catch (edgeErr) {
+    console.error('[Overview] Edge init failed:', edgeErr.message);
+    grid.innerHTML = '<div class="loading-text" style="color:var(--danger)">Could not load dashboard data: ' +
+      (edgeErr.message || 'Unknown error') + '</div>';
+    updateOverviewDiagnostics({
+      source: 'error',
+      lastRefreshAt: Date.now(),
+      error: edgeErr.message || 'Overview init failed',
+      note: 'Overview could not complete its initial Edge load.'
+    });
   }
 
   // Start auto-refresh
@@ -1580,26 +1440,10 @@ document.addEventListener('DOMContentLoaded', init);
 
 onDashboardDataRefresh(function(msg) {
   try {
-    var ids = Array.isArray(msg && msg.stationIds) ? msg.stationIds : [];
-    if (!ids.length) return;
-    var changed = false;
-    ids.forEach(function(id) {
-      var t = TABLES.find(function(x) { return x.id === id; });
-      if (!t) return;
-      var raw = localStorage.getItem('seaweed_cache_' + id);
-      if (!raw) return;
-      var cached = JSON.parse(raw);
-      var arr = cached && Array.isArray(cached.allEntries) ? cached.allEntries : null;
-      if (!arr || !arr.length) return;
-      var entries = arr.map(parseEntry).filter(function(e) { return !isNaN(e.timestamp.getTime()); });
-      if (!entries.length) return;
-      tableEntries[id] = entries;
-      _dataSource[id] = cached.source || 'cache';
-      changed = true;
-    });
-    if (changed) {
-      refreshDeviceStatusMap().then(function() { renderAllCards(); }).catch(function() { renderAllCards(); });
-    }
+    // Ignore our own broadcasts to avoid re-fetch loops
+    if (msg && typeof msg.source === 'string' && msg.source.indexOf('overview.') === 0) return;
+    // Another tab updated data — trigger a fresh edge fetch to stay current
+    fetchAllEdge();
   } catch (e) {}
 });
 </script>

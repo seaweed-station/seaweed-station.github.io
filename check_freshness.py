@@ -4,12 +4,23 @@ from datetime import datetime, timezone
 
 data_root = os.path.join(os.path.dirname(__file__), 'data')
 
-folders = {
-    'Perth TT': 'data_3262071_TT',
-    'WROOM PTT': 'data_WROOM_PTT',
-    'Shangani': 'data_Shangani',
-    'Funzi': 'data_Funzi',
-}
+# Load station list from config.json
+folders = {}
+cfg_path = os.path.join(os.path.dirname(__file__), 'config.json')
+try:
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        cfg = json.load(f)
+    for s in cfg.get('stations', []):
+        if s.get('dataFolder'):
+            folders[s.get('name', s['id'])] = s['dataFolder']
+except Exception:
+    # Fallback – keep in sync with config.json
+    folders = {
+        'Shangani Aramani': 'data_Shangani',
+        'Funzi Island': 'data_Funzi',
+        'Spare': 'data_spare',
+        'Perth Test': 'data_3262071_TT',
+    }
 
 now = datetime.now(timezone.utc)
 

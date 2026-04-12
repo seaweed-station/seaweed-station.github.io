@@ -2,7 +2,7 @@
 .SYNOPSIS
     Downloads station data from Supabase for the Seaweed Station Dashboard.
 .DESCRIPTION
-    Phase 3 replacement for download_data.ps1 (ThingSpeak).
+    Supabase data download pipeline.
     Queries Supabase PostgREST for samples_raw and flattens hub + satellite rows
     into the structured dashboard feed shape used by the current pages.
     Output: data/<dataFolder>/merged_data.js → window.STATION_DATA = {...}
@@ -13,6 +13,8 @@
     Override retention window in days (default: from config.json or 90)
 .PARAMETER ScheduleType
     Override schedule type: 'daily' or 'hourly' (affects archive filenames)
+.PARAMETER WeatherStartDate
+    Optional earliest weather cache date (yyyy-MM-dd). Default: from config.json
 .EXAMPLE
     .\download_data_supabase.ps1
     .\download_data_supabase.ps1 -MaxResults 500
@@ -21,21 +23,29 @@
 param(
     [int]$MaxResults      = 0,
     [int]$RetentionDays   = 0,
-    [string]$ScheduleType = ""
+    [string]$ScheduleType = "",
+    [string]$WeatherStartDate = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+$openMeteoHelpers = Join-Path $PSScriptRoot "open_meteo_helpers.ps1"
+if (!(Test-Path $openMeteoHelpers)) {
+    throw "Missing helper script: $openMeteoHelpers"
+}
+. $openMeteoHelpers
 
 # ═══════════════════════════════════════════════════════════════════
 # LOAD CONFIG
 # ═══════════════════════════════════════════════════════════════════
 
+# Fallback station list – used only when config.json has no "stations" array.
+# Keep in sync with config.json "stations".
 $defaultStations = @(
-    @{ id = "perth";    name = "Perth Test Table";    dataFolder = "data_3262071_TT" }
-    @{ id = "shangani"; name = "Shangani Aramani";    dataFolder = "data_Shangani" }
-    @{ id = "funzi";    name = "Funzi Island";        dataFolder = "data_Funzi" }
-    @{ id = "spare";    name = "Spare Station";       dataFolder = "data_spare" }
-    @{ id = "wroom";    name = "Perth WROOM";         dataFolder = "data_WROOM_PTT" }
+    @{ id = "shangani"; name = "Shangani Aramani"; dataFolder = "data_Shangani" }
+    @{ id = "funzi";    name = "Funzi Island";     dataFolder = "data_Funzi" }
+    @{ id = "spare";    name = "Spare";            dataFolder = "data_spare" }
+    @{ id = "perth";    name = "Perth Test";       dataFolder = "data_3262071_TT" }
 )
 
 $cfg = @{
@@ -45,6 +55,7 @@ $cfg = @{
     maxResults     = 8000
     retentionDays  = 90
     dataPath       = ""
+    weatherStartDate = ""
 }
 $stations = $defaultStations
 
@@ -58,6 +69,7 @@ if (Test-Path $cfgFile) {
         if ($fileJson.maxResults -and $fileJson.maxResults -gt 0) { $cfg.maxResults = [int]$fileJson.maxResults }
         if ($fileJson.retentionDays -and $fileJson.retentionDays -gt 0) { $cfg.retentionDays = [int]$fileJson.retentionDays }
         if ($fileJson.dataPath -and $fileJson.dataPath.Trim() -ne "") { $cfg.dataPath = $fileJson.dataPath.Trim() }
+        if ($fileJson.weatherStartDate -and $fileJson.weatherStartDate.Trim() -ne "") { $cfg.weatherStartDate = $fileJson.weatherStartDate.Trim() }
         if ($fileJson.stations -and $fileJson.stations.Count -gt 0) {
             $stations = @()
             foreach ($s in $fileJson.stations) {
@@ -81,6 +93,9 @@ if ($env:SUPABASE_KEY) { $cfg.supabaseKey = $env:SUPABASE_KEY }
 if ($MaxResults -gt 0)    { $cfg.maxResults    = $MaxResults }
 if ($RetentionDays -gt 0) { $cfg.retentionDays = $RetentionDays }
 if ($ScheduleType -ne "") { $cfg.scheduleType  = $ScheduleType }
+if ($WeatherStartDate -ne "") { $cfg.weatherStartDate = $WeatherStartDate }
+
+$cfg.weatherStartDate = ConvertTo-IsoDateOrEmpty $cfg.weatherStartDate "weatherStartDate"
 
 # Validate Supabase credentials
 if (-not $cfg.supabaseUrl -or -not $cfg.supabaseKey) {
@@ -247,8 +262,8 @@ function Get-LatestInsertedRow {
     if ($candidateInserted -gt $currentInserted) { return $Candidate }
     if ($candidateInserted -lt $currentInserted) { return $Current }
 
-    $currentId = if ($Current.id -ne $null) { [int64]$Current.id } else { -1 }
-    $candidateId = if ($Candidate.id -ne $null) { [int64]$Candidate.id } else { -1 }
+    $currentId = if ($null -ne $Current.id) { [int64]$Current.id } else { -1 }
+    $candidateId = if ($null -ne $Candidate.id) { [int64]$Candidate.id } else { -1 }
     if ($candidateId -gt $currentId) { return $Candidate }
     return $Current
 }
@@ -285,7 +300,7 @@ function Find-ClosestNodeSample {
 
     $best = $null
     $bestDelta = [double]::PositiveInfinity
-    foreach ($idx in @($low - 1, $low)) {
+    foreach ($idx in @(($low - 1), $low)) {
         if ($idx -lt 0 -or $idx -ge $Rows.Count) { continue }
         $rowMs = Get-TimeMs $Rows[$idx].sample_epoch
         if ([double]::IsNaN($rowMs)) { continue }
@@ -326,7 +341,7 @@ function ConvertTo-CompatRowsFromSamplesRaw {
         $match2 = Find-ClosestNodeSample $slot2Rows $hubMs
 
         $out += [ordered]@{
-            id                = if ($hub.id -ne $null) { $hub.id } else { $i + 1 }
+            id                = if ($null -ne $hub.id) { $hub.id } else { $i + 1 }
             device_id         = $hub.device_id
             recorded_at       = $hub.sample_epoch
             inserted_at       = $hub.inserted_at
@@ -492,7 +507,8 @@ foreach ($station in $stations) {
         $header += "// Total entries: $($feeds.Count)`r`n"
         $jsContent = $header + "window.STATION_DATA = " + $mergedJson + ";`r`n"
 
-        [System.IO.File]::WriteAllText($jsFile, $jsContent, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText("$jsFile.tmp", $jsContent, [System.Text.Encoding]::UTF8)
+        Move-Item -Path "$jsFile.tmp" -Destination $jsFile -Force
         $jsSize = [math]::Round($jsContent.Length / 1024, 1)
         Write-Host "          Written: merged_data.js ($jsSize KB, $($feeds.Count) entries)"
 
@@ -503,7 +519,8 @@ foreach ($station in $stations) {
             lastEntryTs = $metaLastEntryTs
             source      = "supabase"
         }
-        $metaObj | ConvertTo-Json -Depth 2 | Set-Content $metaFile -Encoding UTF8
+        $metaObj | ConvertTo-Json -Depth 2 | Set-Content "$metaFile.tmp" -Encoding UTF8
+        Move-Item -Path "$metaFile.tmp" -Destination $metaFile -Force
         Write-Host "          Written: data_meta.json"
     }
 
@@ -519,19 +536,36 @@ foreach ($station in $stations) {
 }
 
 # ═══════════════════════════════════════════════════════════════════
-# WEATHER DATA (Open-Meteo) — unchanged from ThingSpeak version
+# WEATHER DATA (Open-Meteo)
+# Canonical owner of weather_data.js — backfill script only writes
+# monthly archives (weather_data_YYYY-MM.js), never the primary file.
 # ═══════════════════════════════════════════════════════════════════
 Write-Host ""
 Write-Host "  ──────────────────────────────────────────"
 Write-Host "  Open-Meteo Weather Data"
 Write-Host "  ──────────────────────────────────────────"
 
-$weatherLocations = @(
-    @{ name = "Perth / Noranda";  lat = -31.87; lon = 115.90; stationKey = "perth" }
-    @{ name = "Shangani Aramani"; lat =  -4.55; lon =  39.50; stationKey = "shangani" }
-    @{ name = "Funzi Island";     lat =  -4.55; lon =  39.45; stationKey = "funzi" }
-    @{ name = "Perth / Noranda";  lat = -31.87; lon = 115.90; stationKey = "wroom" }
-)
+$weatherLocations = @()
+if (Test-Path $cfgFile) {
+    try {
+        $wJson = [System.IO.File]::ReadAllText($cfgFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+        if ($wJson.stations) {
+            foreach ($ws in $wJson.stations) {
+                if ($ws.weatherName -and $null -ne $ws.lat -and $null -ne $ws.lon) {
+                    $weatherLocations += @{ name = $ws.weatherName; lat = $ws.lat; lon = $ws.lon; stationKey = $ws.id }
+                }
+            }
+        }
+    } catch {}
+}
+if ($weatherLocations.Count -eq 0) {
+    # Fallback – keep in sync with config.json
+    $weatherLocations = @(
+        @{ name = "Perth / Noranda";  lat = -31.87; lon = 115.90; stationKey = "perth" }
+        @{ name = "Shangani Aramani, Kenya"; lat = -4.55; lon =  39.50; stationKey = "shangani" }
+        @{ name = "Funzi Island, Kenya";     lat =  -4.581429; lon =  39.437527; stationKey = "funzi" }
+    )
+}
 
 $todayStr    = (Get-Date).ToString("yyyy-MM-dd")
 $weatherFail = 0
@@ -560,25 +594,17 @@ foreach ($wloc in $weatherLocations) {
         $weatherEndStr   = $todayStr
     }
 
+    if ($cfg.weatherStartDate -ne "" -and $weatherStartStr -gt $cfg.weatherStartDate) {
+        $weatherStartStr = $cfg.weatherStartDate
+    }
+
     # Clamp start to 90 days ago
     $minAllowed = (Get-Date).AddDays(-90).ToString("yyyy-MM-dd")
     if ($weatherStartStr -lt $minAllowed) { $weatherStartStr = $minAllowed }
 
-    $apiBase = if ($weatherEndStr -ge $todayStr) {
-        "https://api.open-meteo.com/v1/forecast"
-    } else {
-        "https://archive-api.open-meteo.com/v1/archive"
-    }
-
-    $wUrl = "${apiBase}?latitude=$($wloc.lat)&longitude=$($wloc.lon)" +
-            "&start_date=$weatherStartStr&end_date=$weatherEndStr" +
-            "&hourly=temperature_2m,relative_humidity_2m,precipitation,cloud_cover,weather_code,uv_index" +
-            "&daily=sunrise,sunset" +
-            "&timezone=auto"
-
     try {
-        $wResp = Invoke-WebRequest -Uri $wUrl -UseBasicParsing
-        $wJson = $wResp.Content
+        $wObj = Get-OpenMeteoWeatherData -lat $wloc.lat -lon $wloc.lon -startDate $weatherStartStr -endDate $weatherEndStr
+        $wJson = $wObj | ConvertTo-Json -Depth 8 -Compress
 
         if ($wJson -notmatch '"hourly"') {
             Write-Host "    [!] No hourly data for $($wloc.name)" -ForegroundColor Yellow
@@ -593,7 +619,8 @@ foreach ($wloc in $weatherLocations) {
         $wContent = $wHeader + "window.WEATHER_CACHE = " + $wJson + ";`r`n"
 
         $wFile = Join-Path $wFolder "weather_data.js"
-        [System.IO.File]::WriteAllText($wFile, $wContent, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::WriteAllText("$wFile.tmp", $wContent, [System.Text.Encoding]::UTF8)
+        Move-Item -Path "$wFile.tmp" -Destination $wFile -Force
         $wSize = [math]::Round($wContent.Length / 1024, 1)
         Write-Host "    $($wloc.name): weather_data.js ($wSize KB) -> $(Split-Path $wFolder -Leaf)/"
     } catch {
@@ -618,3 +645,10 @@ Write-Host ""
 Write-Host "  Tides use client-side harmonic prediction (no download needed)."
 Write-Host "  Open the dashboard HTML files in a browser to view."
 Write-Host ""
+
+# Exit non-zero if any station fetch failed
+$failCount = ($stationResults | Where-Object { $_.status -eq "FAILED" }).Count
+if ($failCount -gt 0) {
+    Write-Host "  [!] $failCount station(s) failed — exiting with error code." -ForegroundColor Red
+    exit 1
+}

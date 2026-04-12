@@ -7,6 +7,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$openMeteoHelpers = Join-Path $PSScriptRoot "open_meteo_helpers.ps1"
+if (!(Test-Path $openMeteoHelpers)) {
+    throw "Missing helper script: $openMeteoHelpers"
+}
+. $openMeteoHelpers
+
 if ($Month -lt 1 -or $Month -gt 12) {
     throw "Month must be 1..12"
 }
@@ -55,7 +61,7 @@ foreach ($ch in $configChannels) {
 foreach ($folder in $discoveredFolders) {
     if (-not $systems.ContainsKey($folder)) {
         $guessId = ""
-        if ($folder -match "wroom|3262071") { $guessId = "perth" }
+        if ($folder -match "3262071") { $guessId = "perth" }
         elseif ($folder -match "shangani") { $guessId = "shangani" }
         elseif ($folder -match "funzi") { $guessId = "funzi" }
         $systems[$folder] = [ordered]@{ id = $guessId; folder = $folder }
@@ -66,11 +72,31 @@ if ($systems.Count -eq 0) {
     throw "No system folders found under $SourceDataRoot"
 }
 
-$locMap = @{
-    perth = [ordered]@{ lat = -31.87; lon = 115.90; tideStation = "perth"; label = "Perth / Noranda" }
-    wroom = [ordered]@{ lat = -31.87; lon = 115.90; tideStation = "perth"; label = "Perth / Noranda" }
-    shangani = [ordered]@{ lat = -4.55; lon = 39.50; tideStation = "kenya"; label = "Shangani Aramani" }
-    funzi = [ordered]@{ lat = -4.55; lon = 39.45; tideStation = "kenya"; label = "Funzi Island" }
+$locMap = @{}
+$mmtCfgFile = Join-Path $PSScriptRoot "config.json"
+if (Test-Path $mmtCfgFile) {
+    try {
+        $mmtJson = [System.IO.File]::ReadAllText($mmtCfgFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+        if ($mmtJson.stations) {
+            foreach ($s in $mmtJson.stations) {
+                if ($null -ne $s.lat -and $null -ne $s.lon -and $s.weatherName) {
+                    $locMap[$s.id] = [ordered]@{
+                        lat = $s.lat; lon = $s.lon
+                        tideStation = if ($s.tideStation) { $s.tideStation } else { "kenya" }
+                        label = $s.weatherName
+                    }
+                }
+            }
+        }
+    } catch {}
+}
+if ($locMap.Count -eq 0) {
+    # Fallback – keep in sync with config.json
+    $locMap = @{
+        perth = [ordered]@{ lat = -31.87; lon = 115.90; tideStation = "perth"; label = "Perth / Noranda" }
+        shangani = [ordered]@{ lat = -4.55; lon = 39.50; tideStation = "kenya"; label = "Shangani Aramani, Kenya" }
+        funzi = [ordered]@{ lat = -4.581429; lon = 39.437527; tideStation = "kenya"; label = "Funzi Island, Kenya" }
+    }
 }
 
 function Resolve-Location($sys) {
@@ -79,7 +105,7 @@ function Resolve-Location($sys) {
     }
 
     $f = $sys.folder.ToLowerInvariant()
-    if ($f -match "wroom|3262071") { return $locMap["perth"] }
+    if ($f -match "3262071") { return $locMap["perth"] }
     if ($f -match "shangani") { return $locMap["shangani"] }
     if ($f -match "funzi") { return $locMap["funzi"] }
 
@@ -161,104 +187,6 @@ function Build-TideCache([string]$station, [datetime]$startLocal, [datetime]$end
     }
 }
 
-function Invoke-OpenMeteo([double]$lat, [double]$lon, [string]$startDate, [string]$endDate, [string]$apiBase) {
-    $url = "${apiBase}?latitude=$lat&longitude=$lon" +
-        "&start_date=$startDate&end_date=$endDate" +
-        "&hourly=temperature_2m,relative_humidity_2m,precipitation,cloud_cover,weather_code,uv_index" +
-        "&daily=sunrise,sunset" +
-        "&timezone=auto"
-    $resp = Invoke-WebRequest -Uri $url -UseBasicParsing
-    return ($resp.Content | ConvertFrom-Json)
-}
-
-function Merge-OpenMeteoData($a, $b) {
-    if ($null -eq $a) { return $b }
-    if ($null -eq $b) { return $a }
-
-    $rowMap = @{}
-    $hourlyFields = @("temperature_2m", "relative_humidity_2m", "precipitation", "cloud_cover", "weather_code", "uv_index")
-
-    foreach ($src in @($a, $b)) {
-        if ($src.hourly -and $src.hourly.time) {
-            for ($i = 0; $i -lt $src.hourly.time.Count; $i++) {
-                $t = [string]$src.hourly.time[$i]
-                if (-not $rowMap.ContainsKey($t)) {
-                    $rowMap[$t] = @{}
-                }
-                foreach ($field in $hourlyFields) {
-                    $vals = $src.hourly.$field
-                    if ($vals -and $i -lt $vals.Count) {
-                        $rowMap[$t][$field] = $vals[$i]
-                    }
-                }
-            }
-        }
-    }
-
-    $sortedTimes = @($rowMap.Keys | Sort-Object)
-    $mergedHourly = @{ time = @($sortedTimes) }
-    foreach ($field in $hourlyFields) {
-        $arr = New-Object System.Collections.Generic.List[object]
-        foreach ($t in $sortedTimes) {
-            if ($rowMap[$t].ContainsKey($field)) { $arr.Add($rowMap[$t][$field]) }
-            else { $arr.Add($null) }
-        }
-        $mergedHourly[$field] = $arr.ToArray()
-    }
-
-    $dailyMap = @{}
-    foreach ($src in @($a, $b)) {
-        if ($src.daily -and $src.daily.time) {
-            for ($i = 0; $i -lt $src.daily.time.Count; $i++) {
-                $d = [string]$src.daily.time[$i]
-                $dailyMap[$d] = @{
-                    sunrise = if ($src.daily.sunrise -and $i -lt $src.daily.sunrise.Count) { $src.daily.sunrise[$i] } else { $null }
-                    sunset  = if ($src.daily.sunset  -and $i -lt $src.daily.sunset.Count)  { $src.daily.sunset[$i] }  else { $null }
-                }
-            }
-        }
-    }
-
-    $sortedDays = @($dailyMap.Keys | Sort-Object)
-    $dailySunrise = New-Object System.Collections.Generic.List[object]
-    $dailySunset = New-Object System.Collections.Generic.List[object]
-    foreach ($d in $sortedDays) {
-        $dailySunrise.Add($dailyMap[$d].sunrise)
-        $dailySunset.Add($dailyMap[$d].sunset)
-    }
-
-    return [ordered]@{
-        latitude = if ($b.latitude) { $b.latitude } else { $a.latitude }
-        longitude = if ($b.longitude) { $b.longitude } else { $a.longitude }
-        generationtime_ms = if ($b.generationtime_ms) { $b.generationtime_ms } else { $a.generationtime_ms }
-        utc_offset_seconds = if ($b.utc_offset_seconds) { $b.utc_offset_seconds } else { $a.utc_offset_seconds }
-        timezone = if ($b.timezone) { $b.timezone } else { $a.timezone }
-        timezone_abbreviation = if ($b.timezone_abbreviation) { $b.timezone_abbreviation } else { $a.timezone_abbreviation }
-        elevation = if ($b.elevation) { $b.elevation } else { $a.elevation }
-        hourly_units = if ($b.hourly_units) { $b.hourly_units } else { $a.hourly_units }
-        hourly = $mergedHourly
-        daily_units = if ($b.daily_units) { $b.daily_units } else { $a.daily_units }
-        daily = @{ time = @($sortedDays); sunrise = $dailySunrise.ToArray(); sunset = $dailySunset.ToArray() }
-    }
-}
-
-function Get-WeatherDataForMonth([double]$lat, [double]$lon, [string]$startDate, [string]$endDate) {
-    $today = (Get-Date).ToString("yyyy-MM-dd")
-
-    if ($endDate -le $today) {
-        return Invoke-OpenMeteo -lat $lat -lon $lon -startDate $startDate -endDate $endDate -apiBase "https://archive-api.open-meteo.com/v1/archive"
-    }
-
-    if ($startDate -gt $today) {
-        return Invoke-OpenMeteo -lat $lat -lon $lon -startDate $startDate -endDate $endDate -apiBase "https://api.open-meteo.com/v1/forecast"
-    }
-
-    $hist = Invoke-OpenMeteo -lat $lat -lon $lon -startDate $startDate -endDate $today -apiBase "https://archive-api.open-meteo.com/v1/archive"
-    $nextDay = (Get-Date $today).AddDays(1).ToString("yyyy-MM-dd")
-    $fcst = Invoke-OpenMeteo -lat $lat -lon $lon -startDate $nextDay -endDate $endDate -apiBase "https://api.open-meteo.com/v1/forecast"
-    return Merge-OpenMeteoData -a $hist -b $fcst
-}
-
 $startDate = Get-Date -Year $Year -Month $Month -Day 1 -Hour 0 -Minute 0 -Second 0
 $endDate = $startDate.AddMonths(1).AddDays(-1)
 $startStr = $startDate.ToString("yyyy-MM-dd")
@@ -266,7 +194,7 @@ $endStr = $endDate.ToString("yyyy-MM-dd")
 $monthTag = "{0}-{1:00}" -f $Year, $Month
 
 Write-Host ""
-Write-Host "=== February Met + Tide Backfill ===" -ForegroundColor Cyan
+Write-Host "=== $monthTag Met + Tide Backfill ===" -ForegroundColor Cyan
 Write-Host "Source data root : $SourceDataRoot"
 if ($MirrorDataRoot -ne "") { Write-Host "Mirror data root : $MirrorDataRoot" }
 Write-Host "Range            : $startStr to $endStr"
@@ -281,7 +209,7 @@ foreach ($sys in $systems.Values) {
     $timezoneId = if ($loc.tideStation -eq "kenya") { "Africa/Nairobi" } else { "Australia/Perth" }
 
     Write-Host "[met] $($sys.folder) -> $($loc.label)"
-    $metObj = Get-WeatherDataForMonth -lat $loc.lat -lon $loc.lon -startDate $startStr -endDate $endStr
+    $metObj = Get-OpenMeteoWeatherData -lat $loc.lat -lon $loc.lon -startDate $startStr -endDate $endStr
     $metJson = ($metObj | ConvertTo-Json -Depth 8 -Compress)
 
     if ($metJson -notmatch '"hourly"\s*:') {
@@ -293,10 +221,11 @@ foreach ($sys in $systems.Values) {
     $metHeader += "// Range: $startStr to $endStr`r`n"
     $metContent = $metHeader + "window.WEATHER_CACHE = " + $metJson + ";`r`n"
 
-    $metOutPrimary = Join-Path $folder "weather_data.js"
+    # Primary weather_data.js is owned by download_data_supabase.ps1 (daily CI).
+    # This backfill script only writes the monthly archive.
     $metOutMonthly = Join-Path $folder "weather_data_$monthTag.js"
-    [System.IO.File]::WriteAllText($metOutPrimary, $metContent, [System.Text.Encoding]::UTF8)
-    [System.IO.File]::WriteAllText($metOutMonthly, $metContent, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText("$metOutMonthly.tmp", $metContent, [System.Text.Encoding]::UTF8)
+    Move-Item -Path "$metOutMonthly.tmp" -Destination $metOutMonthly -Force
 
     # Tide cache (computed from harmonic model)
     Write-Host "[tide] $($sys.folder) -> $($loc.tideStation)"
@@ -310,14 +239,15 @@ foreach ($sys in $systems.Values) {
 
     $tideOutPrimary = Join-Path $folder "tide_data.js"
     $tideOutMonthly = Join-Path $folder "tide_data_$monthTag.js"
-    [System.IO.File]::WriteAllText($tideOutPrimary, $tideContent, [System.Text.Encoding]::UTF8)
-    [System.IO.File]::WriteAllText($tideOutMonthly, $tideContent, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText("$tideOutPrimary.tmp", $tideContent, [System.Text.Encoding]::UTF8)
+    Move-Item -Path "$tideOutPrimary.tmp" -Destination $tideOutPrimary -Force
+    [System.IO.File]::WriteAllText("$tideOutMonthly.tmp", $tideContent, [System.Text.Encoding]::UTF8)
+    Move-Item -Path "$tideOutMonthly.tmp" -Destination $tideOutMonthly -Force
 
     # Optional mirror path (for local embedded dashboard)
     if ($MirrorDataRoot -ne "") {
         $mirrorFolder = Join-Path $MirrorDataRoot $sys.folder
         if (!(Test-Path $mirrorFolder)) { New-Item -ItemType Directory -Path $mirrorFolder -Force | Out-Null }
-        Copy-Item -Path $metOutPrimary -Destination (Join-Path $mirrorFolder "weather_data.js") -Force
         Copy-Item -Path $metOutMonthly -Destination (Join-Path $mirrorFolder "weather_data_$monthTag.js") -Force
         Copy-Item -Path $tideOutPrimary -Destination (Join-Path $mirrorFolder "tide_data.js") -Force
         Copy-Item -Path $tideOutMonthly -Destination (Join-Path $mirrorFolder "tide_data_$monthTag.js") -Force

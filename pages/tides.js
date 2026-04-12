@@ -380,9 +380,12 @@ function renderDetailChart(canvasId, curve, extremes, windows, locationKey, now)
         {
           label: 'High Tide',
           data: highs,
-          borderColor: '#ef444400',
-          backgroundColor: '#f59e0b',
-          pointRadius: 4,
+          borderColor: '#fff7ed',
+          backgroundColor: '#d97706',
+          pointBorderColor: '#fff7ed',
+          pointBorderWidth: 1.4,
+          pointRadius: 5.5,
+          pointHoverRadius: 6.5,
           pointStyle: 'triangle',
           showLine: false,
         },
@@ -391,7 +394,7 @@ function renderDetailChart(canvasId, curve, extremes, windows, locationKey, now)
           data: lows,
           borderColor: '#22c55e00',
           backgroundColor: '#22c55e',
-          pointRadius: 4,
+          pointRadius: 5,
           pointStyle: 'rectRot',
           showLine: false,
         },
@@ -419,11 +422,14 @@ function renderDetailChart(canvasId, curve, extremes, windows, locationKey, now)
           if (x2 < xA.left || x1 > xA.right) continue;
           x1 = Math.max(x1, xA.left); x2 = Math.min(x2, xA.right);
           ctx.save();
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.08)';
+          ctx.fillStyle = 'rgba(34, 197, 94, 0.09)';
+          ctx.fillRect(x1, yA.top, x2 - x1, Math.max(0, bandTop - yA.top));
+          ctx.fillStyle = 'rgba(22, 163, 74, 0.22)';
           ctx.fillRect(x1, bandTop, x2 - x1, yA.bottom - bandTop);
-          ctx.strokeStyle = 'rgba(34, 197, 94, 0.3)';
+          ctx.strokeStyle = 'rgba(22, 163, 74, 0.60)';
+          ctx.lineWidth = 1.5;
           ctx.setLineDash([4, 4]);
-          ctx.strokeRect(x1, bandTop, x2 - x1, yA.bottom - bandTop);
+          ctx.strokeRect(x1, yA.top, x2 - x1, yA.bottom - yA.top);
           ctx.restore();
         }
         // Now line
@@ -442,12 +448,12 @@ function renderDetailChart(canvasId, curve, extremes, windows, locationKey, now)
           var ty = yA.getPixelForValue(_hOpts.maxHeight);
           if (ty >= yA.top && ty <= yA.bottom) {
             ctx.save();
-            ctx.strokeStyle = '#22c55e99';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#16a34acc';
+            ctx.lineWidth = 1.5;
             ctx.setLineDash([6, 3]);
             ctx.beginPath(); ctx.moveTo(xA.left, ty); ctx.lineTo(xA.right, ty); ctx.stroke();
-            ctx.fillStyle = '#22c55ecc';
-            ctx.font = '9px sans-serif';
+            ctx.fillStyle = '#15803dcc';
+            ctx.font = 'bold 10px sans-serif';
             ctx.textAlign = 'left';
             ctx.fillText('\u2264 ' + _hOpts.maxHeight.toFixed(2) + 'm harvest', xA.left + 4, ty - 3);
             ctx.restore();
@@ -497,7 +503,7 @@ function renderDetailChart(canvasId, curve, extremes, windows, locationKey, now)
 }
 
 // =================================================================
-// RENDER: 60-day overview chart
+// RENDER: 3-month overview chart
 // =================================================================
 function renderOverviewChart(canvasId, curve, extremes, windows, events, locationKey, now) {
   var el = document.getElementById(canvasId);
@@ -557,11 +563,17 @@ function renderOverviewChart(canvasId, curve, extremes, windows, events, locatio
           if (x2 < xA.left || x1 > xA.right) continue;
           x1 = Math.max(x1, xA.left); x2 = Math.min(x2, xA.right);
           ctx.save();
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.10)';
+          ctx.fillStyle = 'rgba(34, 197, 94, 0.08)';
+          ctx.fillRect(x1, yA.top, x2 - x1, Math.max(0, bandTop - yA.top));
+          ctx.fillStyle = 'rgba(22, 163, 74, 0.20)';
           ctx.fillRect(x1, bandTop, x2 - x1, yA.bottom - bandTop);
+          ctx.strokeStyle = 'rgba(22, 163, 74, 0.48)';
+          ctx.lineWidth = 1.25;
+          ctx.setLineDash([4, 4]);
+          ctx.strokeRect(x1, yA.top, x2 - x1, yA.bottom - yA.top);
           // Label once per group
-          ctx.fillStyle = '#22c55ecc';
-          ctx.font = '9px sans-serif';
+          ctx.fillStyle = '#15803dcc';
+          ctx.font = 'bold 10px sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText('Harvest', (x1 + x2) / 2, yA.top + 10);
           ctx.restore();
@@ -602,12 +614,12 @@ function renderOverviewChart(canvasId, curve, extremes, windows, events, locatio
           var ty = yA.getPixelForValue(_hOpts.maxHeight);
           if (ty >= yA.top && ty <= yA.bottom) {
             ctx.save();
-            ctx.strokeStyle = '#22c55e99';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = '#16a34acc';
+            ctx.lineWidth = 1.5;
             ctx.setLineDash([6, 3]);
             ctx.beginPath(); ctx.moveTo(xA.left, ty); ctx.lineTo(xA.right, ty); ctx.stroke();
-            ctx.fillStyle = '#22c55ecc';
-            ctx.font = '9px sans-serif';
+            ctx.fillStyle = '#15803dcc';
+            ctx.font = 'bold 10px sans-serif';
             ctx.textAlign = 'left';
             ctx.fillText('\u2264 ' + _hOpts.maxHeight.toFixed(2) + 'm harvest', xA.left + 4, ty - 3);
             ctx.restore();
@@ -850,14 +862,16 @@ function initTides(locationKey) {
   var now = new Date();
   var past1d = new Date(now.getTime() - 1 * 86400000);
   var future7d = new Date(now.getTime() + 6 * 86400000);
+  var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   var future60d = new Date(now.getTime() + 60 * 86400000);
+  var futureCalendarEnd = new Date(now.getFullYear(), now.getMonth() + 3, 0, 23, 59, 59, 999);
 
   // Moon info
-  var events = moonEvents(new Date(now.getFullYear(), now.getMonth(), 1), future60d);
+  var events = moonEvents(new Date(now.getFullYear(), now.getMonth(), 1), futureCalendarEnd);
   renderMoonInfo(now, events);
 
   // Harvest windows
-  var wins = harvestWindows(past1d, future60d);
+  var wins = harvestWindows(past1d, futureCalendarEnd);
   var _hOpts = window._harvestOpts || { enabled: true, maxHeight: 0.50 };
   var activeWins = _hOpts.enabled ? wins : [];
   window._tideLocationKey = locationKey;
@@ -870,10 +884,10 @@ function initTides(locationKey) {
   var weekDayRanges = harvestDayRanges(past1d, future7d, locationKey);
   renderDetailChart('tideChartDetail', curveWeek, weekExtremes, weekDayRanges, locationKey, now);
 
-  // 60-day overview
-  var curveFull = tideCurve(past1d, future60d, locationKey, 60);
+  // 3-month overview
+  var curveFull = tideCurve(monthStart, futureCalendarEnd, locationKey, 60);
   var fullExtremes = tideExtremes(curveFull);
-  var fullDayRanges = harvestDayRanges(past1d, future60d, locationKey);
+  var fullDayRanges = harvestDayRanges(monthStart, futureCalendarEnd, locationKey);
   renderOverviewChart('tideChartOverview', curveFull, fullExtremes, fullDayRanges, events, locationKey, now);
 
   // Expose day-level ranges for sensor chart overlay (sensorBandsPlugin)

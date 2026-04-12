@@ -67,11 +67,12 @@ try {
     }
 } catch {}
 if ($stationsCfg.Count -eq 0) {
+    # Fallback – keep in sync with config.json
     $stationsCfg = @(
-        @{ id = "perth";    name = "Perth Test Table" },
         @{ id = "shangani"; name = "Shangani Aramani" },
         @{ id = "funzi";    name = "Funzi Island" },
-        @{ id = "spare";    name = "Spare Station" }
+        @{ id = "spare";    name = "Spare" },
+        @{ id = "perth";    name = "Perth Test" }
     )
 }
 

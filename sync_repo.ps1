@@ -8,7 +8,7 @@
     4. Optionally commits + pushes local changes upstream
 
     The GitHub Action (download-data.yml) runs every hour and commits fresh
-    ThingSpeak data to origin/main.  Running this script pulls those data
+    Supabase data to origin/main.  Running this script pulls those data
     commits to your local drive so you always have a local backup that
     matches the web dashboard.
 
@@ -125,7 +125,7 @@ if ($behind -eq 0) {
         Write-Info ($pullOut -join "`n")
         Write-Warn "Attempting to resolve data/ conflicts by keeping remote version..."
 
-        # For data files, always prefer remote (the Action has the latest ThingSpeak data)
+        # For data files, always prefer remote (the Action has the latest data)
         $conflicted = git diff --name-only --diff-filter=U 2>$null
         $allResolved = $true
         foreach ($f in $conflicted) {
@@ -196,7 +196,21 @@ if ($didStash) {
 
 Write-Step "Data freshness check..."
 
-$dataFolders = @("data_3262071_TT", "data_WROOM_PTT", "data_Shangani", "data_Funzi")
+$dataFolders = @()
+$syncCfgFile = Join-Path $PSScriptRoot "config.json"
+if (Test-Path $syncCfgFile) {
+    try {
+        $syncJson = [System.IO.File]::ReadAllText($syncCfgFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+        if ($syncJson.stations) {
+            foreach ($s in $syncJson.stations) {
+                if ($s.dataFolder) { $dataFolders += $s.dataFolder }
+            }
+        }
+    } catch {}
+}
+if ($dataFolders.Count -eq 0) {
+    $dataFolders = @("data_3262071_TT", "data_Shangani", "data_Funzi", "data_spare")
+}
 foreach ($df in $dataFolders) {
     $mergedPath = Join-Path (Join-Path "data" $df) "merged_data.js"
     if (Test-Path $mergedPath) {

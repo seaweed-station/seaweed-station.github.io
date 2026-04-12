@@ -925,7 +925,7 @@
 
 <!-- Data Estimate -->
 <div class="panel" style="margin-top:16px;">
-  <div class="panel-title" style="color:var(--accent2);">Cellular Data &amp; ThingSpeak Usage Estimate</div>
+  <div class="panel-title" style="color:var(--accent2);">Cellular Data &amp; Upload Usage Estimate</div>
 
   <div class="info-box" style="margin-bottom:10px;">
     Values are taken from <strong>Configuration</strong> above: Sample Period, ESP-NOW Sync Period (used as upload batch frequency), T-Energy Nodes, T0 sensor count, and T-Energy sensor count.
@@ -997,7 +997,7 @@ function calcDataEst() {
   s('de_display_t0s',    t0sensors);
   s('de_display_tes',    satSensors);
 
-  // --- Estimate bytes per ThingSpeak update object ---
+  // --- Estimate bytes per upload object ---
   // Each field value is a CSV string; estimate its length conservatively.
   // Format: {"created_at":"YYYY-MM-DDTHH:MM:SSZ","field1":"...","field2":"...",...}
   const overhead_per_obj = 40; // created_at key+value + braces + separating comma
@@ -1035,7 +1035,7 @@ function calcDataEst() {
 
   // --- HTTP headers ---
   const httpHeaderBytes = 160; // POST /channels/... + Host + Content-Type + Content-Length + \r\n\r\n
-  const httpRespBytes   = 80;  // ThingSpeak returns: {"success":true} or HTTP/1.1 202
+  const httpRespBytes   = 80;  // server returns: {"success":true} or HTTP/1.1 202
 
   const bytesPerSession = payloadBytes + httpHeaderBytes + httpRespBytes + (tcpOverKB * 1024);
 
@@ -1067,7 +1067,7 @@ function calcDataEst() {
     card('Monthly SIM data',  monthlyPayloadMB < 1 ? (monthlyPayloadMB*1024).toFixed(0) : monthlyPayloadMB.toFixed(2),
                                                                monthlyPayloadMB < 1 ? 'KB' : 'MB', 'var(--accent2)',
                                                                `${batchesPerMonth} upload sessions/month`) +
-    card('ThingSpeak msgs',   monthlyUpdates.toLocaleString(), '/month',   tsColor,
+    card('Upload msgs',   monthlyUpdates.toLocaleString(), '/month',   tsColor,
          `${tsPctUsed.toFixed(1)}% of free tier (250k/month)`) +
     card('ESP-NOW RF data',   espnowMBMonth < 1 ? (espnowMBMonth*1024).toFixed(0) : espnowMBMonth.toFixed(2),
                                                                espnowMBMonth < 1 ? 'KB' : 'MB', 'var(--muted)',

@@ -1,7 +1,16 @@
+<<<<<<< HEAD
+﻿{
+    "lastUpdate":  "2026-04-10T12:19:56.5288974+08:00",
+    "entries":  1825,
+    "lastEntryId":  "17812",
+    "lastEntryTs":  "2026-04-10T03:00:01+00:00",
+    "source":  "supabase"
+=======
 {
-  "lastUpdate": "2026-04-12T07:25:06.1737455+00:00",
-  "entries": 2396,
-  "lastEntryId": "22897",
-  "lastEntryTs": "04/12/2026 04:57:16",
+  "lastUpdate": "2026-04-10T07:53:03.3640217+00:00",
+  "entries": 1853,
+  "lastEntryId": "18244",
+  "lastEntryTs": "04/10/2026 07:40:39",
   "source": "supabase"
+>>>>>>> dae90c2731dec6f9b919cb221f1e1752bbf7d576
 }

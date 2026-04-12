@@ -9,6 +9,14 @@
  */
 
 // =====================================================================
+// TIMESTAMP GUARD — reject samples more than 24 h in the future
+// =====================================================================
+var MAX_FUTURE_MS = 86400000; // 24 hours
+function isFutureTimestamp(d) {
+  return d instanceof Date && d.getTime() > Date.now() + MAX_FUTURE_MS;
+}
+
+// =====================================================================
 // VALUE PARSING HELPERS
 // =====================================================================
 
@@ -89,57 +97,35 @@ var SUPABASE_ANON_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOi
 /** Legacy default project values used for one-time browser config migration. */
 var SUPABASE_URL_LEGACY  = 'https://qjtjmczixgjxxwmyabmk.supabase.co';
 var SUPABASE_ANON_KEY_LEGACY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqdGptY3ppeGdqeHh3bXlhYm1rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MjUzMzEsImV4cCI6MjA4ODIwMTMzMX0.K7NdFhCiHJdDpwwiERhH_GVH-AMqaMizPYegaiP2tqg';
-/** Reset mode: only WROOM is allowed as a data source. */
-var WROOM_ONLY_MODE = false;
-var WROOM_ONLY_STATION_IDS = { wroom: true };
-/** Fresh-slate cutoff for non-WROOM stations (UTC). Older records are ignored. */
+/** Fresh-slate cutoff (UTC). Older records are ignored. */
 var RESET_CUTOFF_UTC_DEFAULT = '2026-03-16T00:00:00Z';
 var RESET_CUTOFF_STORAGE_KEY = 'seaweed_reset_cutoff_utc';
 var RESET_CUTOFF_ENABLED = false;
 
 var DASHBOARD_CONFIG_KEY = 'seaweed_dashboard_config';
-var DEFAULT_DEVICE_PROFILES = [
-  {
-    id: 'perth',
-    name: 'Perth Test',
-    enabled: true,
-    channelId: '3262071',
-    apiKey: 'VVHUX39KINYPLCVI',
-    dataFolder: 'data_3262071_TT'
-  },
-  {
-    id: 'shangani',
-    name: 'Shangani',
-    enabled: true,
-    channelId: '',
-    apiKey: '',
-    dataFolder: 'data_Shangani'
-  },
-  {
-    id: 'funzi',
-    name: 'Funzi',
-    enabled: true,
-    channelId: '',
-    apiKey: '',
-    dataFolder: 'data_Funzi'
-  },
-  {
-    id: 'spare',
-    name: 'Spare',
-    enabled: true,
-    channelId: '',
-    apiKey: '',
-    dataFolder: 'data_spare'
-  },
-  {
-    id: 'wroom',
-    name: 'Perth WROOM',
-    enabled: true,
-    channelId: '3246116',
-    apiKey: '7K00B1Y8DNOTEIM0',
-    dataFolder: 'data_WROOM_PTT'
-  }
+
+/**
+ * Canonical station registry — keep in sync with config.json "stations" array.
+ * Phase 4 will load this from an Edge Function instead of embedding here.
+ */
+var STATION_REGISTRY = [
+  { id: 'shangani', name: 'Shangani Aramani', location: 'Kwale County, Kenya', enabled: true, dataFolder: 'data_Shangani', lat: -4.55, lon: 39.50, weatherName: 'Shangani Aramani, Kenya', tideStation: 'kenya', sensorMap: 'shangani', hasSatellite: true },
+  { id: 'funzi', name: 'Funzi Island', location: 'Funzi Island, Kenya', enabled: true, dataFolder: 'data_Funzi', lat: -4.581429, lon: 39.437527, weatherName: 'Funzi Island, Kenya', tideStation: 'kenya', sensorMap: 'funzi', hasSatellite: true },
+  { id: 'spare', name: 'Spare', location: 'Spare Station', enabled: true, dataFolder: 'data_spare', lat: null, lon: null, weatherName: null, tideStation: 'kenya', sensorMap: 'funzi', hasSatellite: true },
+  { id: 'perth', name: 'Perth Test', location: 'Noranda, WA', enabled: true, dataFolder: 'data_3262071_TT', lat: -31.87, lon: 115.90, weatherName: 'Perth / Noranda', tideStation: 'perth', sensorMap: 'perth', hasSatellite: true }
 ];
+
+function getStationRegistryEntry(stationId) {
+  var sid = String(stationId || '').trim().toLowerCase();
+  for (var i = 0; i < STATION_REGISTRY.length; i++) {
+    if (STATION_REGISTRY[i].id === sid) return STATION_REGISTRY[i];
+  }
+  return null;
+}
+
+var DEFAULT_DEVICE_PROFILES = STATION_REGISTRY.map(function(s) {
+  return { id: s.id, name: s.name, enabled: s.enabled, channelId: '', apiKey: '', dataFolder: s.dataFolder };
+});
 
 function getDashboardConfig() {
   try {
@@ -176,27 +162,6 @@ function getConfiguredDeviceProfiles(opts) {
   DEFAULT_DEVICE_PROFILES.forEach(function(p, idx) {
     defaultOrder[p.id] = idx;
     byId[p.id] = Object.assign({}, p);
-  });
-
-  var channels = Array.isArray(cfg.channels) ? cfg.channels : [];
-  channels.forEach(function(ch) {
-    if (!ch || !ch.id) return;
-    var id = String(ch.id).trim().toLowerCase();
-    if (!id) return;
-    if (!byId[id]) {
-      byId[id] = {
-        id: id,
-        name: defaultNameForDeviceId(id),
-        enabled: true,
-        channelId: '',
-        apiKey: '',
-        dataFolder: 'data_' + id
-      };
-    }
-    if (ch.name) byId[id].name = String(ch.name);
-    if (ch.channelId != null) byId[id].channelId = String(ch.channelId).trim();
-    if (ch.apiKey != null) byId[id].apiKey = String(ch.apiKey).trim();
-    if (ch.dataFolder) byId[id].dataFolder = normalizeDataFolder(String(ch.dataFolder), byId[id].dataFolder);
   });
 
   var explicitProfiles = Array.isArray(cfg.deviceProfiles) && cfg.deviceProfiles.length;
@@ -248,6 +213,8 @@ function getConfiguredDeviceProfiles(opts) {
     if (oa !== ob) return oa - ob;
     return a.id.localeCompare(b.id);
   });
+  // Only return profiles that exist in STATION_REGISTRY
+  out = out.filter(function(p) { return getStationRegistryEntry(p.id) !== null; });
   return out;
 }
 
@@ -268,7 +235,6 @@ function getConfiguredDeviceProfile(stationId) {
 function isStationAllowed(stationId) {
   var sid = String(stationId || '').toLowerCase();
   if (!sid) return false;
-  if (WROOM_ONLY_MODE && !WROOM_ONLY_STATION_IDS[sid]) return false;
 
   var cfgMap = getConfiguredDeviceProfileMap({ includeDisabled: true });
   var ids = Object.keys(cfgMap);
@@ -276,15 +242,6 @@ function isStationAllowed(stationId) {
   if (!cfgMap[sid]) return false;
   return cfgMap[sid].enabled !== false;
 }
-
-function clearNonWroomCaches() {
-  if (!WROOM_ONLY_MODE || typeof localStorage === 'undefined') return;
-  ['perth', 'shangani', 'funzi', 'spare'].forEach(function(id) {
-    try { localStorage.removeItem('seaweed_cache_' + id); } catch (e) {}
-  });
-}
-
-clearNonWroomCaches();
 
 function getResetCutoffMs(stationId) {
   var sid = String(stationId || '').toLowerCase();
@@ -295,7 +252,6 @@ function getResetCutoffMs(stationId) {
   }
 
   if (!RESET_CUTOFF_ENABLED) return null;
-  if (sid === 'wroom') return null;
   var cutoffUtc = RESET_CUTOFF_UTC_DEFAULT;
   try {
     if (typeof localStorage !== 'undefined') {
@@ -399,168 +355,8 @@ function ensureUTC(ts) {
 }
 
 // =====================================================================
-// SAMPLES_RAW DIRECT-READ HELPERS (slot-driven, no sat_a_/sat_b_ compat)
+// FEED → ENTRY CONVERSION
 // =====================================================================
-
-var SAMPLES_RAW_MATCH_WINDOW_MS = 150000; // ±2.5 min for hub↔satellite pairing
-
-var SAMPLES_RAW_HUB_SELECT = 'id,device_id,sample_epoch,inserted_at,' +
-  'temp_1,humidity_1,temp_2,humidity_2,temp_3,humidity_3,' +
-  'battery_v,battery_pct,solar_v,boot_count';
-
-var SAMPLES_RAW_SAT_SELECT = 'id,device_id,node_id,slot_number,sample_epoch,inserted_at,' +
-  'temp_1,humidity_1,temp_2,humidity_2,battery_v,battery_pct,flash_pct';
-
-function sampleEpochMs(row) {
-  if (!row || !row.sample_epoch) return NaN;
-  return new Date(ensureUTC(row.sample_epoch)).getTime();
-}
-
-function insertedAtMs(row) {
-  if (!row || !row.inserted_at) return 0;
-  return new Date(ensureUTC(row.inserted_at)).getTime();
-}
-
-function dedupeSamplesRaw(rows) {
-  var byKey = {};
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i];
-    if (!r || !r.sample_epoch) continue;
-    var nodeId = r.node_id || 'hub';
-    var key = nodeId + '|' + r.sample_epoch;
-    var existing = byKey[key];
-    if (!existing) { byKey[key] = r; continue; }
-    var eMs = insertedAtMs(existing), nMs = insertedAtMs(r);
-    if (nMs > eMs || (nMs === eMs && (r.id || 0) > (existing.id || 0))) {
-      byKey[key] = r;
-    }
-  }
-  var result = [];
-  for (var k in byKey) result.push(byKey[k]);
-  result.sort(function(a, b) { return sampleEpochMs(a) - sampleEpochMs(b); });
-  return result;
-}
-
-function findNearestSample(sortedRows, targetMs, windowMs) {
-  if (!sortedRows || !sortedRows.length || isNaN(targetMs)) return null;
-  var low = 0, high = sortedRows.length;
-  while (low < high) {
-    var mid = (low + high) >>> 1;
-    if (sampleEpochMs(sortedRows[mid]) < targetMs) low = mid + 1;
-    else high = mid;
-  }
-  var best = null, bestDelta = Infinity;
-  for (var i = Math.max(0, low - 1); i <= Math.min(sortedRows.length - 1, low); i++) {
-    var ms = sampleEpochMs(sortedRows[i]);
-    if (isNaN(ms)) continue;
-    var delta = Math.abs(ms - targetMs);
-    if (delta <= windowMs && delta < bestDelta) { best = sortedRows[i]; bestDelta = delta; }
-  }
-  return best;
-}
-
-/**
- * Paginated PostgREST fetch from samples_raw.
- */
-async function fetchSamplesRawRows(stationId, selectClause, extraFilters, orderClause, limit, timeoutMs, hdrs, supaCfg) {
-  var rows = [];
-  var pageSize = 1000;
-  var offset = 0;
-  while (rows.length < limit) {
-    var batchLimit = Math.min(pageSize, limit - rows.length);
-    var url = supaCfg.url + '/rest/v1/samples_raw' +
-              '?device_id=eq.' + encodeURIComponent(stationId) +
-              '&select=' + encodeURIComponent(selectClause) +
-              extraFilters +
-              '&order=' + orderClause +
-              '&limit=' + batchLimit +
-              '&offset=' + offset;
-    var res = await fetchWithTimeout(url, timeoutMs, { headers: hdrs });
-    if (!res.ok) throw new Error('Supabase HTTP ' + res.status);
-    var batch = await res.json();
-    if (!batch.length) break;
-    rows = rows.concat(batch);
-    if (batch.length < batchLimit) break;
-    offset += batch.length;
-  }
-  return rows;
-}
-
-/**
- * Resolve slot number for a satellite row.
- * Priority: row.slot_number → device_slots map → A=1/B=2 fallback.
- */
-function resolveSlotNumber(row, deviceSlotsMap) {
-  if (row.slot_number != null && row.slot_number > 0) return row.slot_number;
-  if (deviceSlotsMap && row.node_id) {
-    var nodeId = String(row.node_id).toUpperCase();
-    for (var node in deviceSlotsMap) {
-      if (String(node).toUpperCase() === nodeId) return Number(deviceSlotsMap[node]);
-    }
-  }
-  var nid = String(row.node_id || '').toUpperCase();
-  if (nid === 'A') return 1;
-  if (nid === 'B') return 2;
-  return null;
-}
-
-/**
- * Build time-aligned feeds from hub + satellite samples_raw rows.
- * Returns flat feed objects with slot-indexed satellite fields (sat_1_*, sat_2_*, ...).
- */
-function buildSlotAlignedFeeds(hubRows, satRows, deviceSlotsMap) {
-  var satBySlot = {};
-  var slotNodeMap = {};
-  for (var i = 0; i < satRows.length; i++) {
-    var slot = resolveSlotNumber(satRows[i], deviceSlotsMap);
-    if (slot == null) continue;
-    if (!satBySlot[slot]) satBySlot[slot] = [];
-    satBySlot[slot].push(satRows[i]);
-    if (!slotNodeMap[slot]) slotNodeMap[slot] = String(satRows[i].node_id || '').toUpperCase();
-  }
-
-  var discoveredSlots = Object.keys(satBySlot).map(Number).sort(function(a,b){return a-b;});
-  for (var s = 0; s < discoveredSlots.length; s++) {
-    satBySlot[discoveredSlots[s]] = dedupeSamplesRaw(satBySlot[discoveredSlots[s]]);
-  }
-
-  var sortedHub = dedupeSamplesRaw(hubRows);
-  var feeds = [];
-  for (var h = 0; h < sortedHub.length; h++) {
-    var hub = sortedHub[h];
-    var hubMs = sampleEpochMs(hub);
-    var feed = {
-      created_at:   ensureUTC(hub.sample_epoch),
-      entry_id:     hub.id || (h + 1),
-      temp_1:       hub.temp_1,
-      humidity_1:   hub.humidity_1,
-      temp_2:       hub.temp_2,
-      humidity_2:   hub.humidity_2,
-      temp_3:       hub.temp_3,
-      humidity_3:   hub.humidity_3,
-      battery_v:    hub.battery_v,
-      battery_pct:  hub.battery_pct,
-      solar_v:      hub.solar_v,
-      boot_count:   hub.boot_count,
-      _discovered_slots: discoveredSlots,
-      _slot_count:  discoveredSlots.length
-    };
-    for (var si = 0; si < discoveredSlots.length; si++) {
-      var sn = discoveredSlots[si];
-      var match = findNearestSample(satBySlot[sn], hubMs, SAMPLES_RAW_MATCH_WINDOW_MS);
-      var p = 'sat_' + sn + '_';
-      feed[p + 'temp_1']     = match ? match.temp_1 : null;
-      feed[p + 'humidity_1'] = match ? match.humidity_1 : null;
-      feed[p + 'temp_2']     = match ? match.temp_2 : null;
-      feed[p + 'humidity_2'] = match ? match.humidity_2 : null;
-      feed[p + 'battery_v']  = match ? match.battery_v : null;
-      feed[p + 'battery_pct']= match ? match.battery_pct : null;
-      feed[p + 'flash_pct']  = match ? match.flash_pct : null;
-    }
-    feeds.push(feed);
-  }
-  return { feeds: feeds, discoveredSlots: discoveredSlots, slotNodeMap: slotNodeMap };
-}
 
 /**
  * Convert a slot-indexed feed into a chart-ready entry object.
@@ -568,8 +364,10 @@ function buildSlotAlignedFeeds(hubRows, satRows, deviceSlotsMap) {
  * Slot N: sat{N}Temp1, sat{N}Hum1, sat{N}Temp2, sat{N}Hum2, sat{N}BatV, sat{N}BatPct, sat{N}FlashPct
  */
 function feedToEntry(f, discoveredSlots) {
+  var ts = new Date(f.created_at);
+  if (isFutureTimestamp(ts)) return null;
   var entry = {
-    timestamp: new Date(f.created_at),
+    timestamp: ts,
     entryId:   f.entry_id,
     t0Temp1:   numParse(f.temp_1),
     t0Hum1:    numParse(f.humidity_1),
@@ -668,13 +466,7 @@ function getDataFolder(configKey, defaultFolder) {
   if (profile && profile.dataFolder) {
     return normalizeDataFolder(profile.dataFolder, normalizeDataFolder(defaultFolder, defaultFolder));
   }
-  var fallback = normalizeDataFolder(defaultFolder, defaultFolder);
-  try {
-    var s = JSON.parse(localStorage.getItem(DASHBOARD_CONFIG_KEY) || '{}');
-    var c = (s.channels || []).find(function (ch) { return ch.id === configKey; });
-    if (c && c.dataFolder) return normalizeDataFolder(c.dataFolder, fallback);
-  } catch (e) { /* ignore */ }
-  return fallback;
+  return normalizeDataFolder(defaultFolder, defaultFolder);
 }
 
 // =====================================================================
@@ -726,238 +518,8 @@ function triggerCIDownload() {
 }
 
 // =====================================================================
-// SHARED SUPABASE DATA FETCH
+// DEVICE STATUS + SLOTS (used by cross-tab handlers)
 // =====================================================================
-
-/**
- * Fetch hub + satellite data from samples_raw, time-align by slot, return feeds + entries.
- *
- * @param {string} stationId - Device ID (e.g. 'perth', 'shangani', 'funzi')
- * @param {Object} [opts]
- * @param {number} [opts.limit=8000]
- * @param {number} [opts.timeoutMs=30000]
- * @returns {Promise<{feeds: Object[], entries: Object[], discoveredSlots: number[], slotNodeMap: Object, source: string, rows: number}>}
- */
-async function fetchStationData(stationId, opts) {
-  if (!isStationAllowed(stationId)) {
-    throw new Error('WROOM-only reset mode: station disabled (' + stationId + ')');
-  }
-  opts = opts || {};
-  var limit = opts.limit || 8000;
-  var timeoutMs = opts.timeoutMs || 30000;
-  var cutoffMs = getResetCutoffMs(stationId);
-  var cutoffIso = cutoffMs ? new Date(cutoffMs).toISOString() : null;
-  var supaCfg = getSupabaseConfig();
-  if (!supaCfg.url || !supaCfg.key ||
-      supaCfg.url === 'YOUR_SUPABASE_URL' || supaCfg.key === 'YOUR_SUPABASE_ANON_KEY') {
-    throw new Error('Supabase not configured');
-  }
-  var hdrs = supabaseHeaders(supaCfg.key);
-
-  // 1. Fetch hub rows
-  var hubFilters = '&node_id=eq.hub' +
-                   (cutoffIso ? '&sample_epoch=gte.' + encodeURIComponent(cutoffIso) : '');
-  var hubRows = await fetchSamplesRawRows(
-    stationId, SAMPLES_RAW_HUB_SELECT, hubFilters,
-    'sample_epoch.desc', limit, timeoutMs, hdrs, supaCfg
-  );
-
-  hubRows = hubRows.filter(function(r) {
-    return isAfterResetWindow(stationId, ensureUTC(r && r.sample_epoch));
-  });
-  if (!hubRows.length) {
-    return { feeds: [], entries: [], source: 'live', rows: 0, discoveredSlots: [], slotNodeMap: {} };
-  }
-
-  hubRows.sort(function(a, b) { return sampleEpochMs(a) - sampleEpochMs(b); });
-  var minHubMs = sampleEpochMs(hubRows[0]);
-  var maxHubMs = sampleEpochMs(hubRows[hubRows.length - 1]);
-
-  // 2. Fetch ALL satellite rows (node_id != hub) within hub time range ± window
-  var satRangeStart = new Date(minHubMs - SAMPLES_RAW_MATCH_WINDOW_MS).toISOString();
-  var satRangeEnd = new Date(maxHubMs + SAMPLES_RAW_MATCH_WINDOW_MS).toISOString();
-  var satLimit = Math.max(limit * 3, 3000);
-  var satRows = await fetchSamplesRawRows(
-    stationId, SAMPLES_RAW_SAT_SELECT,
-    '&node_id=neq.hub' +
-    '&sample_epoch=gte.' + encodeURIComponent(satRangeStart) +
-    '&sample_epoch=lte.' + encodeURIComponent(satRangeEnd),
-    'sample_epoch.desc', satLimit, timeoutMs, hdrs, supaCfg
-  );
-
-  // 3. Fetch device_slots for fallback slot resolution
-  var deviceSlotsMap = null;
-  try {
-    var dsUrl = supaCfg.url + '/rest/v1/device_slots' +
-                '?device_id=eq.' + encodeURIComponent(stationId) +
-                '&select=node_letter,slot_number';
-    var dsRes = await fetchWithTimeout(dsUrl, 10000, { headers: hdrs });
-    if (dsRes.ok) {
-      var dsRows = await dsRes.json();
-      if (dsRows.length) {
-        deviceSlotsMap = {};
-        dsRows.forEach(function(r) { deviceSlotsMap[r.node_letter] = r.slot_number; });
-      }
-    }
-  } catch(e) { /* device_slots lookup is optional */ }
-
-  // 4. Build slot-aligned feeds
-  var result = buildSlotAlignedFeeds(hubRows, satRows, deviceSlotsMap);
-  var entries = result.feeds.map(function(f) { return feedToEntry(f, result.discoveredSlots); });
-
-  return {
-    feeds: result.feeds,
-    entries: entries,
-    source: 'live',
-    rows: hubRows.length,
-    discoveredSlots: result.discoveredSlots,
-    slotNodeMap: result.slotNodeMap
-  };
-}
-
-// =====================================================================
-// v2 DIAGNOSTIC DATA FETCHES (upload_sessions + sync_sessions)
-// =====================================================================
-
-/**
- * Fetch the most recent upload session for a station.
- * Returns CSQ, free_heap, sd_free_kb, satellite_max_drift_s, etc.
- *
- * @param {string} stationId
- * @returns {Promise<Object|null>} Latest upload_sessions row or null.
- */
-async function fetchLatestUploadSession(stationId) {
-  var supaCfg = getSupabaseConfig();
-  var hdrs = supabaseHeaders(supaCfg.key);
-  var url = supaCfg.url + '/rest/v1/upload_sessions' +
-            '?device_id=eq.' + encodeURIComponent(stationId) +
-            '&order=upload_started_at.desc' +
-            '&limit=1';
-  var res = await fetchWithTimeout(url, 15000, { headers: hdrs });
-  if (!res.ok) return null;
-  var rows = await res.json();
-  return rows.length ? rows[0] : null;
-}
-
-/**
- * Fetch upload_sessions timeline rows for a station.
- *
- * @param {string} stationId
- * @param {Object} [opts]
- * @param {number} [opts.limit=2000]
- * @param {number} [opts.timeoutMs=30000]
- * @returns {Promise<Object[]>} Rows sorted by upload_started_at ascending.
- */
-async function fetchUploadSessions(stationId, opts) {
-  opts = opts || {};
-  var limit = opts.limit || 2000;
-  var supaCfg = getSupabaseConfig();
-  if (!supaCfg.url || !supaCfg.key ||
-      supaCfg.url === 'YOUR_SUPABASE_URL' || supaCfg.key === 'YOUR_SUPABASE_ANON_KEY') {
-    throw new Error('Supabase not configured');
-  }
-  var hdrs = supabaseHeaders(supaCfg.key);
-  var rows = [];
-  var pageSize = 1000;
-  var offset = 0;
-
-  while (offset < limit) {
-    var batchLimit = Math.min(pageSize, limit - offset);
-    var url = supaCfg.url + '/rest/v1/upload_sessions' +
-              '?device_id=eq.' + encodeURIComponent(stationId) +
-              '&order=upload_started_at.desc' +
-              '&limit=' + batchLimit +
-              '&offset=' + offset;
-    var res = await fetchWithTimeout(url, opts.timeoutMs || 30000, { headers: hdrs });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    var batch = await res.json();
-    if (!batch.length) break;
-    rows = rows.concat(batch);
-    if (batch.length < batchLimit) break;
-    offset += batch.length;
-  }
-
-  rows = rows.filter(function(r) {
-    return isAfterResetWindow(stationId, ensureUTC(r && r.upload_started_at));
-  });
-  rows.sort(function(a, b) {
-    return new Date(ensureUTC(a.upload_started_at)).getTime() - new Date(ensureUTC(b.upload_started_at)).getTime();
-  });
-  return rows;
-}
-
-/**
- * Fetch the most recent sync sessions (one per satellite node) for a station.
- * Returns RSSI, drift, fw_ver per node from sync_sessions.
- *
- * @param {string} stationId
- * @returns {Promise<Object>} { A: <row>, B: <row> } — latest sync_sessions row per node.
- */
-async function fetchLatestSyncSessions(stationId) {
-  var supaCfg = getSupabaseConfig();
-  var hdrs = supabaseHeaders(supaCfg.key);
-  var url = supaCfg.url + '/rest/v1/sync_sessions' +
-            '?device_id=eq.' + encodeURIComponent(stationId) +
-            '&order=sync_started_at.desc' +
-            '&limit=10';
-  var res = await fetchWithTimeout(url, 15000, { headers: hdrs });
-  if (!res.ok) return {};
-  var rows = await res.json();
-  var latest = {};
-  for (var i = 0; i < rows.length; i++) {
-    var node = rows[i].node_id;
-    if (!latest[node]) latest[node] = rows[i];
-  }
-  return latest;
-}
-
-/**
- * Fetch sync_sessions timeline rows for a station.
- * Used by station drift/RSSI charts now that these fields moved out of sensor_readings.
- *
- * @param {string} stationId
- * @param {Object} [opts]
- * @param {number} [opts.limit=2000]
- * @param {number} [opts.timeoutMs=30000]
- * @returns {Promise<Object[]>} Rows sorted by sync_started_at ascending.
- */
-async function fetchSyncSessions(stationId, opts) {
-  opts = opts || {};
-  var limit = opts.limit || 2000;
-  var supaCfg = getSupabaseConfig();
-  if (!supaCfg.url || !supaCfg.key ||
-      supaCfg.url === 'YOUR_SUPABASE_URL' || supaCfg.key === 'YOUR_SUPABASE_ANON_KEY') {
-    throw new Error('Supabase not configured');
-  }
-  var hdrs = supabaseHeaders(supaCfg.key);
-  var rows = [];
-  var pageSize = 1000;
-  var offset = 0;
-
-  while (offset < limit) {
-    var batchLimit = Math.min(pageSize, limit - offset);
-    var url = supaCfg.url + '/rest/v1/sync_sessions' +
-              '?device_id=eq.' + encodeURIComponent(stationId) +
-              '&order=sync_started_at.desc' +
-              '&limit=' + batchLimit +
-              '&offset=' + offset;
-    var res = await fetchWithTimeout(url, opts.timeoutMs || 30000, { headers: hdrs });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    var batch = await res.json();
-    if (!batch.length) break;
-    rows = rows.concat(batch);
-    if (batch.length < batchLimit) break;
-    offset += batch.length;
-  }
-
-  rows = rows.filter(function(r) {
-    return isAfterResetWindow(stationId, ensureUTC(r && r.sync_started_at));
-  });
-  rows.sort(function(a, b) {
-    return new Date(ensureUTC(a.sync_started_at)).getTime() - new Date(ensureUTC(b.sync_started_at)).getTime();
-  });
-  return rows;
-}
 
 /**
  * Parse device_status.next_check_in safely.
@@ -1188,79 +750,6 @@ function buildStationSensorDefinitions(stationId, entries, deviceSlotsById, sens
   return definitions;
 }
 
-/**
- * Load station data with priority chain: Supabase → localStorage cache → static file.
- *
- * @param {string} stationId    - Device ID (e.g. 'perth', 'shangani', 'funzi')
- * @param {Object} [opts]
- * @param {string} [opts.cacheKey]     - localStorage key for cached feeds (default: 'seaweed_cache_<stationId>')
- * @param {string} [opts.fileUrl]      - URL of the static merged_data.js fallback
- * @param {number} [opts.limit=8000]   - Max Supabase rows
- * @param {number} [opts.timeoutMs=30000]
- * @param {function} [opts.onStatus]   - Callback(message) for progress updates
- * @returns {Promise<{feeds: Object[], source: string, rows: number}>}
- */
-async function loadStationData(stationId, opts) {
-  if (!isStationAllowed(stationId)) {
-    throw new Error('WROOM-only reset mode: station disabled (' + stationId + ')');
-  }
-  opts = opts || {};
-  var cacheKey = opts.cacheKey || ('seaweed_cache_' + stationId);
-  var status = opts.onStatus || function () {};
-
-  // --- 1. Try Supabase live fetch ---
-  try {
-    status('Fetching live data from Supabase\u2026');
-    var result = await fetchStationData(stationId, {
-      limit: opts.limit,
-      timeoutMs: opts.timeoutMs
-    });
-    // Cache the feeds for cross-page sharing (matches station.html format)
-    try {
-      localStorage.setItem(cacheKey, JSON.stringify({
-        allEntries: result.feeds,
-        savedAt: Date.now()
-      }));
-    } catch (e) { /* quota exceeded — ignore */ }
-    status('Loaded ' + result.rows + ' rows from Supabase');
-    return { feeds: result.feeds, source: 'supabase', rows: result.rows };
-  } catch (supaErr) {
-    status('Supabase unavailable: ' + supaErr.message);
-  }
-
-  // --- 2. Try localStorage cache ---
-  try {
-    var cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      var data = JSON.parse(cached);
-      var feeds = data.allEntries || data;  // handle {allEntries:...} or raw [...] format
-      feeds = filterFeedArrayByResetWindow(stationId, feeds);
-      if (Array.isArray(feeds) && feeds.length) {
-        var ts = data.savedAt ? new Date(data.savedAt).toISOString() : 'unknown';
-        status('Using cached data (' + feeds.length + ' entries, saved ' + ts + ')');
-        return { feeds: feeds, source: 'cache', rows: feeds.length };
-      }
-    }
-  } catch (e) { /* corrupt cache — ignore */ }
-
-  // --- 3. Fall back to static file ---
-  if (opts.fileUrl) {
-    status('Loading from static file\u2026');
-    var res = await fetchWithTimeout(opts.fileUrl, opts.timeoutMs || 30000);
-    if (!res.ok) throw new Error('Static file HTTP ' + res.status);
-    var text = await res.text();
-    // Static files define a global variable; eval the script to extract feeds
-    var scriptEl = document.createElement('script');
-    scriptEl.textContent = text;
-    document.head.appendChild(scriptEl);
-    document.head.removeChild(scriptEl);
-    status('Loaded from static file');
-    return { feeds: null, source: 'file', rows: 0 }; // page will use the global var set by the script
-  }
-
-  throw new Error('No data source available for ' + stationId);
-}
-
 // =====================================================================
 // SHARED CACHE + CROSS-WINDOW SYNC
 // =====================================================================
@@ -1270,21 +759,92 @@ async function loadStationData(stationId, opts) {
  *
  * @param {string} stationId
  * @param {Object[]} entries - Parsed entries (same shape used by station.html / station_health.html)
- * @param {Object} [meta]    - Optional metadata (source, channelInfo)
+ * @param {Object} [meta]    - Optional metadata (source, channelInfo, timeRange, windowStart, windowEnd)
  */
 function saveStationCache(stationId, entries, meta) {
   if (!stationId || !Array.isArray(entries)) return;
   meta = meta || {};
+  var windowStart = meta.windowStart || null;
+  var windowEnd = meta.windowEnd || null;
+
+  if (!windowStart || !windowEnd) {
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i];
+      if (!entry) continue;
+      var rawTs = entry.timestamp != null ? entry.timestamp : entry.created_at;
+      if (rawTs == null) continue;
+      var ts = rawTs instanceof Date ? rawTs : new Date(rawTs);
+      if (!(ts instanceof Date) || isNaN(ts.getTime())) continue;
+      if (!windowStart) windowStart = ts.toISOString();
+      windowEnd = ts.toISOString();
+    }
+  }
+
   try {
     localStorage.setItem('seaweed_cache_' + stationId, JSON.stringify({
       allEntries: entries,
       channelInfo: meta.channelInfo || null,
       source: meta.source || 'live',
+      timeRange: meta.timeRange || null,
+      windowStart: windowStart,
+      windowEnd: windowEnd,
       savedAt: Date.now()
     }));
   } catch (e) {
     console.warn('[Cache] Could not save station cache for ' + stationId + ':', e.message);
   }
+}
+
+function getStationCacheWindow(cached) {
+  if (!cached) return null;
+
+  var min = cached.windowStart != null ? new Date(cached.windowStart).getTime() : NaN;
+  var max = cached.windowEnd != null ? new Date(cached.windowEnd).getTime() : NaN;
+  if (isFinite(min) && isFinite(max) && max >= min) {
+    return { min: min, max: max };
+  }
+
+  var entries = Array.isArray(cached.allEntries) ? cached.allEntries : [];
+  var derivedMin = NaN;
+  var derivedMax = NaN;
+  for (var i = 0; i < entries.length; i++) {
+    var entry = entries[i];
+    if (!entry) continue;
+    var rawTs = entry.timestamp != null ? entry.timestamp : entry.created_at;
+    if (rawTs == null) continue;
+    var ts = rawTs instanceof Date ? rawTs.getTime() : new Date(rawTs).getTime();
+    if (!isFinite(ts)) continue;
+    if (!isFinite(derivedMin) || ts < derivedMin) derivedMin = ts;
+    if (!isFinite(derivedMax) || ts > derivedMax) derivedMax = ts;
+  }
+
+  if (!isFinite(derivedMin) || !isFinite(derivedMax) || derivedMax < derivedMin) return null;
+  return { min: derivedMin, max: derivedMax };
+}
+
+function stationCacheCanPrimeRange(cached, requestedWindow, requestedRange) {
+  if (!cached || !requestedWindow) return false;
+
+  var cacheWindow = getStationCacheWindow(cached);
+  if (!cacheWindow) return false;
+
+  var range = requestedRange || cached.timeRange || 'week';
+  if (range === 'all') {
+    return cached.timeRange === 'all';
+  }
+
+  var reqFrom = requestedWindow.from instanceof Date
+    ? requestedWindow.from.getTime()
+    : new Date(requestedWindow.from).getTime();
+  var reqTo = requestedWindow.to instanceof Date
+    ? requestedWindow.to.getTime()
+    : new Date(requestedWindow.to).getTime();
+  if (!isFinite(reqFrom)) return false;
+
+  var spanMs = isFinite(reqTo) ? Math.max(0, reqTo - reqFrom) : Math.max(0, cacheWindow.max - reqFrom);
+  var toleranceMs = Math.min(6 * 3600000, Math.round(spanMs * 0.1));
+
+  return cacheWindow.min <= (reqFrom + toleranceMs);
 }
 
 /**
@@ -1359,6 +919,68 @@ function onDashboardDataRefresh(handler) {
       } catch (e3) {}
     }
   };
+}
+
+// =====================================================================
+// DASHBOARD DIAGNOSTICS PANEL
+// =====================================================================
+
+function dashboardDiagEscapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function dashboardDiagFormatUtc(value) {
+  if (value == null || value === '') return '--';
+  var d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return String(value);
+  return d.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone: 'UTC'
+  }) + ' UTC';
+}
+
+function dashboardDiagFormatDuration(ms) {
+  if (ms == null || ms === '' || !isFinite(Number(ms))) return '--';
+  return Math.round(Number(ms)) + ' ms';
+}
+
+function renderDashboardDiagnostics(panelId, info) {
+  var host = document.getElementById(panelId);
+  if (!host) return;
+
+  info = info || {};
+  var summary = info.summary || 'Diagnostics';
+  var pill = info.pill
+    ? '<span class="diag-pill diag-' + dashboardDiagEscapeHtml(info.pillTone || 'muted') + '">' + dashboardDiagEscapeHtml(info.pill) + '</span>'
+    : '';
+  var rows = Array.isArray(info.rows) ? info.rows : [];
+  var rowHtml = rows.map(function(row) {
+    var value = row && row.value != null && row.value !== '' ? row.value : '--';
+    var tone = row && row.tone ? ' diag-value-' + dashboardDiagEscapeHtml(row.tone) : '';
+    return '<div class="diag-item">' +
+      '<div class="diag-label">' + dashboardDiagEscapeHtml(row && row.label ? row.label : '--') + '</div>' +
+      '<div class="diag-value' + tone + '">' + dashboardDiagEscapeHtml(value) + '</div>' +
+      '</div>';
+  }).join('');
+
+  var noteHtml = info.note ? '<div class="diag-message diag-message-note">' + dashboardDiagEscapeHtml(info.note) + '</div>' : '';
+  var errorHtml = info.error ? '<div class="diag-message diag-message-error">' + dashboardDiagEscapeHtml(info.error) + '</div>' : '';
+
+  host.innerHTML = '<summary>' + dashboardDiagEscapeHtml(summary) + pill + '</summary>' +
+    '<div class="diag-grid">' + rowHtml + '</div>' +
+    noteHtml +
+    errorHtml;
 }
 
 // =====================================================================

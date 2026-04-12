@@ -11,8 +11,8 @@ jobs:
   download:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # needed to push the committed data files
-      issues: write     # needed to open/close alert issues
+      contents: read    # checkout only; no commits
+      issues: write    # needed to open/close alert issues
 
     steps:
       - name: Checkout repository
@@ -29,33 +29,6 @@ jobs:
           Write-Host "=== Starting Supabase data download ===" -ForegroundColor Cyan
           ./download_data_supabase.ps1 -ScheduleType hourly
           Write-Host "=== Download complete ===" -ForegroundColor Green
-
-      - name: Commit and push updated data
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Stage all data subfolder files
-          git add data/
-
-          # Only commit if there are actual changes
-          if git diff --staged --quiet; then
-            echo "No data changes to commit."
-          else
-            TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M UTC')
-            git commit -m "data: auto-update station data ${TIMESTAMP}"
-
-            # Pull any remote changes (e.g. manual pushes) before pushing
-            # Use rebase to keep data commits on top and avoid merge conflicts
-            for i in 1 2 3; do
-              git pull --rebase origin main && break
-              echo "Pull attempt $i failed, retrying..."
-              sleep 5
-            done
-
-            git push
-            echo "Data committed and pushed."
-          fi
 
       - name: Check alerts and open/close GitHub Issues
         if: always()   # run even if download or commit step fails

@@ -460,7 +460,7 @@ input.wide { max-width: none; }
     <div class="section-header">
       <span class="section-icon">&#9889;</span>
       <h2>Supabase Connection</h2>
-      <span class="section-desc">Primary data source &mdash; replaces ThingSpeak</span>
+      <span class="section-desc">Primary data source</span>
     </div>
     <div class="section-body">
 
@@ -498,87 +498,6 @@ input.wide { max-width: none; }
     </div>
   </div>
 
-  <!-- ─────────────────────────────────────── ThingSpeak Channels (Legacy) ── -->
-  <div class="section">
-    <div class="section-header">
-      <span class="section-icon">&#128225;</span>
-      <h2>ThingSpeak Channels <span style="font-size:0.72rem;color:var(--text-muted);font-weight:400">(Legacy)</span></h2>
-      <span class="section-desc">Kept for reference &mdash; data now comes from Supabase</span>
-    </div>
-    <div class="section-body">
-
-      <div class="info-box">
-        <div class="info-title">Legacy &mdash; no longer used for live data</div>
-        These ThingSpeak channel IDs are kept for reference. The dashboard and download scripts
-        now read from Supabase. Leave these values as-is for historical data access if needed.
-      </div>
-
-      <!-- Perth -->
-      <div style="border-left:3px solid var(--accent);padding-left:14px">
-        <label style="font-size:0.85rem;color:var(--text);text-transform:none;letter-spacing:0">&#127466;&#127472; Perth Test Table</label>
-        <div class="field-row" style="margin-top:6px">
-          <div class="field">
-            <label>Channel ID</label>
-            <input type="text" id="ch_perth_id" placeholder="3262071">
-          </div>
-          <div class="field">
-            <label>Read API Key</label>
-            <input type="password" id="ch_perth_key" placeholder="VVHUX39KINYPLCVI" autocomplete="off">
-          </div>
-        </div>
-        <div class="field-hint" style="margin-top:2px">Data folder: <code>data/</code></div>
-      </div>
-
-      <!-- Shangani -->
-      <div style="border-left:3px solid var(--success);padding-left:14px">
-        <label style="font-size:0.85rem;color:var(--text);text-transform:none;letter-spacing:0">&#127472;&#127466; Shangani Aramani</label>
-        <div class="field-row" style="margin-top:6px">
-          <div class="field">
-            <label>Channel ID</label>
-            <input type="text" id="ch_shangani_id" placeholder="">
-          </div>
-          <div class="field">
-            <label>Read API Key</label>
-            <input type="password" id="ch_shangani_key" placeholder="" autocomplete="off">
-          </div>
-        </div>
-        <div class="field-hint" style="margin-top:2px">Data folder: <code>data_shangani/</code></div>
-      </div>
-
-      <!-- Funzi -->
-      <div style="border-left:3px solid var(--warning);padding-left:14px">
-        <label style="font-size:0.85rem;color:var(--text);text-transform:none;letter-spacing:0">&#127472;&#127466; Funzi Island</label>
-        <div class="field-row" style="margin-top:6px">
-          <div class="field">
-            <label>Channel ID</label>
-            <input type="text" id="ch_funzi_id" placeholder="">
-          </div>
-          <div class="field">
-            <label>Read API Key</label>
-            <input type="password" id="ch_funzi_key" placeholder="" autocomplete="off">
-          </div>
-        </div>
-        <div class="field-hint" style="margin-top:2px">Data folder: <code>data_funzi/</code></div>
-      </div>
-
-      <!-- WROOM PTT -->
-      <div style="border-left:3px solid #a78bfa;padding-left:14px">
-        <label style="font-size:0.85rem;color:var(--text);text-transform:none;letter-spacing:0">&#127464;&#127468; Perth WROOM PTT <span style="font-size:0.72rem;color:var(--text-muted);font-weight:400">(single channel, CSV-packed)</span></label>
-        <div class="field-row" style="margin-top:6px">
-          <div class="field">
-            <label>Channel ID</label>
-            <input type="text" id="ch_wroom_id" placeholder="3246116">
-          </div>
-          <div class="field">
-            <label>Read API Key</label>
-            <input type="password" id="ch_wroom_key" placeholder="7K00B1Y8DNOTEIM0" autocomplete="off">
-          </div>
-        </div>
-        <div class="field-hint" style="margin-top:4px">Single channel with CSV-packed fields &rarr; <code>data_WROOM_PTT/merged_data.js</code></div>
-      </div>
-
-    </div>
-  </div>
   <!-- GitHub Actions Status -->
   <div class="section">
     <div class="section-header">
@@ -729,13 +648,9 @@ function ensureSettingsUnlocked() {
   return false;
 }
 
-var DEVICE_PROFILE_DEFAULTS = [
-  { id: 'perth', name: 'Perth Test', enabled: true, dataFolder: 'data_3262071_TT', channelId: '3262071', apiKey: 'VVHUX39KINYPLCVI', mapLat: -31.87, mapLon: 115.90 },
-  { id: 'shangani', name: 'Shangani', enabled: true, dataFolder: 'data_Shangani', channelId: '', apiKey: '', mapLat: -4.55, mapLon: 39.50 },
-  { id: 'funzi', name: 'Funzi', enabled: true, dataFolder: 'data_Funzi', channelId: '', apiKey: '', mapLat: -4.581429, mapLon: 39.437527 },
-  { id: 'spare', name: 'Spare', enabled: true, dataFolder: 'data_spare', channelId: '', apiKey: '', mapLat: null, mapLon: null },
-  { id: 'wroom', name: 'Perth WROOM', enabled: true, dataFolder: 'data_WROOM_PTT', channelId: '3246116', apiKey: '7K00B1Y8DNOTEIM0', mapLat: null, mapLon: null }
-];
+var DEVICE_PROFILE_DEFAULTS = STATION_REGISTRY.map(function(s) {
+  return { id: s.id, name: s.name, enabled: s.enabled, dataFolder: s.dataFolder, channelId: '', apiKey: '', mapLat: s.lat, mapLon: s.lon };
+});
 
 function titleCaseDeviceId(id) {
   return String(id || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
@@ -831,19 +746,22 @@ function renderDeviceProfiles(profiles) {
     row.setAttribute('data-api-key', p.apiKey || '');
     row.setAttribute('data-map-lat', p.mapLat != null ? String(p.mapLat) : '');
     row.setAttribute('data-map-lon', p.mapLon != null ? String(p.mapLon) : '');
+    var safeId = escHtml(id);
+    var safeName = escHtml(String(p.name || titleCaseDeviceId(id)));
+    var safeFolder = escHtml(p.dataFolder || ('data_' + id));
     row.innerHTML =
       '<div>' +
         '<div class="device-profile-check">' +
-          '<input type="checkbox" data-role="enabled" id="dp_en_' + id + '" ' + (p.enabled !== false ? 'checked' : '') + '>' +
-          '<label for="dp_en_' + id + '">' + String(p.name || titleCaseDeviceId(id)) + '</label>' +
+          '<input type="checkbox" data-role="enabled" id="dp_en_' + safeId + '" ' + (p.enabled !== false ? 'checked' : '') + '>' +
+          '<label for="dp_en_' + safeId + '">' + safeName + '</label>' +
         '</div>' +
-        '<div class="device-profile-id">device_id: ' + id + '</div>' +
+        '<div class="device-profile-id">device_id: ' + safeId + '</div>' +
       '</div>' +
       '<div class="field" style="gap:3px">' +
         '<label style="font-size:0.68rem">Install Date (UTC)</label>' +
         '<input type="date" data-role="installDate" value="' + normalizeInstallDateForInput(p.installDateUtc) + '">' +
       '</div>' +
-      '<div style="font-size:0.72rem;color:var(--text-muted)">Data folder: <strong style="color:var(--text-sec)">' + (p.dataFolder || ('data_' + id)) + '</strong></div>' +
+      '<div style="font-size:0.72rem;color:var(--text-muted)">Data folder: <strong style="color:var(--text-sec)">' + safeFolder + '</strong></div>' +
       '<div class="field" style="gap:3px">' +
         '<label style="font-size:0.68rem">Coordinates (lat, lon)</label>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
@@ -941,54 +859,13 @@ async function refreshDeviceProfilesFromSupabase() {
 }
 
 //  Get current form values as a config object 
-// Auto-compute data subfolder name: data_(channelId)_(suffix) or data_(suffix) if no ID yet
-function getDataFolder(channelId, suffix) {
-  return channelId ? 'data_' + channelId + '_' + suffix : 'data_' + suffix;
-}
-
 function getFormConfig() {
-  var perthId      = (document.getElementById('ch_perth_id').value      || '').trim();
-  var shanganiId   = (document.getElementById('ch_shangani_id').value   || '').trim();
-  var funziId      = (document.getElementById('ch_funzi_id').value      || '').trim();
-  var wroomId     = (document.getElementById('ch_wroom_id').value     || '').trim();
   var deviceProfiles = getRenderedDeviceProfiles();
-  var profileMap = mapById(deviceProfiles);
-
-  function withProfileFallback(id, defaultFolder, channelId, apiKey, name) {
-    var p = profileMap[id] || {};
-    return {
-      id: id,
-      name: name,
-      channelId: p.channelId != null ? p.channelId : channelId,
-      apiKey: p.apiKey != null ? p.apiKey : apiKey,
-      dataFolder: p.dataFolder || defaultFolder
-    };
-  }
-
-  var channels = [
-    withProfileFallback('perth', getDataFolder(perthId, 'TT'), perthId, (document.getElementById('ch_perth_key').value || '').trim(), 'Perth Test Table'),
-    withProfileFallback('shangani', getDataFolder(shanganiId, 'Shangani'), shanganiId, (document.getElementById('ch_shangani_key').value || '').trim(), 'Shangani Aramani'),
-    withProfileFallback('funzi', getDataFolder(funziId, 'Funzi'), funziId, (document.getElementById('ch_funzi_key').value || '').trim(), 'Funzi Island'),
-    withProfileFallback('wroom', getDataFolder(wroomId, 'WROOM_PTT'), wroomId, (document.getElementById('ch_wroom_key').value || '').trim(), 'Perth WROOM')
-  ];
-
-  deviceProfiles.forEach(function(p) {
-    if (!p || !p.id) return;
-    if (channels.some(function(c) { return c.id === p.id; })) return;
-    channels.push({
-      id: p.id,
-      name: p.name || titleCaseDeviceId(p.id),
-      channelId: p.channelId || '',
-      apiKey: p.apiKey || '',
-      dataFolder: p.dataFolder || ('data_' + p.id)
-    });
-  });
 
   return {
     supabaseUrl:     (document.getElementById('supabaseUrl').value     || '').trim(),
     supabaseAnonKey: (document.getElementById('supabaseAnonKey').value || '').trim(),
-    channels: channels,
-    stations: deviceProfiles.filter(function(p) { return p.enabled !== false && p.id !== 'wroom'; }).map(function(p) {
+    stations: deviceProfiles.filter(function(p) { return p.enabled !== false; }).map(function(p) {
       return {
         id: p.id,
         name: p.name || titleCaseDeviceId(p.id),
@@ -1016,8 +893,6 @@ function updatePreviews() {
 
 //  Live update previews as user types 
 ['supabaseUrl', 'supabaseAnonKey',
- 'ch_perth_id', 'ch_perth_key', 'ch_shangani_id', 'ch_shangani_key',
- 'ch_funzi_id', 'ch_funzi_key', 'ch_wroom_id', 'ch_wroom_key',
  'autoRefreshMin', 'maxResults'].forEach(function (id) {
   var el = document.getElementById(id);
   if (el) {
@@ -1138,15 +1013,6 @@ function loadSavedConfig() {
   // Supabase connection
   document.getElementById('supabaseUrl').value     = saved.supabaseUrl     || '';
   document.getElementById('supabaseAnonKey').value = saved.supabaseAnonKey || '';
-
-  document.getElementById('ch_perth_id').value      = (chMap.perth    && chMap.perth.channelId)    || '3262071';
-  document.getElementById('ch_perth_key').value     = (chMap.perth    && chMap.perth.apiKey)       || 'VVHUX39KINYPLCVI';
-  document.getElementById('ch_shangani_id').value   = (chMap.shangani && chMap.shangani.channelId) || '';
-  document.getElementById('ch_shangani_key').value  = (chMap.shangani && chMap.shangani.apiKey)    || '';
-  document.getElementById('ch_funzi_id').value      = (chMap.funzi    && chMap.funzi.channelId)    || '';
-  document.getElementById('ch_funzi_key').value     = (chMap.funzi    && chMap.funzi.apiKey)       || '';
-  document.getElementById('ch_wroom_id').value     = (chMap.wroom    && chMap.wroom.channelId)    || '3246116';
-  document.getElementById('ch_wroom_key').value    = (chMap.wroom    && chMap.wroom.apiKey)       || '7K00B1Y8DNOTEIM0';
 
   document.getElementById('autoRefreshMin').value = String(saved.autoRefreshMin != null ? saved.autoRefreshMin : 15);
   document.getElementById('maxResults').value     = saved.maxResults || 8000;
@@ -1337,6 +1203,7 @@ function removeAccessRole(idx) {
 }
 
 async function pushAccessRolesNow() {
+  if (!ensureSettingsUnlocked()) return;
   var status = document.getElementById('rolesPushStatus');
   if (status) status.textContent = 'Pushing roles to Supabase...';
   try {

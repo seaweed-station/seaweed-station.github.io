@@ -3,7 +3,6 @@
 // ============================================================================
 // Single source of truth for T0 and T-Energy energy models.
 // Used by:  battery_estimator.html  (manual what-if UI)
-//           perth.html / shangani.html / funzi.html  (live forecast)
 //
 // Version: 1.0  (2026-02-24)
 // ============================================================================
