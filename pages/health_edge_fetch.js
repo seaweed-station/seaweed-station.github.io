@@ -50,7 +50,9 @@ async function fetchEdgeHealthSummary(opts) {
   var startedAt = Date.now();
   var supaCfg = getSupabaseConfig();
   var now = new Date();
-  var from = opts.from || new Date(now.getTime() - 7 * 86400000).toISOString();
+  // Load enough history for the Month view to differ from Week while keeping
+  // the initial payload bounded and consistent with the deployed 30-day RPC path.
+  var from = opts.from || new Date(now.getTime() - 30 * 86400000).toISOString();
   var to = opts.to || now.toISOString();
   var pts = opts.points || 500;
   var url = supaCfg.url + '/functions/v1/health-summary' +

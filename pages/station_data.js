@@ -829,7 +829,7 @@ function updateTimeButtons() {
 }
 
 function updateChartSubheads() {
-  var label = timeRangeLabel() + ' | line breaks at gaps > 12h';
+  var label = timeRangeLabel();
   var el = document.getElementById('tempSubhead');
   if (el) el.textContent = label;
   var humSub = document.getElementById('humSubhead');
