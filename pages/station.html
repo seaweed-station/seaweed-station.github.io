@@ -1081,6 +1081,15 @@ body {
   window.__STATIONS = STATIONS;
   window.__STATION = cfg;
 
+  var _sharedProfilesStationReloaded = false;
+  if (typeof onSharedDeviceProfilesUpdated === 'function') {
+    onSharedDeviceProfilesUpdated(function(detail) {
+      if (!detail || !detail.changed || _sharedProfilesStationReloaded) return;
+      _sharedProfilesStationReloaded = true;
+      location.reload();
+    });
+  }
+
   // merged_data.js injection removed — edge function is the sole data path
 })();
 </script>

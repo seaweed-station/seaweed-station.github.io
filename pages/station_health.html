@@ -333,6 +333,15 @@ function buildConfiguredStations() {
 }
 
 var STATIONS = buildConfiguredStations();
+var _sharedProfilesHealthReloaded = false;
+
+if (typeof onSharedDeviceProfilesUpdated === 'function') {
+  onSharedDeviceProfilesUpdated(function(detail) {
+    if (!detail || !detail.changed || _sharedProfilesHealthReloaded) return;
+    _sharedProfilesHealthReloaded = true;
+    location.reload();
+  });
+}
 
 // Role-based: filter stations to only those the current role can see
 if (typeof filterStationsForRole === 'function') {

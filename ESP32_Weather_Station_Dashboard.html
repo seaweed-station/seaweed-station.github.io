@@ -423,6 +423,15 @@ function buildConfiguredTables() {
 }
 
 var TABLES = buildConfiguredTables();
+var _sharedProfilesOverviewReloaded = false;
+
+if (typeof onSharedDeviceProfilesUpdated === 'function') {
+  onSharedDeviceProfilesUpdated(function(detail) {
+    if (!detail || !detail.changed || _sharedProfilesOverviewReloaded) return;
+    _sharedProfilesOverviewReloaded = true;
+    location.reload();
+  });
+}
 
 // Role-based station filtering
 if (typeof filterStationsForRole === 'function') {

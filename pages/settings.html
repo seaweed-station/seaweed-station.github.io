@@ -411,6 +411,10 @@ input.wide { max-width: none; }
   cursor: pointer;
   font-size: 0.75rem;
 }
+.status-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
 </style>
 </head>
 <body>
@@ -425,8 +429,10 @@ input.wide { max-width: none; }
     </div>
   </div>
   <div style="display:flex;gap:8px;align-items:center">
-    <button class="btn btn-primary" onclick="saveSettings()">&#10003; Save to Browser</button>
-    <div class="save-status" id="saveStatusTop">&#10003; Settings saved!</div>
+    <button class="btn btn-primary" onclick="saveSettings()">&#10003; Save Browser Copy</button>
+    <button class="btn" onclick="pushDeviceProfilesNow()">&#9650; Push Config to Supabase</button>
+    <div class="save-status" id="saveStatusTop">&#10003; Browser copy saved!</div>
+    <span class="status-note" id="pushConfigStatusTop"></span>
     <a class="btn" href="../ESP32_Weather_Station_Dashboard.html">&#8592; Back to Overview</a>
   </div>
 </header>
@@ -438,19 +444,21 @@ input.wide { max-width: none; }
   <div class="section">
     <div class="section-header">
       <span class="section-icon">&#128190;</span>
-      <h2>Save &amp; Apply Settings</h2>
-      <span class="section-desc">Save browser settings now. JSON export is optional and at the bottom.</span>
+      <h2>Save Browser Copy / Push Shared Config</h2>
+      <span class="section-desc">Keep local browser settings separate from the global Supabase reference.</span>
     </div>
     <div class="section-body">
       <div class="info-box info">
-        <div class="info-title">Save is required</div>
-        After changing any fields on this page, click <strong>Save to Browser</strong>.
-        This stores settings in localStorage and applies them across dashboard pages.
+        <div class="info-title">Two separate actions</div>
+        Use <strong>Save Browser Copy</strong> to store settings in this browser only.
+        Use <strong>Push Config to Supabase</strong> to publish shared station metadata such as install date and coordinates for global reference.
       </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-        <button class="btn btn-primary btn-lg" onclick="saveSettings()">&#10003; Save to Browser</button>
-        <div class="save-status" id="saveStatus">&#10003; Settings saved!</div>
+        <button class="btn btn-primary btn-lg" onclick="saveSettings()">&#10003; Save Browser Copy</button>
+        <button class="btn btn-lg" onclick="pushDeviceProfilesNow()">&#9650; Push Config to Supabase</button>
+        <div class="save-status" id="saveStatus">&#10003; Browser copy saved!</div>
+        <span class="status-note" id="pushConfigStatus"></span>
       </div>
     </div>
   </div>
@@ -488,8 +496,13 @@ input.wide { max-width: none; }
       <div class="field">
         <label>Active Devices &amp; Install Date</label>
         <div class="field-hint">Choose which devices appear in Overview/Station/Health. Data before install date is ignored.</div>
+        <div class="info-box info" style="margin-top:8px;">
+          <div class="info-title">Global station metadata</div>
+          Install date and coordinates are written to <strong>dashboard_config.device_profiles</strong> only when you click <strong>Push Config to Supabase</strong>.
+        </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
           <button class="btn" onclick="refreshDeviceProfilesFromSupabase()">&#128260; Refresh from Supabase</button>
+          <button class="btn btn-primary" onclick="pushDeviceProfilesNow()">&#9650; Push Config to Supabase</button>
           <span id="deviceDiscoveryStatus" style="font-size:0.78rem;color:var(--text-muted)">Not refreshed yet.</span>
         </div>
         <div id="deviceProfileList" class="device-profiles" style="margin-top:10px"></div>
@@ -901,9 +914,25 @@ function updatePreviews() {
   }
 });
 
-//  Save to localStorage + push shared config to Supabase 
-function saveSettings() {
-  if (!ensureSettingsUnlocked()) return;
+function showTransientMessage(elementIds, message, isError, durationMs) {
+  var ids = Array.isArray(elementIds) ? elementIds : [elementIds];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = message || '';
+    el.style.color = isError ? 'var(--danger)' : 'var(--success)';
+  });
+  if (!message) return;
+  setTimeout(function() {
+    ids.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el || el.textContent !== message) return;
+      el.textContent = '';
+    });
+  }, durationMs || 4000);
+}
+
+function persistSettingsToBrowser(showStatus) {
   var cfg = getFormConfig();
 
   // Include access roles in the config
@@ -911,25 +940,48 @@ function saveSettings() {
 
   localStorage.setItem('seaweed_dashboard_config', JSON.stringify(cfg));
 
-  var statuses = document.querySelectorAll('.save-status');
-  for (var i = 0; i < statuses.length; i++) {
-    statuses[i].classList.add('show');
-  }
-  setTimeout(function () {
-    for (var j = 0; j < statuses.length; j++) {
-      statuses[j].classList.remove('show');
+  if (showStatus) {
+    var statuses = document.querySelectorAll('.save-status');
+    for (var i = 0; i < statuses.length; i++) {
+      statuses[i].classList.add('show');
     }
-  }, 3000);
+    setTimeout(function () {
+      for (var j = 0; j < statuses.length; j++) {
+        statuses[j].classList.remove('show');
+      }
+    }, 3000);
+  }
 
   updatePreviews();
+  return cfg;
+}
 
-  // Push shared config to Supabase in the background
-  pushAccessControlToSupabase(cfg.accessControl).catch(function(e) {
-    console.warn('[settings] access_control push failed:', e);
-  });
-  pushDeviceProfilesToSupabase(cfg.deviceProfiles).catch(function(e) {
-    console.warn('[settings] device_profiles push failed:', e);
-  });
+//  Save to localStorage only
+function saveSettings() {
+  if (!ensureSettingsUnlocked()) return;
+  persistSettingsToBrowser(true);
+}
+
+async function pushDeviceProfilesNow() {
+  if (!ensureSettingsUnlocked()) return;
+  var cfg = persistSettingsToBrowser(false);
+  showTransientMessage(['pushConfigStatus', 'pushConfigStatusTop', 'deviceDiscoveryStatus'], 'Pushing device_profiles to Supabase...', false, 20000);
+  try {
+    await pushDeviceProfilesToSupabase(cfg.deviceProfiles);
+    showTransientMessage(
+      ['pushConfigStatus', 'pushConfigStatusTop', 'deviceDiscoveryStatus'],
+      'Shared station config pushed to Supabase.',
+      false,
+      5000
+    );
+  } catch (err) {
+    showTransientMessage(
+      ['pushConfigStatus', 'pushConfigStatusTop', 'deviceDiscoveryStatus'],
+      'Push failed: ' + (err && err.message ? err.message : 'Unknown error'),
+      true,
+      7000
+    );
+  }
 }
 
 //  Download config.json 
@@ -1207,7 +1259,7 @@ async function pushAccessRolesNow() {
   var status = document.getElementById('rolesPushStatus');
   if (status) status.textContent = 'Pushing roles to Supabase...';
   try {
-    var roles = getRenderedAccessRoles();
+    var roles = persistSettingsToBrowser(false).accessControl || getRenderedAccessRoles();
     await pushAccessControlToSupabase(roles);
     if (status) status.innerHTML = '<span style="color:var(--success)">&#10003; Roles pushed to Supabase.</span>';
     setTimeout(function() { if (status) status.textContent = ''; }, 4000);

@@ -103,6 +103,10 @@ var RESET_CUTOFF_STORAGE_KEY = 'seaweed_reset_cutoff_utc';
 var RESET_CUTOFF_ENABLED = false;
 
 var DASHBOARD_CONFIG_KEY = 'seaweed_dashboard_config';
+var SHARED_DEVICE_PROFILES_CACHE_KEY = 'seaweed_shared_device_profiles_cache';
+var SHARED_DEVICE_PROFILES_CACHE_TTL_MS = 10 * 60 * 1000;
+var SHARED_DEVICE_PROFILES_EVENT = 'seaweed:deviceProfilesUpdated';
+var _sharedDeviceProfilesRefreshPromise = null;
 
 /**
  * Canonical station registry — keep in sync with config.json "stations" array.
@@ -151,10 +155,10 @@ function defaultNameForDeviceId(deviceId) {
   return sid.replace(/[_-]+/g, ' ').replace(/\b\w/g, function(m) { return m.toUpperCase(); });
 }
 
-function getConfiguredDeviceProfiles(opts) {
+function buildDeviceProfilesFromConfig(cfg, opts) {
   opts = opts || {};
   var includeDisabled = !!opts.includeDisabled;
-  var cfg = getDashboardConfig();
+  cfg = cfg || {};
   var out = [];
   var byId = {};
   var defaultOrder = {};
@@ -217,6 +221,129 @@ function getConfiguredDeviceProfiles(opts) {
   out = out.filter(function(p) { return getStationRegistryEntry(p.id) !== null; });
   return out;
 }
+
+function getConfiguredDeviceProfiles(opts) {
+  return buildDeviceProfilesFromConfig(getDashboardConfig(), opts);
+}
+
+function getCachedSharedDeviceProfiles() {
+  try {
+    var raw = localStorage.getItem(SHARED_DEVICE_PROFILES_CACHE_KEY);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.profiles) || !parsed.profiles.length) return null;
+    return {
+      profiles: parsed.profiles,
+      fetchedAt: Number(parsed.fetchedAt) || 0
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+function cacheSharedDeviceProfiles(profiles, fetchedAt) {
+  if (!Array.isArray(profiles) || !profiles.length) return;
+  try {
+    localStorage.setItem(SHARED_DEVICE_PROFILES_CACHE_KEY, JSON.stringify({
+      profiles: profiles,
+      fetchedAt: Number(fetchedAt) || Date.now()
+    }));
+  } catch (e) {}
+}
+
+function applySharedDeviceProfilesToDashboardConfig(profiles, meta) {
+  var normalized = buildDeviceProfilesFromConfig({ deviceProfiles: profiles || [] }, { includeDisabled: true });
+  if (!normalized.length) return false;
+
+  var cfg = getDashboardConfig();
+  var current = buildDeviceProfilesFromConfig({ deviceProfiles: Array.isArray(cfg.deviceProfiles) ? cfg.deviceProfiles : [] }, { includeDisabled: true });
+  var currentMap = {};
+  current.forEach(function(profile) {
+    currentMap[profile.id] = profile;
+  });
+
+  var merged = normalized.map(function(profile) {
+    var existing = currentMap[profile.id] || {};
+    return Object.assign({}, existing, profile);
+  });
+
+  if (JSON.stringify(current) === JSON.stringify(merged)) return false;
+
+  cfg.deviceProfiles = merged;
+  cfg.deviceProfilesSyncedAt = Number(meta && meta.fetchedAt) || Date.now();
+  try {
+    localStorage.setItem(DASHBOARD_CONFIG_KEY, JSON.stringify(cfg));
+  } catch (e) {
+    return false;
+  }
+  return true;
+}
+
+function dispatchSharedDeviceProfilesUpdated(detail) {
+  try {
+    window.dispatchEvent(new CustomEvent(SHARED_DEVICE_PROFILES_EVENT, {
+      detail: detail || {}
+    }));
+  } catch (e) {}
+}
+
+function onSharedDeviceProfilesUpdated(handler) {
+  if (typeof handler !== 'function') return function() {};
+  var wrapped = function(evt) {
+    handler(evt && evt.detail ? evt.detail : null);
+  };
+  window.addEventListener(SHARED_DEVICE_PROFILES_EVENT, wrapped);
+  return function() {
+    window.removeEventListener(SHARED_DEVICE_PROFILES_EVENT, wrapped);
+  };
+}
+
+function primeSharedDeviceProfilesFromCache() {
+  var cached = getCachedSharedDeviceProfiles();
+  if (!cached) return false;
+  return applySharedDeviceProfilesToDashboardConfig(cached.profiles, { fetchedAt: cached.fetchedAt, source: 'cache' });
+}
+
+async function refreshSharedDeviceProfilesFromSupabase() {
+  if (_sharedDeviceProfilesRefreshPromise) return _sharedDeviceProfilesRefreshPromise;
+
+  _sharedDeviceProfilesRefreshPromise = (async function() {
+    var profiles = await fetchSharedDeviceProfiles();
+    if (!profiles || !profiles.length) return { changed: false, profiles: null };
+
+    var fetchedAt = Date.now();
+    cacheSharedDeviceProfiles(profiles, fetchedAt);
+    var changed = applySharedDeviceProfilesToDashboardConfig(profiles, { fetchedAt: fetchedAt, source: 'supabase' });
+    if (changed) {
+      dispatchSharedDeviceProfilesUpdated({
+        changed: true,
+        source: 'supabase',
+        fetchedAt: fetchedAt,
+        profiles: profiles
+      });
+    }
+    return { changed: changed, profiles: profiles, fetchedAt: fetchedAt };
+  })();
+
+  try {
+    return await _sharedDeviceProfilesRefreshPromise;
+  } finally {
+    _sharedDeviceProfilesRefreshPromise = null;
+  }
+}
+
+function bootstrapSharedDeviceProfiles() {
+  var cached = getCachedSharedDeviceProfiles();
+  primeSharedDeviceProfilesFromCache();
+  if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt) < SHARED_DEVICE_PROFILES_CACHE_TTL_MS) {
+    return Promise.resolve({ changed: false, cached: true, skippedRefresh: true });
+  }
+  return refreshSharedDeviceProfilesFromSupabase().catch(function() {
+    return { changed: false, cached: !!cached, skippedRefresh: false };
+  });
+}
+
+var SHARED_DEVICE_PROFILES_STARTUP = bootstrapSharedDeviceProfiles();
 
 function getConfiguredDeviceProfileMap(opts) {
   var profiles = getConfiguredDeviceProfiles(opts);
@@ -1058,6 +1185,8 @@ async function pushDeviceProfilesToSupabase(profiles) {
     body: JSON.stringify({ value: profiles })
   });
   if (!res.ok) throw new Error('Push device_profiles failed: HTTP ' + res.status);
+  cacheSharedDeviceProfiles(profiles, Date.now());
+  applySharedDeviceProfilesToDashboardConfig(profiles, { fetchedAt: Date.now(), source: 'local-push' });
 }
 
 /**
