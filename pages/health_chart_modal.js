@@ -78,13 +78,13 @@ function openChartModal(title, srcCanvas) {
           mMaxTicks = 9;
           mAutoSkip = false;
         } else if (mRange === 'week') {
-          mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'hour', stepSize: 12, displayFormats: { hour: 'dd MMM HH:mm' } };
+          mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, round: 'day', displayFormats: { day: 'dd MMM' } };
           mMaxTicks = 8;
           mAutoSkip = false;
         } else if (mRange === 'month') {
-          mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'hour', stepSize: 12, displayFormats: { hour: 'dd MMM HH:mm' } };
+          mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, round: 'day', displayFormats: { day: 'dd MMM' } };
           mMaxTicks = 10;
-          mAutoSkip = false;
+          mAutoSkip = true;
         } else {
           mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', displayFormats: { day: 'dd MMM' } };
           mMaxTicks = 12;
@@ -113,31 +113,33 @@ function openChartModal(title, srcCanvas) {
                  font: { size: 11 },
                  maxTicksLimit: mMaxTicks,
                  autoSkip: mAutoSkip,
+                 major: { enabled: mRange === 'week' || mRange === 'month' },
                  callback: function(value, index, ticks) {
-                   if (mRange !== 'week' && mRange !== 'month') return this.getLabelForValue(value);
-                   var d = tickDate(value);
-                   if (!d) return this.getLabelForValue(value);
-                   var prev = (index > 0 && ticks && ticks[index - 1]) ? tickDate(ticks[index - 1].value) : null;
-                   if (!prev || d.getUTCDate() !== prev.getUTCDate() || d.getUTCMonth() !== prev.getUTCMonth() || d.getUTCFullYear() !== prev.getUTCFullYear()) {
-                     return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+                   if (mRange === 'week') {
+                     var dayTick = tickDate(value);
+                     return dayTick ? dayTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);
                    }
-                   return d.getUTCHours() === 0
-                     ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })
-                     : '';
+                   if (mRange === 'month') {
+                     var monthTick = tickDate(value);
+                     return monthTick ? monthTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);
+                   }
+                   return this.getLabelForValue(value);
                  }
                },
                grid: {
                  color: function(ctx) {
-                   if ((mRange !== 'week' && mRange !== 'month') || !ctx.tick) return '#d6e3df';
+                   if (mRange === 'week') return 'rgba(148, 163, 184, 0.42)';
+                   if (mRange !== 'month' || !ctx.tick) return '#d6e3df';
                    var d = tickDate(ctx.tick.value);
                    if (!d) return '#d6e3df';
-                   return d.getUTCHours() === 12 ? 'rgba(214,227,223,0.55)' : '#d6e3df';
+                   return (d.getUTCDate() === 1 || (d.getUTCDate() % 5) === 0) ? 'rgba(148, 163, 184, 0.42)' : '#d6e3df';
                  },
                  lineWidth: function(ctx) {
-                   if ((mRange !== 'week' && mRange !== 'month') || !ctx.tick) return 1;
+                   if (mRange === 'week') return 1.1;
+                   if (mRange !== 'month' || !ctx.tick) return 1;
                    var d = tickDate(ctx.tick.value);
                    if (!d) return 1;
-                   return d.getUTCHours() === 12 ? 0.8 : 1;
+                   return (d.getUTCDate() === 1 || (d.getUTCDate() % 5) === 0) ? 1.1 : 1;
                  }
                } },
           y: { title: { display: !!yTitle, text: yTitle, color: '#64748b', font: { size: 11 } },
@@ -297,9 +299,19 @@ function findStationChartCanvas(stationId, chartKey) {
   return null;
 }
 
-function setModalRange(range) {
+async function setModalRange(range) {
   if (!_modalSource || !_modalChart) return;
   _modalSource.modalRange = range;
+  if (range === 'all' && typeof healthDataCanServeRange === 'function' && !healthDataCanServeRange('all')) {
+    try {
+      if (typeof ensureHealthRangeLoaded === 'function') {
+        await ensureHealthRangeLoaded('all');
+        syncModalDataFromSource();
+      }
+    } catch (e) {
+      console.warn('[Health] Modal all-range fetch failed:', e && e.message ? e.message : e);
+    }
+  }
   var win = getWindowForRange(_modalSource.observedBounds, range);
   if (_modalChart.options && _modalChart.options.scales && _modalChart.options.scales.x) {
     _modalChart.options.scales.x.min = win.min;

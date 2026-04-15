@@ -113,7 +113,7 @@ function getChartSnapshotForRange(stationId, chartKey, range) {
   if (!stationId || !chartKey) return null;
   var prevRange = stationRanges[stationId] || 'week';
   var changed = prevRange !== range;
-  if (changed) setStationRange(stationId, range);
+  if (changed) setStationRange(stationId, range, { skipEnsure: true });
   var canvas = findStationChartCanvas(stationId, chartKey);
   var chart = canvas ? Chart.getChart(canvas) : null;
   var snapshot = null;
@@ -124,7 +124,7 @@ function getChartSnapshotForRange(stationId, chartKey, range) {
       options: chart.options
     };
   }
-  if (changed) setStationRange(stationId, prevRange);
+  if (changed) setStationRange(stationId, prevRange, { skipEnsure: true });
   return snapshot;
 }
 
@@ -157,13 +157,13 @@ function chartOpts(yLabel, yMin, yMax, range, stationId, xMinMs, xMaxMs) {
     xMaxTicks = 9;
     xAutoSkip = false;
   } else if (range === 'week') {
-    xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'hour', stepSize: 12, displayFormats: { hour: 'dd MMM HH:mm' } };
+    xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, round: 'day', displayFormats: { day: 'dd MMM' } };
     xMaxTicks = 8;
     xAutoSkip = false;
   } else if (range === 'month') {
-    xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'hour', stepSize: 12, displayFormats: { hour: 'dd MMM HH:mm' } };
+    xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, round: 'day', displayFormats: { day: 'dd MMM' } };
     xMaxTicks = 10;
-    xAutoSkip = false;
+    xAutoSkip = true;
   } else {
     xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', displayFormats: { day: 'dd MMM' } };
     xMaxTicks = 12;
@@ -208,31 +208,33 @@ function chartOpts(yLabel, yMin, yMax, range, stationId, xMinMs, xMaxMs) {
           font: { size: 10 },
           maxTicksLimit: xMaxTicks,
           autoSkip: xAutoSkip,
+          major: { enabled: range === 'week' || range === 'month' },
           callback: function(value, index, ticks) {
-            if (range !== 'week' && range !== 'month') return this.getLabelForValue(value);
-            var d = tickDate(value);
-            if (!d) return this.getLabelForValue(value);
-            var prev = (index > 0 && ticks && ticks[index - 1]) ? tickDate(ticks[index - 1].value) : null;
-            if (!prev || d.getUTCDate() !== prev.getUTCDate() || d.getUTCMonth() !== prev.getUTCMonth() || d.getUTCFullYear() !== prev.getUTCFullYear()) {
-              return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+            if (range === 'week') {
+              var dayTick = tickDate(value);
+              return dayTick ? dayTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);
             }
-            return d.getUTCHours() === 0
-              ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' })
-              : '';
+            if (range === 'month') {
+              var monthTick = tickDate(value);
+              return monthTick ? monthTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);
+            }
+            return this.getLabelForValue(value);
           }
         },
         grid: {
           color: function(ctx) {
-            if ((range !== 'week' && range !== 'month') || !ctx.tick) return '#d6e3df';
+            if (range === 'week') return 'rgba(148, 163, 184, 0.42)';
+            if (range !== 'month' || !ctx.tick) return '#d6e3df';
             var d = tickDate(ctx.tick.value);
             if (!d) return '#d6e3df';
-            return d.getUTCHours() === 12 ? 'rgba(214,227,223,0.55)' : '#d6e3df';
+            return (d.getUTCDate() === 1 || (d.getUTCDate() % 5) === 0) ? 'rgba(148, 163, 184, 0.42)' : '#d6e3df';
           },
           lineWidth: function(ctx) {
-            if ((range !== 'week' && range !== 'month') || !ctx.tick) return 1;
+            if (range === 'week') return 1.1;
+            if (range !== 'month' || !ctx.tick) return 1;
             var d = tickDate(ctx.tick.value);
             if (!d) return 1;
-            return d.getUTCHours() === 12 ? 0.8 : 1;
+            return (d.getUTCDate() === 1 || (d.getUTCDate() % 5) === 0) ? 1.1 : 1;
           }
         } },
       y: { title: { display: true, text: yLabel, color: '#64748b', font: { size: 10 } },

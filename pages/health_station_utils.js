@@ -176,6 +176,15 @@ function fmtEtaMinutes(mins) {
 var NEXT_CHECK_PIPELINE_BUFFER_MIN = 12;
 
 function estimateStationNextCheckIn(entries, stationId) {
+  var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(stationId) : null;
+  if (datasetMeta && datasetMeta.isActive) {
+    var pauseText = datasetMeta.note || datasetMeta.statusLabel;
+    return {
+      text: pauseText,
+      summaryText: datasetMeta.statusLabel,
+      cls: 'next-check-paused'
+    };
+  }
   var statusRow = stationId ? _deviceStatusById[stationId] : null;
   var nextFromStatus = statusRow && statusRow.nextCheckInAt ? statusRow.nextCheckInAt : null;
   if (nextFromStatus && !isNaN(nextFromStatus.getTime())) {

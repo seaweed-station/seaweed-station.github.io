@@ -6,6 +6,23 @@
 // RENDER: FULL DASHBOARD (debounced — coalesces rapid startup calls)
 // =====================================================================
 var _renderTimer = null;
+function formatDatasetEndUtcLabel(endMs) {
+  if (!isFinite(endMs)) return '--';
+  return new Date(endMs).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: 'UTC'
+  }) + ' UTC';
+}
+
+function getStationDatasetRenderMeta(stationId) {
+  if (typeof getStationDatasetState !== 'function') return null;
+  var meta = getStationDatasetState(stationId);
+  if (!meta || !meta.isActive) return null;
+  meta.endLabel = formatDatasetEndUtcLabel(meta.endMs);
+  return meta;
+}
+
 function renderDashboard() {
   if (_renderTimer) clearTimeout(_renderTimer);
   _renderTimer = setTimeout(_renderDashboardCore, 120);
@@ -43,8 +60,11 @@ function updateSensorCards() {
     return (v !== null && v !== undefined && isFinite(Number(v))) ? Number(v) : null;
   }
   var nowMs = Date.now();
-  var day24Ago = nowMs - (24 * 3600000);
-  var day7Ago = nowMs - (7 * 24 * 3600000);
+  var anchorMs = (typeof getStationAnalysisAnchorMs === 'function')
+    ? getStationAnalysisAnchorMs(TABLE_ID, nowMs)
+    : nowMs;
+  var day24Ago = anchorMs - (24 * 3600000);
+  var day7Ago = anchorMs - (7 * 24 * 3600000);
   var sensorColors = resolveSensorColors();
   var sensors = buildStationSensorDefinitions(TABLE_ID, all, _stationSlotMap, sensorColors);
 
@@ -230,6 +250,23 @@ function updateFreshnessBanner() {
   var banner = document.getElementById('freshnessBanner');
   if (!state.allEntries.length) { banner.classList.remove('show'); return; }
 
+  var datasetMeta = getStationDatasetRenderMeta(TABLE_ID);
+  if (datasetMeta) {
+    var pausedText = datasetMeta.statusLabel + ' since ' + datasetMeta.endLabel;
+    if (datasetMeta.note) pausedText += ' -- ' + datasetMeta.note;
+    banner.classList.add('show');
+    banner.classList.remove('fresh', 'stale', 'old');
+    banner.classList.add('paused');
+    document.getElementById('freshnessIcon').textContent = '\u23F8\uFE0F';
+    document.getElementById('freshnessText').textContent = pausedText;
+    var pausedLabel = document.getElementById('nextCheckLabel');
+    if (pausedLabel) {
+      pausedLabel.textContent = datasetMeta.note || datasetMeta.pillLabel;
+      pausedLabel.className = 'next-check-pill paused';
+    }
+    return;
+  }
+
   var latest = state.allEntries[state.allEntries.length - 1].timestamp;
   var ageHrs = (Date.now() - latest.getTime()) / 3600000;
   var nextAt = state.deviceStatus && state.deviceStatus.nextCheckInAt ? state.deviceStatus.nextCheckInAt : null;
@@ -274,6 +311,8 @@ function loadMoreDailySummary() {
 function updatePeaksTable() {
   var entries = state.allEntries;
   if (!entries.length) return;
+  var datasetMeta = getStationDatasetRenderMeta(TABLE_ID);
+  var datasetEndDayKey = datasetMeta ? datasetMeta.endDayKey : null;
 
   var byDay = {};
   entries.forEach(function (e) { var day = e.timestamp.toISOString().slice(0, 10); if (!byDay[day]) byDay[day] = []; byDay[day].push(e); });
@@ -374,6 +413,9 @@ function updatePeaksTable() {
     var de2    = byDay[day2];
     var dl2    = new Date(day2 + 'T00:00:00Z');
     var dateLabel2 = dl2.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', weekday: 'short' });
+    if (datasetEndDayKey && day2 === datasetEndDayKey) {
+      dateLabel2 += ' <span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:var(--warning-dim);color:var(--warning);font-size:0.68rem;font-weight:700">' + escHtml(datasetMeta.pillLabel) + '</span>';
+    }
     bodyHtml += '<tr><td>' + dateLabel2 + '</td><td>' + de2.length + '</td>';
 
     if (hasWx) {
@@ -411,7 +453,12 @@ function updatePeaksTable() {
   var pagerLabel = document.getElementById('peaksPagerLabel');
   if (pagerLabel) {
     var shown = Math.min(_dailySummaryVisibleDays, days.length);
-    pagerLabel.textContent = 'Showing latest ' + shown + ' of ' + days.length + ' logged days';
+    var pagerText = 'Showing latest ' + shown + ' of ' + days.length + ' logged days';
+    if (datasetMeta) {
+      pagerText += ' -- ' + datasetMeta.statusLabel + ' on ' + datasetMeta.endLabel;
+      if (datasetMeta.note) pagerText += ' (' + datasetMeta.note + ')';
+    }
+    pagerLabel.textContent = pagerText;
   }
 
   var loadMoreBtn = document.getElementById('peaksLoadMoreBtn');

@@ -44,23 +44,95 @@ async function refreshDeviceSlotMap() {
   }
 }
 
+var _healthRangeFetchPromise = null;
+var _healthRangeFetchKey = '';
+
+function healthEntryKey(entry) {
+  if (!entry) return '';
+  if (entry.entryId !== null && entry.entryId !== undefined && entry.entryId !== '') return 'id:' + entry.entryId;
+  return 'ts:' + (entry.timestamp instanceof Date ? entry.timestamp.toISOString() : String(entry.timestamp || ''));
+}
+
+function mergeHealthEntries(existingEntries, incomingEntries) {
+  var merged = new Map();
+  var lists = [existingEntries || [], incomingEntries || []];
+  for (var i = 0; i < lists.length; i++) {
+    var rows = lists[i];
+    for (var j = 0; j < rows.length; j++) {
+      var row = rows[j];
+      if (!row || !(row.timestamp instanceof Date) || isNaN(row.timestamp.getTime())) continue;
+      merged.set(healthEntryKey(row), row);
+    }
+  }
+  return Array.from(merged.values()).sort(function(a, b) { return a.timestamp - b.timestamp; });
+}
+
+function healthSyncRowKey(row) {
+  if (!row) return '';
+  return [row.sync_id || '', row.node_id || '', row.sync_started_at || ''].join('|');
+}
+
+function healthUploadRowKey(row) {
+  if (!row) return '';
+  return [row.upload_id || '', row.upload_started_at || ''].join('|');
+}
+
+function mergeTimelineRows(existingRows, incomingRows, keyFn, timeField) {
+  var merged = new Map();
+  var lists = [existingRows || [], incomingRows || []];
+  for (var i = 0; i < lists.length; i++) {
+    var rows = lists[i];
+    for (var j = 0; j < rows.length; j++) {
+      var row = rows[j];
+      if (!row) continue;
+      var key = keyFn(row);
+      if (!key) continue;
+      merged.set(key, row);
+    }
+  }
+  return Array.from(merged.values()).sort(function(a, b) {
+    return new Date(a[timeField]).getTime() - new Date(b[timeField]).getTime();
+  });
+}
+
+function buildHealthCacheEntries(entries) {
+  if (!Array.isArray(entries) || !entries.length) return [];
+  var latest = entries[entries.length - 1].timestamp;
+  if (!(latest instanceof Date) || isNaN(latest.getTime())) return [];
+  var cutoffMs = latest.getTime() - (HEALTH_CACHE_DAYS * 86400000);
+  var recent = entries.filter(function(entry) {
+    return entry && entry.timestamp instanceof Date && !isNaN(entry.timestamp.getTime()) && entry.timestamp.getTime() >= cutoffMs;
+  });
+  if (recent.length <= HEALTH_CACHE_MAX_ENTRIES) return recent;
+  return recent.slice(recent.length - HEALTH_CACHE_MAX_ENTRIES);
+}
+
+function getPreferredHealthFetchRange() {
+  if (typeof _modalSource !== 'undefined' && _modalSource && _modalSource.modalRange === 'all') return 'all';
+  var ids = Object.keys(stationRanges || {});
+  for (var i = 0; i < ids.length; i++) {
+    if (stationRanges[ids[i]] === 'all') return 'all';
+  }
+  return healthDataCanServeRange('all') ? 'all' : 'recent';
+}
+
 
 async function fetchEdgeHealthSummary(opts) {
   opts = opts || {};
   var startedAt = Date.now();
   var supaCfg = getSupabaseConfig();
-  var now = new Date();
-  // Load enough history for the Month view to differ from Week while keeping
-  // the initial payload bounded and consistent with the deployed 30-day RPC path.
-  var from = opts.from || new Date(now.getTime() - 30 * 86400000).toISOString();
-  var to = opts.to || now.toISOString();
-  var pts = opts.points || 500;
+  var requestedRange = opts.range || 'recent';
+  var requestWindow = getHealthRequestedWindow(requestedRange);
+  var from = opts.from || requestWindow.from.toISOString();
+  var to = opts.to || requestWindow.to.toISOString();
+  var pts = opts.points || getHealthPointsTarget(requestedRange);
   var url = supaCfg.url + '/functions/v1/health-summary' +
     '?from=' + encodeURIComponent(from) +
     '&to=' + encodeURIComponent(to) +
     '&points=' + pts;
 
-  var res = await fetchWithTimeout(url, 30000, {
+  var timeoutMs = opts.timeoutMs || (requestedRange === 'all' ? 60000 : 30000);
+  var res = await fetchWithTimeout(url, timeoutMs, {
     headers: {
       'Authorization': 'Bearer ' + supaCfg.key,
       'apikey': supaCfg.key
@@ -88,6 +160,8 @@ async function fetchEdgeHealthSummary(opts) {
  */
 function applyEdgeHealthPayload(payload) {
   if (!payload || !Array.isArray(payload.stations)) return;
+
+  mergeHealthLoadedWindow(payload.time_range);
 
   var newDeviceStatus = {};
   var newDeviceConfig = {};
@@ -128,12 +202,21 @@ function applyEdgeHealthPayload(payload) {
       }
       entries.sort(function(a, b) { return a.timestamp - b.timestamp; });
     }
-    stationData[sid] = { entries: entries, raw: { feeds: st.feeds || [] } };
+    var mergedEntries = mergeHealthEntries(stationData[sid] && stationData[sid].entries, entries);
+    stationData[sid] = { entries: mergedEntries, raw: { feeds: st.feeds || [] } };
     _stationDataSource[sid] = { source: 'edge', savedAt: Date.now() };
 
     // Save to shared cache for cross-tab sharing
-    if (entries.length) {
-      saveCacheData(sid, entries);
+    if (mergedEntries.length) {
+      var cacheEntries = buildHealthCacheEntries(mergedEntries);
+      if (cacheEntries.length) {
+        saveCacheData(sid, cacheEntries, {
+          source: 'live',
+          timeRange: 'recent',
+          windowStart: cacheEntries[0].timestamp.toISOString(),
+          windowEnd: cacheEntries[cacheEntries.length - 1].timestamp.toISOString()
+        });
+      }
     }
 
     // ── Sync sessions ────────────────────────────────────
@@ -144,7 +227,7 @@ function applyEdgeHealthPayload(payload) {
     syncRows.sort(function(a, b) {
       return new Date(a.sync_started_at).getTime() - new Date(b.sync_started_at).getTime();
     });
-    _stationSyncTimeline[sid] = syncRows;
+    _stationSyncTimeline[sid] = mergeTimelineRows(_stationSyncTimeline[sid], syncRows, healthSyncRowKey, 'sync_started_at');
 
     // ── Upload sessions ──────────────────────────────────
     var uploadRows = Array.isArray(st.upload_sessions) ? st.upload_sessions : [];
@@ -154,14 +237,14 @@ function applyEdgeHealthPayload(payload) {
     uploadRows.sort(function(a, b) {
       return new Date(a.upload_started_at).getTime() - new Date(b.upload_started_at).getTime();
     });
-    _stationUploadTimeline[sid] = uploadRows;
+    _stationUploadTimeline[sid] = mergeTimelineRows(_stationUploadTimeline[sid], uploadRows, healthUploadRowKey, 'upload_started_at');
 
     // ── Derive _stationDiag (latest upload + latest sync per node) ──
-    var latestUpload = uploadRows.length ? uploadRows[uploadRows.length - 1] : null;
+    var latestUpload = _stationUploadTimeline[sid].length ? _stationUploadTimeline[sid][_stationUploadTimeline[sid].length - 1] : null;
     var latestSyncByNode = {};
-    for (var ri = syncRows.length - 1; ri >= 0; ri--) {
-      var node = syncRows[ri].node_id;
-      if (node && !latestSyncByNode[node]) latestSyncByNode[node] = syncRows[ri];
+    for (var ri = _stationSyncTimeline[sid].length - 1; ri >= 0; ri--) {
+      var node = _stationSyncTimeline[sid][ri].node_id;
+      if (node && !latestSyncByNode[node]) latestSyncByNode[node] = _stationSyncTimeline[sid][ri];
     }
     _stationDiag[sid] = { upload: latestUpload, sync: latestSyncByNode };
 
@@ -188,10 +271,62 @@ function applyEdgeHealthPayload(payload) {
   _deviceSlotsById = newDeviceSlots;
 }
 
+async function ensureHealthRangeLoaded(range) {
+  var requestedRange = range === 'all' ? 'all' : 'recent';
+  if (healthDataCanServeRange(requestedRange)) return false;
+  if (_healthRangeFetchPromise && _healthRangeFetchKey === requestedRange) return _healthRangeFetchPromise;
+
+  var fetchStatus = document.getElementById('fetchStatus');
+  var requestWindow = getHealthRequestedWindow(requestedRange);
+  var openStationIds = getOpenHealthStationIds();
+  if (fetchStatus) {
+    fetchStatus.textContent = requestedRange === 'all'
+      ? 'Loading long-range history...'
+      : 'Refreshing recent history...';
+  }
+
+  _healthRangeFetchKey = requestedRange;
+  _healthRangeFetchPromise = (async function() {
+    var payload = await fetchEdgeHealthSummary({
+      range: requestedRange,
+      from: requestWindow.from.toISOString(),
+      to: requestWindow.to.toISOString(),
+      points: getHealthPointsTarget(requestedRange)
+    });
+    applyEdgeHealthPayload(payload);
+    rebuildHealthStations(openStationIds);
+    updateHealthDiagnostics({
+      source: 'edge',
+      generatedAt: payload.generated_at,
+      dataAsOf: getHealthLatestDataAsOf(),
+      schemaVersion: payload.schema_version,
+      rangeLabel: payload.time_range ? (dashboardDiagFormatUtc(payload.time_range.from) + ' → ' + dashboardDiagFormatUtc(payload.time_range.to)) : '--',
+      stationCount: payload.station_count,
+      fetchDurationMs: payload._response_duration_ms,
+      cacheAgeS: 0,
+      stationSummary: (payload.stations || []).map(function(s) {
+        return s.station_id + ':' + (Array.isArray(s.feeds) ? s.feeds.length : 0) + 'f';
+      }).join(', '),
+      lastRefreshAt: Date.now(),
+      error: '',
+      note: requestedRange === 'all'
+        ? 'Expanded Station Health to the full retained window.'
+        : 'Recent Station Health window refreshed from the Edge Function.'
+    });
+    return true;
+  })().finally(function() {
+    _healthRangeFetchPromise = null;
+    _healthRangeFetchKey = '';
+  });
+
+  return _healthRangeFetchPromise;
+}
+
 /**
  * Edge-path fetch: one Edge Function call replaces N×7 PostgREST calls.
  */
 async function fetchLiveAllEdge() {
+  var requestedRange = getPreferredHealthFetchRange();
   var btn    = document.getElementById('btnFetchAll');
   var status = document.getElementById('fetchStatus');
   btn.innerHTML = '<span class="spinner"></span> Fetching...';
@@ -201,7 +336,13 @@ async function fetchLiveAllEdge() {
 
   try {
     status.textContent = 'Fetching all stations via Edge Function...';
-    var payload = await fetchEdgeHealthSummary();
+    var requestWindow = getHealthRequestedWindow(requestedRange);
+    var payload = await fetchEdgeHealthSummary({
+      range: requestedRange,
+      from: requestWindow.from.toISOString(),
+      to: requestWindow.to.toISOString(),
+      points: getHealthPointsTarget(requestedRange)
+    });
 
     applyEdgeHealthPayload(payload);
 
@@ -209,25 +350,7 @@ async function fetchLiveAllEdge() {
     status.textContent = 'Rendering charts...';
     await yieldToBrowser();
 
-    // Destroy existing charts and rebuild
-    liveCharts.forEach(function(c) { try { c.destroy(); } catch(e){} });
-    liveCharts = [];
-    _syncWindowCache = {};
-    _stationChartsRendered = {};
-    var container = document.getElementById('stationsContainer');
-    container.innerHTML = '';
-    container.style.display = '';
-    document.getElementById('loadingMsg').style.display = 'none';
-
-    for (var si = 0; si < STATIONS.length; si++) {
-      var st = STATIONS[si];
-      var data = stationData[st.id];
-      if (!data) continue;
-      status.textContent = 'Rendering ' + st.name + ' (' + (si+1) + '/' + STATIONS.length + ')...';
-      await yieldToBrowser();
-      var section = renderStationSection(st, data);
-      container.appendChild(section);
-    }
+    rebuildHealthStations(getOpenHealthStationIds());
 
     // Update forecast with currently selected station
     if (window.BatteryForecast) {
@@ -257,7 +380,9 @@ async function fetchLiveAllEdge() {
       stationSummary: stationSummary,
       lastRefreshAt: Date.now(),
       error: '',
-      note: 'Single health-summary Edge payload for all active stations.'
+      note: requestedRange === 'all'
+        ? 'Single health-summary Edge payload covering the full retained window for all active stations.'
+        : 'Single health-summary Edge payload for all active stations.'
     });
 
     btn.innerHTML = '&#128752; Fetch Live';

@@ -36,12 +36,13 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .station-header{background:var(--bg-card);padding:12px 18px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;transition:background .2s ease}
 .station-header h2{font-size:1.1rem;font-weight:600;display:flex;align-items:center;gap:8px}
 .station-header .freshness{font-size:.75rem;padding:3px 10px;border-radius:12px}
-.fresh-ok{background:#dff5eb;color:#1f9d6c}.fresh-stale{background:#fff1dd;color:#d0892d}.fresh-old{background:#ffe4e8;color:#d04f5f}
+.fresh-ok{background:#dff5eb;color:#1f9d6c}.fresh-stale{background:#fff1dd;color:#d0892d}.fresh-old{background:#ffe4e8;color:#d04f5f}.fresh-paused{background:#edf2f0;color:var(--text-sec)}
 .next-check-chip{font-size:.72rem;padding:2px 9px;border-radius:11px;border:1px solid transparent}
 .next-check-good{background:#dff5eb;color:#1f9d6c;border-color:#1f9d6c}
 .next-check-warn{background:#fff1dd;color:#d0892d;border-color:#d0892d}
 .next-check-late{background:#ffe4e8;color:#d04f5f;border-color:#d04f5f}
 .next-check-unknown{background:var(--bg);color:var(--text-muted);border-color:var(--border)}
+.next-check-paused{background:#f2f5f4;color:var(--text-sec);border-color:#9fb6af}
 .station-body{padding:14px 18px;transition:background .2s ease}
 .station-section.expanded{background:#dcebe7}
 .station-section.expanded .station-header{background:linear-gradient(135deg,#c8e3dc 0%,#cfe6df 100%)}
@@ -214,7 +215,7 @@ if (!sessionStorage.getItem('sw_auth')) { window.location.href = '../login.html'
       <a class="btn" data-station-link="funzi" href="station.html?table=funzi">Funzi</a>
       <a class="btn" data-station-link="spare" href="station.html?table=spare">Spare</a>
       <button class="btn-fetch" id="btnFetchAll" onclick="fetchLiveAll()" title="Pull latest data from Supabase for all stations">&#128752; Fetch Live</button>
-      <button class="btn" id="btnTriggerDL" onclick="triggerCIDownload()" title="Trigger GitHub Actions to download fresh data">&#9889; Download</button>
+      <a class="btn" id="btnTriggerDL" href="https://github.com/seaweed-station/seaweed-station.github.io/actions/workflows/download-data.yml" target="_blank" title="Open GitHub Actions workflow page for a manual run">&#9889; Actions</a>
       <span class="fetch-status" id="fetchStatus"></span>
     </div>
   </div>
@@ -398,6 +399,13 @@ var _deviceStatusById = {}; // { stationId: { nextCheckInAt, ... } }
 var _deviceConfigById = {}; // { stationId: { bulk_freq_hours, ... } }
 var _deviceSlotsById = {}; // { stationId: { A: 2, B: 1 } }
 var _healthDiagMeta = { source: 'idle' };
+var _healthLoadedWindow = null;
+var HEALTH_RECENT_WINDOW_DAYS = 30;
+var HEALTH_ALL_WINDOW_DAYS = 365;
+var HEALTH_CACHE_DAYS = 45;
+var HEALTH_CACHE_MAX_ENTRIES = 4000;
+var HEALTH_RECENT_POINTS = 500;
+var HEALTH_ALL_POINTS = 1500;
 
 function healthDiagTone(source, error) {
   if (error) return 'error';
@@ -461,6 +469,126 @@ function updateHealthDiagnostics(patch) {
   });
 }
 
+function parseHealthWindow(windowLike) {
+  if (!windowLike) return null;
+  var min = windowLike.min;
+  var max = windowLike.max;
+  if (windowLike.from != null) min = windowLike.from;
+  if (windowLike.to != null) max = windowLike.to;
+  min = min instanceof Date ? min.getTime() : new Date(min).getTime();
+  max = max instanceof Date ? max.getTime() : new Date(max).getTime();
+  if (!isFinite(min) || !isFinite(max) || max < min) return null;
+  return { min: min, max: max };
+}
+
+function mergeHealthLoadedWindow(windowLike) {
+  var parsed = parseHealthWindow(windowLike);
+  if (!parsed) return;
+  if (!_healthLoadedWindow) {
+    _healthLoadedWindow = parsed;
+    return;
+  }
+  _healthLoadedWindow = {
+    min: Math.min(_healthLoadedWindow.min, parsed.min),
+    max: Math.max(_healthLoadedWindow.max, parsed.max)
+  };
+}
+
+function getCurrentHealthLoadedWindow() {
+  if (_healthLoadedWindow) return _healthLoadedWindow;
+  var min = Infinity;
+  var max = -Infinity;
+  var ids = Object.keys(stationData || {});
+  for (var i = 0; i < ids.length; i++) {
+    var data = stationData[ids[i]];
+    if (!data || !Array.isArray(data.entries) || !data.entries.length) continue;
+    var first = data.entries[0].timestamp;
+    var last = data.entries[data.entries.length - 1].timestamp;
+    if (!(first instanceof Date) || isNaN(first.getTime()) || !(last instanceof Date) || isNaN(last.getTime())) continue;
+    if (first.getTime() < min) min = first.getTime();
+    if (last.getTime() > max) max = last.getTime();
+  }
+  return isFinite(min) && isFinite(max) && max >= min ? { min: min, max: max } : null;
+}
+
+function getHealthRequestedWindow(range) {
+  var now = new Date();
+  var days = range === 'all' ? HEALTH_ALL_WINDOW_DAYS : HEALTH_RECENT_WINDOW_DAYS;
+  return {
+    from: new Date(now.getTime() - days * 86400000),
+    to: now
+  };
+}
+
+function getHealthPointsTarget(range) {
+  return range === 'all' ? HEALTH_ALL_POINTS : HEALTH_RECENT_POINTS;
+}
+
+function healthDataCanServeRange(range) {
+  var loadedWindow = getCurrentHealthLoadedWindow();
+  if (!loadedWindow) return false;
+  var requestedWindow = getHealthRequestedWindow(range);
+  var reqFrom = requestedWindow.from.getTime();
+  var reqTo = requestedWindow.to.getTime();
+  var spanMs = Math.max(0, reqTo - reqFrom);
+  var toleranceMs = Math.min(6 * 3600000, Math.round(spanMs * 0.1));
+  return loadedWindow.min <= (reqFrom + toleranceMs) && loadedWindow.max >= (reqTo - toleranceMs);
+}
+
+function getOpenHealthStationIds() {
+  var openIds = [];
+  for (var i = 0; i < STATIONS.length; i++) {
+    var stationId = STATIONS[i].id;
+    var body = document.getElementById('body_' + stationId);
+    if (body && body.style.display !== 'none') openIds.push(stationId);
+  }
+  return openIds;
+}
+
+function rebuildHealthStations(openStationIds) {
+  liveCharts.forEach(function(c) { try { c.destroy(); } catch(e){} });
+  liveCharts = [];
+  _syncWindowCache = {};
+  _stationChartsRendered = {};
+
+  var container = document.getElementById('stationsContainer');
+  if (!container) return;
+  container.innerHTML = '';
+  container.style.display = '';
+  var loading = document.getElementById('loadingMsg');
+  if (loading) loading.style.display = 'none';
+
+  if (!STATIONS.length) {
+    container.innerHTML = '<div class="loading-msg" style="display:block">No stations are enabled. Open Settings and enable at least one station.</div>';
+    document.getElementById('forecastPanel').style.display = 'none';
+    return;
+  }
+
+  STATIONS.forEach(function(station) {
+    var data = stationData[station.id];
+    if (!data) return;
+    container.appendChild(renderStationSection(station, data));
+  });
+
+  bindForecastPanelToggle();
+  if (window.BatteryForecast) {
+    var sel = document.getElementById('fcStationSelect');
+    var selId = sel ? sel.value : (STATIONS[0] ? STATIONS[0].id : null);
+    if (selId && stationData[selId] && stationData[selId].entries.length) {
+      BatteryForecast.reset();
+      BatteryForecast.init({ allEntries: stationData[selId].entries });
+      document.getElementById('forecastPanel').style.display = '';
+    }
+  } else {
+    document.getElementById('forecastPanel').style.display = '';
+  }
+
+  var reopen = Array.isArray(openStationIds) ? openStationIds : [];
+  for (var i = 0; i < reopen.length; i++) {
+    if (document.getElementById('body_' + reopen[i])) toggleStation(reopen[i]);
+  }
+}
+
 </script>
 
 <!-- Sprint 6: Extracted health page modules -->
@@ -478,43 +606,7 @@ function updateHealthDiagnostics(patch) {
 <script>
 "use strict";
 function onAllLoaded() {
-  bindForecastPanelToggle();
-  document.getElementById('loadingMsg').style.display = 'none';
-  document.getElementById('stationsContainer').style.display = '';
-  var container = document.getElementById('stationsContainer');
-  container.innerHTML = '';
-
-  if (!STATIONS.length) {
-    container.innerHTML = '<div class="loading-msg" style="display:block">No stations are enabled. Open Settings and enable at least one station.</div>';
-    document.getElementById('forecastPanel').style.display = 'none';
-    return;
-  }
-
-  STATIONS.forEach(function(station) {
-    var data = stationData[station.id];
-    if (!data) return;
-    var section = renderStationSection(station, data);
-    container.appendChild(section);
-  });
-
-  // Init battery forecast panel — pick first station that has data
-  if (window.BatteryForecast) {
-    var firstId = null;
-    for (var fi = 0; fi < STATIONS.length; fi++) {
-      if (stationData[STATIONS[fi].id] && stationData[STATIONS[fi].id].entries.length > 0) {
-        firstId = STATIONS[fi].id; break;
-      }
-    }
-    if (firstId) {
-      var sel = document.getElementById('fcStationSelect');
-      if (sel) sel.value = firstId;
-      document.getElementById('forecastPanel').style.display = '';
-      BatteryForecast.init({ allEntries: stationData[firstId].entries });
-    }
-  } else {
-    // Show forecast panel even if BatteryForecast not available
-    document.getElementById('forecastPanel').style.display = '';
-  }
+  rebuildHealthStations();
 }
 
 function switchForecastStation(id) {
@@ -573,11 +665,24 @@ function renderStationSection(station, data) {
   sec.className = 'station-section';
   var e = data.entries;
   var hasData = e.length > 0;
+  var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(station.id) : null;
   var nextCheck = hasData ? estimateStationNextCheckIn(e, station.id) : { text: 'Next: --', summaryText: 'Next check in: --', cls: 'next-check-unknown' };
+
+  function formatDatasetEndLabel(endMs) {
+    if (!isFinite(endMs)) return '--';
+    return new Date(endMs).toLocaleString('en-GB', {
+      timeZone: 'UTC',
+      day: 'numeric', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }) + ' UTC';
+  }
 
   // Freshness bands: online <=24h, stale 24-48h, offline >48h.
   var freshnessClass = 'fresh-old', freshnessText = 'No data';
-  if (hasData) {
+  if (datasetMeta && datasetMeta.isActive) {
+    freshnessClass = 'fresh-paused';
+    freshnessText = datasetMeta.statusLabel + ' (' + formatDatasetEndLabel(datasetMeta.endMs) + ')';
+  } else if (hasData) {
     var ageHrs = Math.abs(Date.now() - e[e.length-1].timestamp.getTime()) / 3600000;
     var latestStr = e[e.length-1].timestamp.toLocaleString('en-GB', { timeZone:'UTC', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) + ' UTC';
     if (ageHrs <= 24) { freshnessClass = 'fresh-ok'; freshnessText = 'Online (' + timeAgo(e[e.length-1].timestamp) + ', ' + latestStr + ')'; }
@@ -605,6 +710,13 @@ function renderStationSection(station, data) {
     nonLiveNoticeHtml =
       '<div style="margin:8px 0 0;font-size:.72rem;color:var(--warning);">' +
       'Note: Non-live source can hide latest solar_v updates. Click Fetch Live for direct samples_raw data.' +
+      '</div>';
+  }
+  if (datasetMeta && datasetMeta.isActive) {
+    nonLiveNoticeHtml +=
+      '<div style="margin:8px 0 0;font-size:.74rem;color:var(--text-sec);padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">' +
+      '<strong>' + escHtml(datasetMeta.statusLabel) + '</strong> on ' + escHtml(formatDatasetEndLabel(datasetMeta.endMs)) +
+      (datasetMeta.note ? ' -- ' + escHtml(datasetMeta.note) : '') +
       '</div>';
   }
 
@@ -702,7 +814,7 @@ function _destroyStationCharts(stationId) {
   });
 }
 
-function setStationRange(stationId, range) {
+function _renderStationRange(stationId, range) {
   stationRanges[stationId] = range;
   // Invalidate cached sync windows for this station
   Object.keys(_syncWindowCache).forEach(function(k) { if (k.indexOf(stationId) === 0) delete _syncWindowCache[k]; });
@@ -745,6 +857,16 @@ function setStationRange(stationId, range) {
   body.appendChild(chartsDiv);
   _currentRangeMaxPts = MAX_CHART_POINTS; // reset
   _stationChartsRendered[stationId] = true;
+}
+
+function setStationRange(stationId, range, opts) {
+  opts = opts || {};
+  _renderStationRange(stationId, range);
+  if (!opts.skipEnsure && range === 'all' && typeof ensureHealthRangeLoaded === 'function' && !healthDataCanServeRange('all')) {
+    ensureHealthRangeLoaded('all').catch(function(err) {
+      console.warn('[Health] All-range fetch failed:', err && err.message ? err.message : err);
+    });
+  }
 }
 
 
@@ -799,8 +921,12 @@ function applySharedCacheToHealth(stationIds) {
         })
         .sort(function(a, b) { return a.timestamp - b.timestamp; });
       if (!entries.length) return;
-      stationData[id] = { entries: entries, raw: null };
+      var merged = (typeof mergeHealthEntries === 'function')
+        ? mergeHealthEntries(stationData[id] && stationData[id].entries, entries)
+        : entries;
+      stationData[id] = { entries: merged, raw: null };
       _stationDataSource[id] = { source: cached.source || 'cache', savedAt: cached.savedAt || null };
+      mergeHealthLoadedWindow({ from: entries[0].timestamp, to: entries[entries.length - 1].timestamp });
       changed = true;
     } catch (e) {
       console.warn('[Health] Shared cache sync failed for ' + id + ':', e.message);
@@ -808,29 +934,7 @@ function applySharedCacheToHealth(stationIds) {
   });
 
   if (!changed) return;
-
-  liveCharts.forEach(function(c) { try { c.destroy(); } catch(e){} });
-  liveCharts = [];
-  _syncWindowCache = {};
-  _stationChartsRendered = {};
-  var container = document.getElementById('stationsContainer');
-  if (!container) return;
-  container.innerHTML = '';
-  container.style.display = '';
-  var loading = document.getElementById('loadingMsg');
-  if (loading) loading.style.display = 'none';
-
-  if (!STATIONS.length) {
-    container.innerHTML = '<div class="loading-msg" style="display:block">No stations are enabled. Open Settings and enable at least one station.</div>';
-    document.getElementById('forecastPanel').style.display = 'none';
-    return;
-  }
-
-  STATIONS.forEach(function(st) {
-    var data = stationData[st.id];
-    if (!data) return;
-    container.appendChild(renderStationSection(st, data));
-  });
+  rebuildHealthStations(getOpenHealthStationIds());
 }
 
 onDashboardDataRefresh(function(msg) {
@@ -858,6 +962,7 @@ onDashboardDataRefresh(function(msg) {
     if (cached && cached.entries.length > 0) {
       stationData[STATIONS[pi].id] = cached;
       _stationDataSource[STATIONS[pi].id] = { source: cached.source || 'cache', savedAt: cached.savedAt || null };
+      mergeHealthLoadedWindow({ from: cached.entries[0].timestamp, to: cached.entries[cached.entries.length - 1].timestamp });
       preSeeded = true;
     }
   }
@@ -878,37 +983,9 @@ onDashboardDataRefresh(function(msg) {
 
     (async function() {
       try {
-        var payload = await fetchEdgeHealthSummary();
+        var payload = await fetchEdgeHealthSummary({ range: 'recent' });
         applyEdgeHealthPayload(payload);
-
-        // Rebuild all station sections
-        liveCharts.forEach(function(c) { try { c.destroy(); } catch(e){} });
-        liveCharts = [];
-        _syncWindowCache = {};
-        _stationChartsRendered = {};
-        var container = document.getElementById('stationsContainer');
-        container.innerHTML = '';
-        container.style.display = '';
-        document.getElementById('loadingMsg').style.display = 'none';
-
-        for (var si = 0; si < STATIONS.length; si++) {
-          var st = STATIONS[si];
-          var data = stationData[st.id];
-          if (!data) continue;
-          container.appendChild(renderStationSection(st, data));
-        }
-
-        // Init forecast
-        bindForecastPanelToggle();
-        if (window.BatteryForecast) {
-          var sel = document.getElementById('fcStationSelect');
-          var selId = sel ? sel.value : (STATIONS[0] ? STATIONS[0].id : null);
-          if (selId && stationData[selId] && stationData[selId].entries.length) {
-            BatteryForecast.reset();
-            BatteryForecast.init({ allEntries: stationData[selId].entries });
-            document.getElementById('forecastPanel').style.display = '';
-          }
-        }
+        rebuildHealthStations(getOpenHealthStationIds());
 
         var stationSummary = (payload.stations || []).map(function(s) {
           return s.station_id + ':' + (Array.isArray(s.feeds) ? s.feeds.length : 0) + 'f';

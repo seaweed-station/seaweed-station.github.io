@@ -266,13 +266,15 @@
     location.replace(r || 'index.html');
   }
 
-  // Legacy fallback password — used when no access_control config exists
-  var LEGACY_PASSWORD = 'mwani';
-
-  // Pre-fetch access control roles on page load so login is instant
-  var _rolesPromise = (typeof fetchAccessControl === 'function')
-    ? fetchAccessControl().catch(function() { return []; })
-    : Promise.resolve([]);
+  function showLoginError(message, keepValue) {
+    var errMsg = document.getElementById('errMsg');
+    var btn = document.querySelector('#loginForm .btn');
+    if (btn) btn.disabled = false;
+    errMsg.textContent = message || 'Incorrect password. Please try again.';
+    errMsg.classList.add('show');
+    if (!keepValue) document.getElementById('pwd').value = '';
+    document.getElementById('pwd').focus();
+  }
 
   function setSessionRole(role) {
     sessionStorage.setItem('sw_auth', 'ok');
@@ -294,58 +296,17 @@
     if (btn) btn.disabled = true;
     errMsg.classList.remove('show');
 
-    _rolesPromise.then(function(roles) {
-      // If roles exist, match password against them
-      if (roles && roles.length) {
-        var matched = null;
-        for (var i = 0; i < roles.length; i++) {
-          if (roles[i].password === pwd) { matched = roles[i]; break; }
-        }
-        if (matched) {
-          setSessionRole(matched);
-          var r = new URLSearchParams(location.search).get('r');
-          goWithWaterTransition(r || 'index.html');
-          return;
-        }
-      } else {
-        // No access_control configured → legacy single-password mode
-        if (pwd === LEGACY_PASSWORD) {
-          setSessionRole({
-            roleId: 'admin',
-            allowedStations: ['*'],
-            canViewSettings: true,
-            canViewBattery: true,
-            canViewStationHealth: true
-          });
-          var r = new URLSearchParams(location.search).get('r');
-          goWithWaterTransition(r || 'index.html');
-          return;
-        }
-      }
-
-      // No match
-      if (btn) btn.disabled = false;
-      errMsg.classList.add('show');
-      document.getElementById('pwd').value = '';
-      document.getElementById('pwd').focus();
-    }).catch(function() {
-      // Network error during role fetch — try legacy password
-      if (pwd === LEGACY_PASSWORD) {
-        setSessionRole({
-          roleId: 'admin',
-          allowedStations: ['*'],
-          canViewSettings: true,
-          canViewBattery: true,
-          canViewStationHealth: true
-        });
-        var r = new URLSearchParams(location.search).get('r');
-        goWithWaterTransition(r || 'index.html');
+    authenticateAccessRole(pwd).then(function(role) {
+      if (!role) {
+        showLoginError('Incorrect password. Please try again.');
         return;
       }
-      if (btn) btn.disabled = false;
-      errMsg.classList.add('show');
-      document.getElementById('pwd').value = '';
-      document.getElementById('pwd').focus();
+
+      setSessionRole(role);
+      var r = new URLSearchParams(location.search).get('r');
+      goWithWaterTransition(r || 'index.html');
+    }).catch(function(err) {
+      showLoginError((err && err.message) || 'Login service unavailable. Please try again later.', true);
     });
 
     return false;

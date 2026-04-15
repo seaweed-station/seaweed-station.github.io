@@ -222,8 +222,8 @@ function getCachedStationData(stationId) {
 // SHARED LOCALSTORAGE PERSISTENCE  (same key as station.html)
 // Key: seaweed_cache_<stationId>  Shape: { allEntries, savedAt }
 // ============================================================
-function saveCacheData(stationId, entries) {
-  saveStationCache(stationId, entries, { source: 'live' });
+function saveCacheData(stationId, entries, meta) {
+  saveStationCache(stationId, entries, Object.assign({ source: 'live' }, meta || {}));
 }
 
 // ============================================================

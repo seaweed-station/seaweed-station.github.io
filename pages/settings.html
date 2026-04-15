@@ -5,11 +5,10 @@
 <script>if(sessionStorage.getItem('sw_auth')!=='ok'){location.replace('../login.html?r='+encodeURIComponent(location.href));}</script>
 <script>
 (function () {
-  // Role-based settings guard: only admin role (or legacy mode) can access
+  // Role-based settings guard: only users with settings access can proceed.
   var role = sessionStorage.getItem('sw_role');
   var SETTINGS_KEY = 'sw_settings_auth';
 
-  // If role system is active, check for settings permission
   if (role) {
     try {
       var features = JSON.parse(sessionStorage.getItem('sw_features') || '{}');
@@ -23,16 +22,8 @@
     return;
   }
 
-  // Legacy fallback: prompt-based password (when no role system is configured)
-  var SETTINGS_PW = 'changeme';
-  if (sessionStorage.getItem(SETTINGS_KEY) === 'ok') return;
-  var input = window.prompt('Enter settings password:');
-  if (input !== SETTINGS_PW) {
-    alert('Incorrect settings password.');
-    location.replace('../ESP32_Weather_Station_Dashboard.html');
-    return;
-  }
-  sessionStorage.setItem(SETTINGS_KEY, 'ok');
+  alert('Settings access requires a role-based login.');
+  location.replace('../login.html?r=' + encodeURIComponent(location.href));
 })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -326,7 +317,7 @@ input.wide { max-width: none; }
 }
 .device-profile-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 1fr) minmax(140px, 0.8fr) minmax(220px, 1.2fr);
+  grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 0.9fr) minmax(260px, 1.7fr) minmax(220px, 1.2fr);
   gap: 10px;
   align-items: center;
   border: 1px solid var(--border);
@@ -427,17 +418,9 @@ input.wide { max-width: none; }
       <h1>Dashboard Settings</h1>
       <div class="sub">Seaweed Station Network -- All Tables</div>
     </div>
-  </div>
-  <div style="display:flex;gap:8px;align-items:center">
-    <button class="btn btn-primary" onclick="saveSettings()">&#10003; Save Browser Copy</button>
-    <button class="btn" onclick="pushDeviceProfilesNow()">&#9650; Push Config to Supabase</button>
-    <div class="save-status" id="saveStatusTop">&#10003; Browser copy saved!</div>
-    <span class="status-note" id="pushConfigStatusTop"></span>
-    <a class="btn" href="../ESP32_Weather_Station_Dashboard.html">&#8592; Back to Overview</a>
-  </div>
-</header>
 
-<!-- ═══════════════════════════════════════════════════ MAIN ══════ -->
+  alert('Settings access requires a role-based login.');
+  location.replace('../login.html?r=' + encodeURIComponent(location.href));
 <main class="main">
 
   <!-- ─────────────────────────────────────── Save / Apply (Top) ───── -->
@@ -495,10 +478,10 @@ input.wide { max-width: none; }
 
       <div class="field">
         <label>Active Devices &amp; Install Date</label>
-        <div class="field-hint">Choose which devices appear in Overview/Station/Health. Data before install date is ignored.</div>
+        <div class="field-hint">Choose which devices appear in Overview/Station/Health. Data before install date is ignored. Dataset pause metadata is shared across web and local views.</div>
         <div class="info-box info" style="margin-top:8px;">
           <div class="info-title">Global station metadata</div>
-          Install date and coordinates are written to <strong>dashboard_config.device_profiles</strong> only when you click <strong>Push Config to Supabase</strong>.
+          Install date, dataset pause status, end date, note, and coordinates are written to <strong>dashboard_config.device_profiles</strong> only when you click <strong>Push Config to Supabase</strong>.
         </div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
           <button class="btn" onclick="refreshDeviceProfilesFromSupabase()">&#128260; Refresh from Supabase</button>
@@ -527,22 +510,18 @@ input.wide { max-width: none; }
         Your PC does not need to be on.
       </div>
 
-      <div class="field-group" style="margin-bottom:12px">
-        <label for="githubPat">GitHub Personal Access Token <span style="color:var(--text-muted);font-weight:400">(optional &mdash; enables Trigger Download button)</span></label>
-        <div style="display:flex;gap:8px">
-          <input type="password" id="githubPat" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" style="flex:1;font-family:monospace;font-size:0.85rem;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
-          <button class="btn" onclick="saveGithubPat()" style="white-space:nowrap">Save PAT</button>
-        </div>
-        <div class="field-hint">Needs <code>actions:write</code> scope. Stored in localStorage only &mdash; never sent anywhere except the GitHub API. <a href="https://github.com/settings/tokens/new?scopes=repo&description=Seaweed+Dashboard+Download+Trigger" target="_blank">Create one &rarr;</a></div>
-        <span id="patStatus" style="font-size:.8rem;color:var(--success);display:none">&#10003; Saved</span>
+      <div class="info-box">
+        <div class="info-title">Manual runs</div>
+        Browser-triggered workflow dispatch has been removed from the public dashboard.<br>
+        To run the download manually, use the GitHub Actions workflow page in the organization repo.
       </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn btn-primary" id="btnTriggerDL" onclick="triggerCIDownload()" title="Trigger GitHub Actions workflow_dispatch">&#9889; Trigger Download Now</button>
-        <a class="btn" href="https://github.com/bosunjm-cloud/seaweed-station-dashboard/actions/workflows/download-data.yml" target="_blank">
+        <a class="btn btn-primary" id="btnTriggerDL" href="https://github.com/seaweed-station/seaweed-station.github.io/actions/workflows/download-data.yml" target="_blank" title="Open GitHub Actions workflow page for a manual run">&#9889; Open Actions</a>
+        <a class="btn" href="https://github.com/seaweed-station/seaweed-station.github.io/actions/workflows/download-data.yml" target="_blank">
           &#128279; View run history
         </a>
-        <a class="btn" href="https://github.com/bosunjm-cloud/seaweed-station-dashboard/edit/main/.github/workflows/download-data.yml" target="_blank">
+        <a class="btn" href="https://github.com/seaweed-station/seaweed-station.github.io/edit/main/.github/workflows/download-data.yml" target="_blank">
           &#9998; Edit schedule (change cron)
         </a>
       </div>
@@ -598,8 +577,9 @@ input.wide { max-width: none; }
       <div class="info-box info">
         <div class="info-title">How it works</div>
         Each role has a password and a set of allowed stations/features.<br>
-        When someone logs in, the dashboard checks their password against these roles and
-        restricts navigation accordingly. This is a <strong>convenience gate</strong>, not a security boundary.
+        Stored passwords are no longer shown in the browser UI.<br>
+        Enter a new password only when rotating a role, and leave it blank to keep the current stored password.<br>
+        This is still a <strong>convenience gate</strong>, not a security boundary.
       </div>
 
       <div id="accessRolesList"></div>
@@ -688,6 +668,37 @@ function normalizeInstallDateUtc(value) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0)).toISOString();
 }
 
+function normalizeDatasetEndForInput(value) {
+  if (!value) return '';
+  var s = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  var d = new Date(ensureUTC(s));
+  if (isNaN(d.getTime())) return '';
+  return d.toISOString().slice(0, 10);
+}
+
+function normalizeDatasetEndUtc(value) {
+  if (!value) return null;
+  var s = String(value).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s + 'T23:59:59.999Z';
+  var d = new Date(ensureUTC(s));
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function normalizeDatasetStatus(value) {
+  var s = String(value || '').trim().toLowerCase();
+  if (s === 'paused' || s === 'finished') return s;
+  return 'active';
+}
+
+function normalizeDatasetEndNote(value) {
+  if (value == null) return null;
+  var s = String(value).trim();
+  return s || null;
+}
+
 function normalizeMapCoord(value) {
   if (value === null || value === undefined) return null;
   var s = String(value).trim();
@@ -720,6 +731,9 @@ function getRenderedDeviceProfiles() {
     if (!id) continue;
     var enabledEl = row.querySelector('input[data-role="enabled"]');
     var dateEl = row.querySelector('input[data-role="installDate"]');
+    var datasetStatusEl = row.querySelector('select[data-role="datasetStatus"]');
+    var datasetEndEl = row.querySelector('input[data-role="datasetEndDate"]');
+    var datasetNoteEl = row.querySelector('input[data-role="datasetEndNote"]');
     var latEl = row.querySelector('input[data-role="mapLat"]');
     var lonEl = row.querySelector('input[data-role="mapLon"]');
     var p = {
@@ -727,6 +741,9 @@ function getRenderedDeviceProfiles() {
       name: row.getAttribute('data-name') || titleCaseDeviceId(id),
       enabled: enabledEl ? !!enabledEl.checked : true,
       installDateUtc: normalizeInstallDateUtc(dateEl ? dateEl.value : ''),
+      datasetStatus: normalizeDatasetStatus(datasetStatusEl ? datasetStatusEl.value : ''),
+      datasetEndUtc: normalizeDatasetEndUtc(datasetEndEl ? datasetEndEl.value : ''),
+      datasetEndNote: normalizeDatasetEndNote(datasetNoteEl ? datasetNoteEl.value : ''),
       dataFolder: row.getAttribute('data-folder') || ('data_' + id),
       channelId: row.getAttribute('data-channel-id') || '',
       apiKey: row.getAttribute('data-api-key') || '',
@@ -762,6 +779,8 @@ function renderDeviceProfiles(profiles) {
     var safeId = escHtml(id);
     var safeName = escHtml(String(p.name || titleCaseDeviceId(id)));
     var safeFolder = escHtml(p.dataFolder || ('data_' + id));
+    var safeDatasetNote = escHtml(p.datasetEndNote || '');
+    var datasetStatus = normalizeDatasetStatus(p.datasetStatus);
     row.innerHTML =
       '<div>' +
         '<div class="device-profile-check">' +
@@ -774,7 +793,19 @@ function renderDeviceProfiles(profiles) {
         '<label style="font-size:0.68rem">Install Date (UTC)</label>' +
         '<input type="date" data-role="installDate" value="' + normalizeInstallDateForInput(p.installDateUtc) + '">' +
       '</div>' +
-      '<div style="font-size:0.72rem;color:var(--text-muted)">Data folder: <strong style="color:var(--text-sec)">' + safeFolder + '</strong></div>' +
+      '<div class="field" style="gap:3px">' +
+        '<label style="font-size:0.68rem">Dataset status</label>' +
+        '<div style="display:grid;grid-template-columns:minmax(110px,0.8fr) minmax(130px,1fr);gap:6px">' +
+          '<select data-role="datasetStatus">' +
+            '<option value="active"' + (datasetStatus === 'active' ? ' selected' : '') + '>Active</option>' +
+            '<option value="paused"' + (datasetStatus === 'paused' ? ' selected' : '') + '>Paused</option>' +
+            '<option value="finished"' + (datasetStatus === 'finished' ? ' selected' : '') + '>Finished campaign</option>' +
+          '</select>' +
+          '<input type="date" data-role="datasetEndDate" value="' + normalizeDatasetEndForInput(p.datasetEndUtc) + '" title="Dataset end date (UTC)">' +
+        '</div>' +
+        '<input type="text" data-role="datasetEndNote" placeholder="Units shipped, dataset paused" value="' + safeDatasetNote + '">' +
+        '<div style="font-size:0.72rem;color:var(--text-muted)">Data folder: <strong style="color:var(--text-sec)">' + safeFolder + '</strong></div>' +
+      '</div>' +
       '<div class="field" style="gap:3px">' +
         '<label style="font-size:0.68rem">Coordinates (lat, lon)</label>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
@@ -786,10 +817,16 @@ function renderDeviceProfiles(profiles) {
 
     var enabledEl = row.querySelector('input[data-role="enabled"]');
     var dateEl = row.querySelector('input[data-role="installDate"]');
+    var datasetStatusEl = row.querySelector('select[data-role="datasetStatus"]');
+    var datasetEndEl = row.querySelector('input[data-role="datasetEndDate"]');
+    var datasetNoteEl = row.querySelector('input[data-role="datasetEndNote"]');
     var latEl = row.querySelector('input[data-role="mapLat"]');
     var lonEl = row.querySelector('input[data-role="mapLon"]');
     if (enabledEl) enabledEl.addEventListener('change', updatePreviews);
     if (dateEl) dateEl.addEventListener('change', updatePreviews);
+    if (datasetStatusEl) datasetStatusEl.addEventListener('change', updatePreviews);
+    if (datasetEndEl) datasetEndEl.addEventListener('change', updatePreviews);
+    if (datasetNoteEl) datasetNoteEl.addEventListener('input', updatePreviews);
     if (latEl) latEl.addEventListener('change', updatePreviews);
     if (lonEl) lonEl.addEventListener('change', updatePreviews);
   });
@@ -815,6 +852,9 @@ function mergeProfilesForRender(baseProfiles, discoveredIds) {
       name: String(p.name || titleCaseDeviceId(id)),
       enabled: p.enabled !== false,
       installDateUtc: normalizeInstallDateUtc(p.installDateUtc),
+      datasetStatus: normalizeDatasetStatus(p.datasetStatus),
+      datasetEndUtc: normalizeDatasetEndUtc(p.datasetEndUtc),
+      datasetEndNote: normalizeDatasetEndNote(p.datasetEndNote),
       dataFolder: p.dataFolder || ('data_' + id),
       channelId: p.channelId || '',
       apiKey: p.apiKey || '',
@@ -935,8 +975,8 @@ function showTransientMessage(elementIds, message, isError, durationMs) {
 function persistSettingsToBrowser(showStatus) {
   var cfg = getFormConfig();
 
-  // Include access roles in the config
-  cfg.accessControl = getRenderedAccessRoles();
+  // Include only sanitized role metadata in browser storage.
+  cfg.accessControl = sanitizeAccessRolesForBrowser(getRenderedAccessRoles());
 
   localStorage.setItem('seaweed_dashboard_config', JSON.stringify(cfg));
 
@@ -998,53 +1038,6 @@ function downloadConfigJson() {
   URL.revokeObjectURL(url);
 }
 
-//  GitHub PAT (stored separately — sensitive) 
-function saveGithubPat() {
-  if (!ensureSettingsUnlocked()) return;
-  var pat = (document.getElementById('githubPat').value || '').trim();
-  if (pat) {
-    localStorage.setItem('seaweed_github_pat', pat);
-  } else {
-    localStorage.removeItem('seaweed_github_pat');
-  }
-  var s = document.getElementById('patStatus');
-  s.style.display = 'inline'; s.textContent = pat ? '\u2713 Saved' : '\u2713 Cleared';
-  setTimeout(function() { s.style.display = 'none'; }, 3000);
-}
-
-function triggerCIDownload() {
-  if (!ensureSettingsUnlocked()) return;
-  var pat = localStorage.getItem('seaweed_github_pat');
-  if (!pat) {
-    alert('Set a GitHub Personal Access Token above first (needs actions:write scope).');
-    return;
-  }
-  var btn = document.getElementById('btnTriggerDL');
-  var status = document.getElementById('triggerStatus');
-  btn.disabled = true; btn.textContent = '\u26A1 Triggering...';
-  status.textContent = '';
-
-  fetch('https://api.github.com/repos/bosunjm-cloud/seaweed-station-dashboard/actions/workflows/download-data.yml/dispatches', {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/vnd.github+json',
-      'Authorization': 'Bearer ' + pat,
-      'X-GitHub-Api-Version': '2022-11-28'
-    },
-    body: JSON.stringify({ ref: 'main' })
-  }).then(function(res) {
-    if (res.status === 204) {
-      status.innerHTML = '<span style="color:var(--success)">\u2705 Workflow triggered! Check <a href="https://github.com/bosunjm-cloud/seaweed-station-dashboard/actions" target="_blank">Actions</a> for progress.</span>';
-    } else {
-      return res.json().then(function(j) { throw new Error(j.message || ('HTTP ' + res.status)); });
-    }
-  }).catch(function(err) {
-    status.innerHTML = '<span style="color:var(--danger)">\u274C Failed: ' + err.message + '</span>';
-  }).finally(function() {
-    btn.disabled = false; btn.textContent = '\u26A1 Trigger Download Now';
-  });
-}
-
 //  Load saved config into the form on page load 
 function loadSavedConfig() {
   var saved = {};
@@ -1074,11 +1067,7 @@ function loadSavedConfig() {
     : getDefaultDeviceProfiles();
   renderDeviceProfiles(mergeProfilesForRender(initialProfiles, []));
 
-  // Restore GitHub PAT (masked — just show that one is saved)
-  var savedPat = localStorage.getItem('seaweed_github_pat');
-  if (savedPat) {
-    document.getElementById('githubPat').value = savedPat;
-  }
+  try { localStorage.removeItem('seaweed_github_pat'); } catch (e) {}
 
   // Load access roles: prefer Supabase, fall back to saved config
   loadAccessRolesFromConfig(saved);
@@ -1145,7 +1134,7 @@ function renderAccessRoles(roles) {
         '</div>' +
         '<div class="field" style="gap:2px;flex:0 0 auto">' +
           '<label style="font-size:0.68rem">Password</label>' +
-          '<input type="text" data-role-field="password" value="' + escHtml(role.password || '') + '" placeholder="password" style="width:150px">' +
+          '<input type="password" data-role-field="password" value="" placeholder="Leave blank to keep current" autocomplete="new-password" style="width:190px">' +
         '</div>' +
         '<button class="role-remove-btn" onclick="removeAccessRole(' + idx + ')">&#10005; Remove</button>' +
       '</div>';
@@ -1259,8 +1248,16 @@ async function pushAccessRolesNow() {
   var status = document.getElementById('rolesPushStatus');
   if (status) status.textContent = 'Pushing roles to Supabase...';
   try {
-    var roles = persistSettingsToBrowser(false).accessControl || getRenderedAccessRoles();
-    await pushAccessControlToSupabase(roles);
+    var roles = getRenderedAccessRoles();
+    var adminPassword = window.prompt('Enter the current admin password to authorize role changes:');
+    if (adminPassword === null) {
+      if (status) status.textContent = 'Role update cancelled.';
+      setTimeout(function() { if (status) status.textContent = ''; }, 3000);
+      return;
+    }
+    var savedRoles = await pushAccessControlToSupabase(roles, adminPassword);
+    renderAccessRoles(savedRoles);
+    persistSettingsToBrowser(false);
     if (status) status.innerHTML = '<span style="color:var(--success)">&#10003; Roles pushed to Supabase.</span>';
     setTimeout(function() { if (status) status.textContent = ''; }, 4000);
   } catch (err) {
@@ -1270,27 +1267,27 @@ async function pushAccessRolesNow() {
 
 function loadAccessRolesFromConfig(savedCfg) {
   // Try fetching from Supabase first; fall back to localStorage config
-  fetchAccessControl().then(function(roles) {
+  fetchAccessRoleDefinitions().then(function(roles) {
     if (roles && roles.length) {
       renderAccessRoles(roles);
     } else if (Array.isArray(savedCfg.accessControl) && savedCfg.accessControl.length) {
-      renderAccessRoles(savedCfg.accessControl);
+      renderAccessRoles(sanitizeAccessRolesForBrowser(savedCfg.accessControl));
     } else {
-      // Default: single admin role
+      // Empty bootstrap template only; production passwords live in Supabase.
       renderAccessRoles([{
         roleId: 'admin',
-        password: 'mwani',
+        password: '',
         allowedStations: ['*'],
         features: { settings: true, battery: true, stationHealth: true }
       }]);
     }
   }).catch(function() {
     if (Array.isArray(savedCfg.accessControl) && savedCfg.accessControl.length) {
-      renderAccessRoles(savedCfg.accessControl);
+      renderAccessRoles(sanitizeAccessRolesForBrowser(savedCfg.accessControl));
     } else {
       renderAccessRoles([{
         roleId: 'admin',
-        password: 'mwani',
+        password: '',
         allowedStations: ['*'],
         features: { settings: true, battery: true, stationHealth: true }
       }]);

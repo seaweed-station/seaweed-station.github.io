@@ -7,6 +7,15 @@ function syncFiniteNumber(value) {
   return isFinite(n) ? n : null;
 }
 
+function formatHealthDatasetEndUtcLabel(endMs) {
+  if (!isFinite(endMs)) return '--';
+  return new Date(endMs).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: 'UTC'
+  }) + ' UTC';
+}
+
 function formatSyncStopReason(reasonValue) {
   var reason = syncFiniteNumber(reasonValue);
   if (reason === null) return null;
@@ -109,6 +118,7 @@ function syncTransferSummary(row) {
 function renderSummaryCards(container, entries, stationId) {
   var e = entries;
   var latest = e[e.length - 1];
+  var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(stationId) : null;
   var slot1Enabled = isSatelliteVisible(stationId, e, 1);
   var slot2Enabled = isSatelliteVisible(stationId, e, 2);
   var nextCheck = estimateStationNextCheckIn(e, stationId);
@@ -147,6 +157,15 @@ function renderSummaryCards(container, entries, stationId) {
 
   var row = document.createElement('div');
   row.className = 'summary-row';
+  var datasetCard = '';
+  if (datasetMeta && datasetMeta.isActive) {
+    datasetCard = '<div class="sum-card">' +
+      '<h4>Dataset status</h4>' +
+      '<div class="sum-val" style="color:' + (datasetMeta.status === 'finished' ? 'var(--success)' : 'var(--warning)') + '">' + escHtml(datasetMeta.statusLabel) + '</div>' +
+      '<div class="sum-sub">End: ' + escHtml(formatHealthDatasetEndUtcLabel(datasetMeta.endMs)) + '</div>' +
+      '<div class="sum-sub">Reason: ' + escHtml(datasetMeta.note || '--') + '</div>' +
+    '</div>';
+  }
 
   // Firmware strings
   var t0Fw  = (t0  && t0.t0FwVersion)   ? escHtml('v' + t0.t0FwVersion + (t0.t0BuildDate ? ' (' + t0.t0BuildDate + ')' : '')) : '--';
@@ -377,6 +396,7 @@ function renderSummaryCards(container, entries, stationId) {
     : '';
 
   row.innerHTML =
+    datasetCard +
     '<div class="sum-card">' +
       '<h4>Gateway and System</h4>' +
       '<div class="sum-val" style="color:' + batColor(t0DisplayPct) + '">' + safeFixed(t0DisplayPct, 0, '%') + '</div>' +

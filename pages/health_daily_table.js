@@ -3,6 +3,7 @@
 
 function renderDailyHealth(container, entries, stationId) {
   if (!entries.length) return;
+  var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(stationId) : null;
   if (!_stationLogsVisibleDays[stationId] || _stationLogsVisibleDays[stationId] < STATION_LOG_ROWS_STEP) {
     _stationLogsVisibleDays[stationId] = STATION_LOG_ROWS_STEP;
   }
@@ -26,6 +27,15 @@ function renderDailyHealth(container, entries, stationId) {
 
   var wrap = document.createElement('div');
   wrap.className = 'health-table-wrap';
+
+  function formatDatasetEndLabel(endMs) {
+    if (!isFinite(endMs)) return '--';
+    return new Date(endMs).toLocaleString('en-GB', {
+      day: '2-digit', month: 'short',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+      timeZone: 'UTC'
+    }) + ' UTC';
+  }
 
   function num(v) {
     if (v === null || v === undefined || v === '' || isNaN(v)) return null;
@@ -402,6 +412,7 @@ function renderDailyHealth(container, entries, stationId) {
   var visibleDays = Math.max(STATION_LOG_ROWS_STEP, Number(_stationLogsVisibleDays[stationId]) || STATION_LOG_ROWS_STEP);
   var days = allDays.slice(0, visibleDays);
   var nowMs = Date.now();
+  var datasetEndDayKey = datasetMeta && datasetMeta.isActive ? datasetMeta.endDayKey : null;
 
   for (var di = 0; di < days.length; di++) {
     var day = days[di];
@@ -409,6 +420,9 @@ function renderDailyHealth(container, entries, stationId) {
     var dl  = new Date(day + 'T12:00:00Z'); // noon UTC avoids day-boundary shifts
     var tz  = stationId ? stationTz(stationId) : undefined;
     var dateLabel = dl.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', weekday: 'short' });
+    if (datasetEndDayKey && day === datasetEndDayKey) {
+      dateLabel += ' <span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:var(--warning-dim);color:var(--warning);font-size:0.68rem;font-weight:700">' + escHtml(datasetMeta.pillLabel) + '</span>';
+    }
 
     var dayStart = Date.parse(day + 'T00:00:00Z');
     var dayEnd = dayStart + 24 * 3600000;
@@ -573,6 +587,12 @@ function renderDailyHealth(container, entries, stationId) {
   }
 
   html += '</tbody></table>';
+  if (datasetMeta && datasetMeta.isActive) {
+    html = '<div style="margin:0 0 10px;font-size:0.74rem;color:var(--text-sec);padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">' +
+      '<strong>' + escHtml(datasetMeta.statusLabel) + '</strong> on ' + escHtml(formatDatasetEndLabel(datasetMeta.endMs)) +
+      (datasetMeta.note ? ' -- ' + escHtml(datasetMeta.note) : '') +
+      '</div>' + html;
+  }
   if (allDays.length > STATION_LOG_ROWS_STEP) {
     html += '<div class="config-log-actions">';
     if (visibleDays < allDays.length) {

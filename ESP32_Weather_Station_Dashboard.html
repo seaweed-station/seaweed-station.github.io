@@ -95,6 +95,8 @@ a:hover { text-decoration: underline; }
   background: var(--bg-card);
 }
 .table-card.status-nc::before { background: #a9cfc5; }
+.table-card.status-paused::before { background: var(--warning); }
+.table-card.status-finished::before { background: var(--success); }
 .table-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .table-card-header h2 { font-size: 1.15rem; font-weight: 700; }
 .table-card-header .location { font-size: 0.78rem; color: var(--text-sec); }
@@ -105,6 +107,7 @@ a:hover { text-decoration: underline; }
 .next-check-warn { color: var(--warning); }
 .next-check-late { color: var(--danger); }
 .next-check-unknown { color: var(--text-muted); }
+.next-check-paused { color: var(--text-sec); }
 .station-metrics { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
 .table-badge {
   display: inline-block; padding: 3px 10px; border-radius: 12px;
@@ -114,6 +117,8 @@ a:hover { text-decoration: underline; }
 .badge-warn { background: var(--warning-dim); color: var(--warning); }
 .badge-err { background: var(--danger-dim); color: var(--danger); }
 .badge-nc { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+.badge-paused { background: var(--warning-dim); color: var(--warning); }
+.badge-finished { background: var(--success-dim); color: var(--success); }
 
 /* -- Metrics grid -------------------------------------------------- */
 .metrics-grid { display: contents; }
@@ -583,9 +588,32 @@ function formatEtaMinutes(mins) {
   return m ? (h + 'h ' + m + 'm') : (h + 'h');
 }
 
+function formatDatasetEndUtcLabel(endMs) {
+  if (!isFinite(endMs)) return '--';
+  return new Date(endMs).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: 'UTC'
+  }) + ' UTC';
+}
+
+function escHtml(str) {
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(String(str == null ? '' : str)));
+  return d.innerHTML;
+}
+
 var NEXT_CHECK_PIPELINE_BUFFER_MIN = 12;
 
 function formatNextCheckIn(tableId, lastUpdate, dataHealth) {
+  var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(tableId) : null;
+  if (datasetMeta && datasetMeta.isActive) {
+    var pauseText = datasetMeta.note || datasetMeta.statusLabel;
+    return {
+      html: '<span class="next-check next-check-paused">' + escHtml(pauseText) + '</span>',
+      text: pauseText
+    };
+  }
   var statusRow = _deviceStatusById && _deviceStatusById[tableId] ? _deviceStatusById[tableId] : null;
   var nextFromStatus = statusRow && statusRow.nextCheckInAt ? statusRow.nextCheckInAt : null;
   if (nextFromStatus && !isNaN(nextFromStatus.getTime())) {
@@ -666,20 +694,23 @@ function computeDataHealth(entries, nowMs) {
   return { actual: actual, expected: expected, pct: pct };
 }
 
-function computeSummary(entries) {
+function computeSummary(tableId, entries) {
   if (!entries || entries.length === 0) return null;
 
   var latest = entries[entries.length - 1];
   var now = Date.now();
+  var anchorMs = typeof getStationAnalysisAnchorMs === 'function'
+    ? getStationAnalysisAnchorMs(tableId, now)
+    : now;
   var latestMs = latest.timestamp.getTime();
   // Anchor peak windows to the latest datapoint so stale tables still show recent peaks.
   var h24 = entries.filter(function(e) {
     var ts = e.timestamp.getTime();
     return ts <= latestMs && (latestMs - ts) < 86400000;
   });
-  var w7  = entries.filter(function(e) { return (now - e.timestamp.getTime()) < 7 * 86400000; });
-  var m30 = entries.filter(function(e) { return (now - e.timestamp.getTime()) < 30 * 86400000; });
-  var health = computeDataHealth(entries, now);
+  var w7  = entries.filter(function(e) { return (anchorMs - e.timestamp.getTime()) < 7 * 86400000; });
+  var m30 = entries.filter(function(e) { return (anchorMs - e.timestamp.getTime()) < 30 * 86400000; });
+  var health = computeDataHealth(entries, anchorMs);
 
   function peak(arr, keys) {
     var max = null;
@@ -752,6 +783,8 @@ function renderTableCard(table, summary) {
   var card = document.createElement('div');
   card.className = 'table-card';
   card.onclick = function() { window.location.href = table.page; };
+  var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(table.id) : null;
+  var datasetEndLabel = datasetMeta && datasetMeta.isActive ? formatDatasetEndUtcLabel(datasetMeta.endMs) : '';
 
   var noData = !summary;
   if (noData) {
@@ -769,11 +802,15 @@ function renderTableCard(table, summary) {
 
   var badgeClass, badgeText;
   if (noData) { badgeClass = 'badge-nc'; badgeText = 'No Data'; }
+  else if (datasetMeta && datasetMeta.isActive) {
+    badgeClass = datasetMeta.status === 'finished' ? 'badge-finished' : 'badge-paused';
+    badgeText = datasetMeta.pillLabel;
+  }
   else {
     badgeClass = summary.freshness === 'ok' ? 'badge-ok' : (summary.freshness === 'warn' ? 'badge-warn' : 'badge-err');
     badgeText  = summary.freshness === 'ok' ? 'Online' : (summary.freshness === 'warn' ? 'Stale' : 'Offline');
   }
-  card.className = 'table-card status-' + (noData ? 'nc' : summary.freshness);
+  card.className = 'table-card status-' + (noData ? 'nc' : ((datasetMeta && datasetMeta.isActive) ? datasetMeta.status : summary.freshness));
 
   var fmt = function(v, unit, dp) {
     if (v === null || v === undefined) return '--';
@@ -813,6 +850,10 @@ function renderTableCard(table, summary) {
   var healthSub = summary.dataHealth && summary.dataHealth.pct != null ?
     (summary.dataHealth.actual + '/' + summary.dataHealth.expected + ' samples (24h)') :
     'No samples in last 24h';
+  if (datasetMeta && datasetMeta.isActive) {
+    healthValue = datasetMeta.pillLabel;
+    healthSub = datasetEndLabel + (datasetMeta.note ? ' | ' + datasetMeta.note : '');
+  }
   var updateInfo = formatDatasetUpdate(summary.lastUpdate);
   var nextCheck = formatNextCheckIn(table.id, summary.lastUpdate, summary.dataHealth);
 
@@ -1064,7 +1105,7 @@ async function fetchStationDetailOverviewPayload(stationId) {
   return payload;
 }
 
-function stationDetailPayloadToOverviewSummary(payload) {
+function stationDetailPayloadToOverviewSummary(table, payload) {
   var feeds = payload && Array.isArray(payload.feeds) ? payload.feeds : [];
   var entries = [];
   for (var i = 0; i < feeds.length; i++) {
@@ -1074,7 +1115,7 @@ function stationDetailPayloadToOverviewSummary(payload) {
   entries.sort(function(a, b) { return a.timestamp - b.timestamp; });
   return {
     entries: entries,
-    summary: computeSummary(entries),
+    summary: computeSummary(table.id, entries),
     deviceStatus: payload && payload.device_status ? payload.device_status : null,
     dataAsOf: payload && payload.data_as_of ? payload.data_as_of : null,
     fetchDurationMs: payload && payload._response_duration_ms != null ? payload._response_duration_ms : null
@@ -1125,7 +1166,7 @@ async function renderOverviewFromStationDetails(basePayload, contextLabel) {
     var card = null;
 
     if (result.ok) {
-      var derived = stationDetailPayloadToOverviewSummary(result.payload);
+      var derived = stationDetailPayloadToOverviewSummary(table, result.payload);
       if (derived.deviceStatus) {
         _deviceStatusById[table.id] = {
           batteryPct: derived.deviceStatus.battery_pct,
@@ -1340,7 +1381,7 @@ function renderAllCards() {
     var entries = tableEntries[table.id];
     var card;
     if (entries && entries.length) {
-      var summary = computeSummary(entries);
+      var summary = computeSummary(table.id, entries);
       card = renderTableCard(table, summary);
     } else {
       card = renderTableCard(table, null);

@@ -149,6 +149,28 @@ function normalizeInstallDateUtc(value) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0)).toISOString();
 }
 
+function normalizeDatasetEndUtc(value) {
+  if (value == null) return null;
+  var s = String(value).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s + 'T23:59:59.999Z';
+  var d = new Date(ensureUTC(s));
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function normalizeDatasetStatus(value) {
+  var s = String(value || '').trim().toLowerCase();
+  if (s === 'paused' || s === 'finished') return s;
+  return 'active';
+}
+
+function normalizeDatasetEndNote(value) {
+  if (value == null) return null;
+  var s = String(value).trim();
+  return s || null;
+}
+
 function defaultNameForDeviceId(deviceId) {
   var sid = String(deviceId || '').trim();
   if (!sid) return 'Unknown Device';
@@ -191,6 +213,9 @@ function buildDeviceProfilesFromConfig(cfg, opts) {
       merged.apiKey = merged.apiKey != null ? String(merged.apiKey).trim() : '';
       merged.dataFolder = normalizeDataFolder(merged.dataFolder || base.dataFolder || ('data_' + id), base.dataFolder || ('data_' + id));
       merged.installDateUtc = normalizeInstallDateUtc(merged.installDateUtc || merged.installDate || merged.installedAt || null);
+      merged.datasetStatus = normalizeDatasetStatus(merged.datasetStatus || merged.dataStatus || null);
+      merged.datasetEndUtc = normalizeDatasetEndUtc(merged.datasetEndUtc || merged.datasetPausedUntilUtc || merged.datasetEnd || null);
+      merged.datasetEndNote = normalizeDatasetEndNote(merged.datasetEndNote || merged.datasetPauseReason || merged.datasetNote || null);
       byId[id] = merged;
       if (defaultOrder[id] == null) defaultOrder[id] = 1000 + idx;
     });
@@ -205,6 +230,9 @@ function buildDeviceProfilesFromConfig(cfg, opts) {
     p.channelId = p.channelId != null ? String(p.channelId).trim() : '';
     p.apiKey = p.apiKey != null ? String(p.apiKey).trim() : '';
     p.installDateUtc = normalizeInstallDateUtc(p.installDateUtc || null);
+    p.datasetStatus = normalizeDatasetStatus(p.datasetStatus || null);
+    p.datasetEndUtc = normalizeDatasetEndUtc(p.datasetEndUtc || null);
+    p.datasetEndNote = normalizeDatasetEndNote(p.datasetEndNote || null);
     if (includeDisabled || p.enabled) out.push(p);
   });
 
@@ -357,6 +385,50 @@ function getConfiguredDeviceProfile(stationId) {
   if (!id) return null;
   var map = getConfiguredDeviceProfileMap({ includeDisabled: true });
   return map[id] || null;
+}
+
+function getStationDatasetState(stationId) {
+  var profile = getConfiguredDeviceProfile(stationId) || {};
+  var status = normalizeDatasetStatus(profile.datasetStatus || null);
+  var endUtc = normalizeDatasetEndUtc(profile.datasetEndUtc || profile.datasetEnd || null);
+  var endMs = endUtc ? Date.parse(endUtc) : NaN;
+  var isActive = status !== 'active' && isFinite(endMs);
+  return {
+    status: status,
+    statusLabel: status === 'finished' ? 'Campaign finished' : (status === 'paused' ? 'Dataset paused' : 'Dataset active'),
+    pillLabel: status === 'finished' ? 'Finished' : (status === 'paused' ? 'Paused' : 'Active'),
+    note: normalizeDatasetEndNote(profile.datasetEndNote || profile.datasetPauseReason || profile.datasetNote || null),
+    endUtc: isActive ? endUtc : null,
+    endMs: isActive ? endMs : null,
+    endDayKey: isActive ? endUtc.slice(0, 10) : null,
+    isActive: isActive
+  };
+}
+
+function getStationAnalysisAnchorMs(stationId, fallbackMs) {
+  var meta = getStationDatasetState(stationId);
+  if (meta && meta.isActive && isFinite(meta.endMs)) return meta.endMs;
+  return fallbackMs;
+}
+
+function getDatasetOverlayWindow(stationId, minMs, maxMs) {
+  var meta = getStationDatasetState(stationId);
+  var base = {
+    min: minMs,
+    max: maxMs,
+    endMs: meta && meta.isActive ? meta.endMs : null,
+    isActive: !!(meta && meta.isActive),
+    meta: meta
+  };
+  if (!meta || !meta.isActive || !isFinite(minMs) || !isFinite(maxMs) || !isFinite(meta.endMs)) return base;
+  if (meta.endMs < minMs) return base;
+
+  var effectiveMax = Math.max(maxMs, meta.endMs);
+  var spanMs = Math.max(1, meta.endMs - minMs);
+  var futurePadMs = Math.max(60 * 60 * 1000, Math.round(spanMs * 0.10));
+
+  base.max = Math.max(effectiveMax, meta.endMs + futurePadMs);
+  return base;
 }
 
 function isStationAllowed(stationId) {
@@ -594,54 +666,6 @@ function getDataFolder(configKey, defaultFolder) {
     return normalizeDataFolder(profile.dataFolder, normalizeDataFolder(defaultFolder, defaultFolder));
   }
   return normalizeDataFolder(defaultFolder, defaultFolder);
-}
-
-// =====================================================================
-// GITHUB ACTIONS TRIGGER
-// =====================================================================
-
-/** GitHub repo coordinates for workflow_dispatch */
-var GITHUB_REPO  = 'bosunjm-cloud/seaweed-station-dashboard';
-var GITHUB_WORKFLOW = 'download-data.yml';
-
-/**
- * Trigger the download_data.ps1 workflow via GitHub Actions workflow_dispatch.
- * Requires a GitHub PAT with actions:write scope stored in localStorage.
- *
- * Updates the button with id="btnTriggerDL" and shows status in
- * either #triggerStatus or #fetchStatus (whichever exists on the page).
- */
-function triggerCIDownload() {
-  var pat = localStorage.getItem('seaweed_github_pat');
-  if (!pat) {
-    alert('Set a GitHub Personal Access Token in Settings first (needs actions:write scope).');
-    return;
-  }
-
-  var btn = document.getElementById('btnTriggerDL');
-  var status = document.getElementById('triggerStatus') || document.getElementById('fetchStatus');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Triggering\u2026'; }
-  if (status) status.textContent = '';
-
-  fetch('https://api.github.com/repos/' + GITHUB_REPO + '/actions/workflows/' + GITHUB_WORKFLOW + '/dispatches', {
-    method: 'POST',
-    headers: {
-      'Accept': 'application/vnd.github+json',
-      'Authorization': 'Bearer ' + pat,
-      'X-GitHub-Api-Version': '2022-11-28'
-    },
-    body: JSON.stringify({ ref: 'main' })
-  }).then(function (res) {
-    if (res.status === 204) {
-      if (status) status.innerHTML = '<span style="color:var(--success,#22c55e)">\u2705 Download triggered! Data will update in ~2 min.</span>';
-    } else {
-      return res.json().then(function (j) { throw new Error(j.message || ('HTTP ' + res.status)); });
-    }
-  }).catch(function (err) {
-    if (status) status.innerHTML = '<span style="color:var(--danger,#ef4444)">\u274C ' + err.message + '</span>';
-  }).finally(function () {
-    if (btn) { btn.disabled = false; btn.innerHTML = '\u26A1 Download'; }
-  });
 }
 
 // =====================================================================
@@ -1117,56 +1141,184 @@ function renderDashboardDiagnostics(panelId, info) {
 var ACCESS_CONTROL_CACHE_KEY = 'seaweed_access_control_cache';
 
 /**
- * Fetch access_control config from Supabase dashboard_config table.
- * Caches the result in localStorage so offline / file:// still works.
- * Returns the roles array (or [] if unavailable).
+ * Normalize role feature flags to the modern { settings, battery, stationHealth } shape.
  */
-async function fetchAccessControl() {
-  try {
-    var supaCfg = getSupabaseConfig();
-    if (!supaCfg.url || !supaCfg.key) return getCachedAccessControlRoles();
-    var url = supaCfg.url + '/rest/v1/dashboard_config?key=eq.access_control&select=value';
-    var res = await fetchWithTimeout(url, 10000, { headers: supabaseHeaders(supaCfg.key) });
-    if (!res.ok) return getCachedAccessControlRoles();
-    var rows = await res.json();
-    if (rows.length && rows[0].value) {
-      var ac = rows[0].value;
-      try { localStorage.setItem(ACCESS_CONTROL_CACHE_KEY, JSON.stringify(ac)); } catch (e) {}
-      return Array.isArray(ac.roles) ? ac.roles : [];
-    }
-  } catch (e) { /* network error — use cache */ }
-  return getCachedAccessControlRoles();
+function normalizeAccessRoleFeatures(role) {
+  role = role || {};
+  var f = role.features && typeof role.features === 'object' ? role.features : null;
+  return {
+    settings:      f ? f.settings !== false      : role.canViewSettings !== false,
+    battery:       f ? f.battery !== false       : role.canViewBattery !== false,
+    stationHealth: f ? f.stationHealth !== false : role.canViewStationHealth !== false
+  };
 }
 
-function getCachedAccessControlRoles() {
+function sanitizeAccessRoleForBrowser(role) {
+  if (!role || typeof role !== 'object') return null;
+  return {
+    roleId: String(role.roleId || '').trim(),
+    password: '',
+    allowedStations: Array.isArray(role.allowedStations) && role.allowedStations.length ? role.allowedStations.slice() : ['*'],
+    features: normalizeAccessRoleFeatures(role)
+  };
+}
+
+function sanitizeAccessRolesForBrowser(rolesArray) {
+  rolesArray = Array.isArray(rolesArray) ? rolesArray : [];
+  var out = [];
+  for (var i = 0; i < rolesArray.length; i++) {
+    var role = sanitizeAccessRoleForBrowser(rolesArray[i]);
+    if (!role || !role.roleId) continue;
+    out.push(role);
+  }
+  return out;
+}
+
+function extractAccessRoleArray(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.roles)) return payload.roles;
+  return [];
+}
+
+function storeSanitizedAccessControlRoles(rolesArray) {
+  var sanitized = sanitizeAccessRolesForBrowser(rolesArray);
+  try {
+    localStorage.setItem(ACCESS_CONTROL_CACHE_KEY, JSON.stringify({ roles: sanitized }));
+  } catch (e) {}
+  try {
+    var cfg = JSON.parse(localStorage.getItem(DASHBOARD_CONFIG_KEY) || '{}') || {};
+    cfg.accessControl = sanitized;
+    localStorage.setItem(DASHBOARD_CONFIG_KEY, JSON.stringify(cfg));
+  } catch (e) {}
+  return sanitized;
+}
+
+function stripAccessControlSecretsFromBrowserStorage() {
+  try { localStorage.removeItem('seaweed_github_pat'); } catch (e) {}
+
+  try {
+    var rawCache = localStorage.getItem(ACCESS_CONTROL_CACHE_KEY);
+    if (rawCache) {
+      var parsedCache = JSON.parse(rawCache);
+      localStorage.setItem(ACCESS_CONTROL_CACHE_KEY, JSON.stringify({
+        roles: sanitizeAccessRolesForBrowser(extractAccessRoleArray(parsedCache))
+      }));
+    }
+  } catch (e) {}
+
+  try {
+    var rawCfg = localStorage.getItem(DASHBOARD_CONFIG_KEY);
+    if (rawCfg) {
+      var cfg = JSON.parse(rawCfg) || {};
+      if (Array.isArray(cfg.accessControl)) {
+        cfg.accessControl = sanitizeAccessRolesForBrowser(cfg.accessControl);
+        localStorage.setItem(DASHBOARD_CONFIG_KEY, JSON.stringify(cfg));
+      }
+    }
+  } catch (e) {}
+}
+
+stripAccessControlSecretsFromBrowserStorage();
+
+/**
+ * Fetch sanitized role definitions from Supabase.
+ * Stored passwords are never returned to the browser.
+ */
+async function fetchAccessRoleDefinitions() {
+  try {
+    var supaCfg = getSupabaseConfig();
+    if (!supaCfg.url || !supaCfg.key) return getCachedAccessRoleDefinitions();
+    var url = supaCfg.url + '/rest/v1/rpc/dashboard_get_access_roles';
+    var res = await fetchWithTimeout(url, 10000, {
+      method: 'POST',
+      headers: Object.assign({}, supabaseHeaders(supaCfg.key), {
+        'Content-Type': 'application/json'
+      }),
+      body: '{}'
+    });
+    if (!res.ok) return getCachedAccessRoleDefinitions();
+    return storeSanitizedAccessControlRoles(extractAccessRoleArray(await res.json()));
+  } catch (e) { /* network error — use cache */ }
+  return getCachedAccessRoleDefinitions();
+}
+
+function getCachedAccessRoleDefinitions() {
   try {
     var raw = localStorage.getItem(ACCESS_CONTROL_CACHE_KEY);
     if (raw) {
-      var ac = JSON.parse(raw);
-      return Array.isArray(ac.roles) ? ac.roles : [];
+      return sanitizeAccessRolesForBrowser(extractAccessRoleArray(JSON.parse(raw)));
     }
   } catch (e) {}
   return [];
 }
 
 /**
- * Push access_control config to Supabase (admin only).
+ * Backward-compatible alias for existing callers.
  */
-async function pushAccessControlToSupabase(rolesArray) {
+async function fetchAccessControl() {
+  return fetchAccessRoleDefinitions();
+}
+
+function getCachedAccessControlRoles() {
+  return getCachedAccessRoleDefinitions();
+}
+
+/**
+ * Validate the entered role password server-side.
+ */
+async function authenticateAccessRole(password) {
   var supaCfg = getSupabaseConfig();
   if (!supaCfg.url || !supaCfg.key) throw new Error('Supabase not configured');
-  var payload = { roles: rolesArray };
-  var url = supaCfg.url + '/rest/v1/dashboard_config?key=eq.access_control';
+  var pwd = String(password || '').trim();
+  if (!pwd) return null;
+  var url = supaCfg.url + '/rest/v1/rpc/dashboard_authenticate_access_role';
   var res = await fetchWithTimeout(url, 15000, {
-    method: 'PATCH',
+    method: 'POST',
     headers: Object.assign({}, supabaseHeaders(supaCfg.key), {
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal'
+      'Content-Type': 'application/json'
     }),
-    body: JSON.stringify({ value: payload })
+    body: JSON.stringify({ p_password: pwd })
   });
-  if (!res.ok) throw new Error('Push access_control failed: HTTP ' + res.status);
-  try { localStorage.setItem(ACCESS_CONTROL_CACHE_KEY, JSON.stringify(payload)); } catch (e) {}
+  if (!res.ok) {
+    var detail = '';
+    try { detail = await res.text(); } catch (_) {}
+    var lower = String(detail || '').toLowerCase();
+    if (res.status === 404 || lower.indexOf('dashboard_authenticate_access_role') >= 0 || lower.indexOf('could not find the function') >= 0) {
+      throw new Error('Auth RPC not installed in Supabase. Run 2026-04-15_dashboard_access_control_private_auth.sql first.');
+    }
+    throw new Error('dashboard_authenticate_access_role HTTP ' + res.status + (detail ? ' ' + detail.slice(0, 160) : ''));
+  }
+  var payload = await res.json();
+  if (!payload || payload.authenticated !== true || !payload.role) return null;
+  return sanitizeAccessRoleForBrowser(payload.role);
+}
+
+/**
+ * Push updated access roles to Supabase without exposing stored passwords.
+ * Blank incoming passwords keep the current stored password for that role.
+ */
+async function pushAccessControlToSupabase(rolesArray, adminPassword) {
+  var supaCfg = getSupabaseConfig();
+  if (!supaCfg.url || !supaCfg.key) throw new Error('Supabase not configured');
+  var adminPwd = String(adminPassword || '').trim();
+  if (!adminPwd) throw new Error('Admin password required');
+  var url = supaCfg.url + '/rest/v1/rpc/dashboard_upsert_access_roles';
+  var res = await fetchWithTimeout(url, 15000, {
+    method: 'POST',
+    headers: Object.assign({}, supabaseHeaders(supaCfg.key), {
+      'Content-Type': 'application/json'
+    }),
+    body: JSON.stringify({
+      p_admin_password: adminPwd,
+      p_roles: Array.isArray(rolesArray) ? rolesArray : []
+    })
+  });
+  if (!res.ok) {
+    var detail = '';
+    try { detail = await res.text(); } catch (_) {}
+    throw new Error('Push access_control failed: HTTP ' + res.status + (detail ? ' ' + detail.slice(0, 160) : ''));
+  }
+  return storeSanitizedAccessControlRoles(extractAccessRoleArray(await res.json()));
 }
 
 /**
