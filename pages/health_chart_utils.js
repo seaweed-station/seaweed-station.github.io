@@ -118,6 +118,24 @@ function getObservedBoundsFromData(data) {
   return { min: min, max: max };
 }
 
+function getAllBoundsFromData(data) {
+  var min = Infinity;
+  var max = -Infinity;
+  var datasets = (data && Array.isArray(data.datasets)) ? data.datasets : [];
+  for (var i = 0; i < datasets.length; i++) {
+    var ds = datasets[i] || {};
+    var pts = Array.isArray(ds.data) ? ds.data : [];
+    for (var j = 0; j < pts.length; j++) {
+      var t = pointXMs(pts[j]);
+      if (!isFinite(t)) continue;
+      if (t < min) min = t;
+      if (t > max) max = t;
+    }
+  }
+  if (!isFinite(min) || !isFinite(max)) return null;
+  return { min: min, max: max };
+}
+
 function getWindowForRange(bounds, range) {
   if (window.PlotCore && typeof PlotCore.getWindowForRange === 'function') {
     return PlotCore.getWindowForRange(bounds, range);

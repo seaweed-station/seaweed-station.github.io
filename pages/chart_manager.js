@@ -68,9 +68,22 @@
     }
 
     if (existing && !spec.forceRecreate && existing.config && existing.config.type === cfg.type) {
+      var canReuse = true;
       existing.config.data = cfg.data;
       existing.config.options = cfg.options;
-      existing.config.plugins = cfg.plugins || [];
+      try {
+        existing.config.plugins = cfg.plugins || [];
+      } catch (_) {
+        canReuse = false;
+      }
+
+      if (!canReuse) {
+        destroy(key);
+        existing = null;
+      }
+    }
+
+    if (existing && !spec.forceRecreate && existing.config && existing.config.type === cfg.type) {
       existing.data = existing.config.data;
       existing.options = existing.config.options;
       if (global.PlotOverlays) PlotOverlays.attach(existing, spec.overlays);

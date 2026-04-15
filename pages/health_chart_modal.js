@@ -71,12 +71,21 @@ function applyModalDatasetVisibilityState(state) {
   }
 }
 
-function getModalSnapshotForRange(range) {
+function applyModalZoomLimits(bounds) {
+  if (!_modalChart || !_modalChart.options || !bounds || !isFinite(bounds.min) || !isFinite(bounds.max)) return;
+  _modalChart.options.plugins = _modalChart.options.plugins || {};
+  _modalChart.options.plugins.zoom = _modalChart.options.plugins.zoom || {};
+  _modalChart.options.plugins.zoom.limits = _modalChart.options.plugins.zoom.limits || {};
+  _modalChart.options.plugins.zoom.limits.x = { min: bounds.min, max: bounds.max, minRange: 60 * 60 * 1000 };
+}
+
+function getModalSourceSnapshot(range) {
   if (!_modalSource) return null;
   var stationId = _modalSource.stationId;
   var chartKey = _modalSource.chartKey;
+  var snapshotRange = range || _modalSource.dataRange || _modalSource.modalRange || 'week';
   if (stationId && chartKey && typeof getChartSnapshotForRange === 'function') {
-    var snap = getChartSnapshotForRange(stationId, chartKey, range);
+    var snap = getChartSnapshotForRange(stationId, chartKey, snapshotRange);
     if (snap && snap.data) return snap;
   }
   var sourceCanvas = _modalSource.sourceCanvas || findStationChartCanvas(stationId, chartKey);
@@ -87,6 +96,10 @@ function getModalSnapshotForRange(range) {
     data: cloneChartDataForModal(sourceChart.data),
     options: sourceChart.options
   };
+}
+
+function getModalSnapshotForRange(range) {
+  return getModalSourceSnapshot(range);
 }
 
 function buildModalTimeAxis(range) {
@@ -162,17 +175,22 @@ function openChartModal(title, srcCanvas) {
   var stationId = srcCanvas._stationId || null;
   var chartKey = srcCanvas._chartKey || null;
   var activeRange = stationId ? (stationRanges[stationId] || 'week') : 'week';
-  var rangeSnap = stationId && chartKey ? getChartSnapshotForRange(stationId, chartKey, activeRange) : null;
+  var snapshotRange = srcChart.config && srcChart.config.type === 'bar' ? activeRange : 'all';
+  var rangeSnap = stationId && chartKey ? getChartSnapshotForRange(stationId, chartKey, snapshotRange) : null;
   var modalType = rangeSnap && rangeSnap.type ? rangeSnap.type : srcChart.config.type;
   var modalData = rangeSnap && rangeSnap.data ? rangeSnap.data : cloneChartDataForModal(srcChart.data);
   var observedBounds = getObservedBoundsFromData(modalData);
+  var allBounds = getAllBoundsFromData(modalData) || observedBounds;
   var liveSourceCanvas = findStationChartCanvas(stationId, chartKey) || srcCanvas;
   _modalSource = {
     stationId: stationId,
     chartKey: chartKey,
     sourceCanvas: liveSourceCanvas,
+    dataRange: snapshotRange,
+    pageRange: activeRange,
     modalRange: activeRange,
-    observedBounds: observedBounds
+    observedBounds: observedBounds,
+    allBounds: allBounds
   };
   updateModalRangeControls();
   document.getElementById('chartModalTitle').textContent = title;
@@ -294,6 +312,7 @@ function openChartModal(title, srcCanvas) {
     data: modalData,
     options: modalOpts
   });
+  applyModalZoomLimits(_modalSource.allBounds || _modalSource.observedBounds);
   updateModalToggleControls();
 }
 
@@ -302,7 +321,7 @@ function syncModalDataFromSource() {
   var liveCanvas = findStationChartCanvas(_modalSource.stationId, _modalSource.chartKey) || _modalSource.sourceCanvas;
   if (liveCanvas) _modalSource.sourceCanvas = liveCanvas;
   var visibilityState = cloneModalVisibilityState();
-  var snap = getModalSnapshotForRange((_modalSource && _modalSource.modalRange) || 'week');
+  var snap = getModalSourceSnapshot((_modalSource && _modalSource.dataRange) || (_modalSource && _modalSource.modalRange) || 'week');
   if (!snap || !snap.data) return;
   var xOpts = _modalChart.options && _modalChart.options.scales ? _modalChart.options.scales.x : null;
   var curMin = xOpts ? xOpts.min : undefined;
@@ -310,7 +329,9 @@ function syncModalDataFromSource() {
   _modalChart.config.type = snap.type || _modalChart.config.type;
   _modalChart.data = cloneChartDataForModal(snap.data);
   _modalSource.observedBounds = getObservedBoundsFromData(_modalChart.data);
+  _modalSource.allBounds = getAllBoundsFromData(_modalChart.data) || _modalSource.observedBounds;
   applyModalDatasetVisibilityState(visibilityState);
+  applyModalZoomLimits(_modalSource.allBounds || _modalSource.observedBounds);
   if (xOpts) {
     applyModalLineRange((_modalSource && _modalSource.modalRange) || 'week', _modalSource.observedBounds);
     xOpts.min = curMin;
@@ -442,10 +463,8 @@ function findStationChartCanvas(stationId, chartKey) {
 
 async function setModalRange(range) {
   if (!_modalSource || !_modalChart) return;
-  var stationId = _modalSource.stationId;
-  var chartKey = _modalSource.chartKey;
-  var title = document.getElementById('chartModalTitle').textContent || '';
-  var visibilityState = cloneModalVisibilityState();
+  _modalSource.modalRange = range;
+  var isLineModal = _modalChart.config && _modalChart.config.type !== 'bar';
 
   if (range === 'all' && typeof healthDataCanServeRange === 'function' && !healthDataCanServeRange('all')) {
     try {
@@ -456,6 +475,23 @@ async function setModalRange(range) {
       console.warn('[Health] Modal all-range fetch failed:', e && e.message ? e.message : e);
     }
   }
+
+  if (isLineModal && (_modalSource.dataRange === 'all')) {
+    if (range === 'all') {
+      syncModalDataFromSource();
+    }
+    applyModalLineRange(range, _modalSource.observedBounds);
+    applyModalZoomLimits(_modalSource.allBounds || _modalSource.observedBounds);
+    _modalChart.update('none');
+    updateModalRangeControls();
+    updateModalToggleControls();
+    return;
+  }
+
+  var stationId = _modalSource.stationId;
+  var chartKey = _modalSource.chartKey;
+  var title = document.getElementById('chartModalTitle').textContent || '';
+  var visibilityState = cloneModalVisibilityState();
 
   if (stationId && typeof setStationRange === 'function') {
     setStationRange(stationId, range, { skipEnsure: true, skipRawEnsure: true });
@@ -492,6 +528,7 @@ function bindModalCanvasReanchor() {
   if (!modalCanvasEl || modalCanvasEl._reanchorBound) return;
   modalCanvasEl.addEventListener('click', function(ev) {
     if (!_modalChart || !_modalChart.scales || !_modalChart.scales.x) return;
+    if (_modalSource && _modalSource.dataRange === 'all') return;
     var liveCanvas = _modalSource ? (findStationChartCanvas(_modalSource.stationId, _modalSource.chartKey) || _modalSource.sourceCanvas) : null;
     if (_modalSource && liveCanvas) _modalSource.sourceCanvas = liveCanvas;
     var ctrl = liveCanvas ? liveCanvas._calcController : null;
