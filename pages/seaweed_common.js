@@ -924,34 +924,71 @@ function buildStationSensorDefinitions(stationId, entries, deviceSlotsById, sens
 function saveStationCache(stationId, entries, meta) {
   if (!stationId || !Array.isArray(entries)) return;
   meta = meta || {};
-  var windowStart = meta.windowStart || null;
-  var windowEnd = meta.windowEnd || null;
-
-  if (!windowStart || !windowEnd) {
-    for (var i = 0; i < entries.length; i++) {
-      var entry = entries[i];
+  function deriveWindow(entriesSubset) {
+    var minIso = null;
+    var maxIso = null;
+    for (var i = 0; i < entriesSubset.length; i++) {
+      var entry = entriesSubset[i];
       if (!entry) continue;
       var rawTs = entry.timestamp != null ? entry.timestamp : entry.created_at;
       if (rawTs == null) continue;
       var ts = rawTs instanceof Date ? rawTs : new Date(rawTs);
       if (!(ts instanceof Date) || isNaN(ts.getTime())) continue;
-      if (!windowStart) windowStart = ts.toISOString();
-      windowEnd = ts.toISOString();
+      var iso = ts.toISOString();
+      if (!minIso) minIso = iso;
+      maxIso = iso;
     }
+    return {
+      windowStart: minIso || meta.windowStart || null,
+      windowEnd: maxIso || meta.windowEnd || null
+    };
   }
 
-  try {
+  function persistEntries(entriesSubset) {
+    var bounds = deriveWindow(entriesSubset);
     localStorage.setItem('seaweed_cache_' + stationId, JSON.stringify({
-      allEntries: entries,
+      allEntries: entriesSubset,
       channelInfo: meta.channelInfo || null,
       source: meta.source || 'live',
       timeRange: meta.timeRange || null,
-      windowStart: windowStart,
-      windowEnd: windowEnd,
+      windowStart: bounds.windowStart,
+      windowEnd: bounds.windowEnd,
       savedAt: Date.now()
     }));
-  } catch (e) {
-    console.warn('[Cache] Could not save station cache for ' + stationId + ':', e.message);
+  }
+
+  var attempts = [];
+  var maxEntries = Number(meta.maxEntries);
+  if (isFinite(maxEntries) && maxEntries > 0) attempts.push(Math.max(1, Math.round(maxEntries)));
+  attempts.push(entries.length);
+  attempts.push(Math.min(entries.length, 1200));
+  attempts.push(Math.min(entries.length, 800));
+  attempts.push(Math.min(entries.length, 500));
+  attempts.push(Math.min(entries.length, 250));
+
+  var seen = {};
+  var uniqueAttempts = [];
+  for (var ai = 0; ai < attempts.length; ai++) {
+    var size = attempts[ai];
+    if (!isFinite(size) || size <= 0 || seen[size]) continue;
+    seen[size] = true;
+    uniqueAttempts.push(size);
+  }
+
+  var lastError = null;
+  for (var ui = 0; ui < uniqueAttempts.length; ui++) {
+    var limit = uniqueAttempts[ui];
+    var subset = limit >= entries.length ? entries : entries.slice(entries.length - limit);
+    try {
+      persistEntries(subset);
+      return;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  if (lastError) {
+    console.warn('[Cache] Could not save station cache for ' + stationId + ':', lastError.message);
   }
 }
 

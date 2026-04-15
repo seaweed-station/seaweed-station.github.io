@@ -1,0 +1,67 @@
+[
+  {
+    "page": "login",
+    "path": "/login.html",
+    "snapshot": {
+      "bodyText": "Seaweed Station Overview\nAll monitoring tables at a glance\n\ud83d\udef0 Fetch Live\n4 stations via cached overview \u2014 data as of 21:30:09 (5626m old) \u2014 click Fetch Live to rebuild cards from fresh station-detail data.\nAuto-refresh: every 1m\n\ud83d\udd0b Battery\n\ud83d\udd0b Station Health\n\u2699 Settings\nFunzi\nFunzi Island, Kenya\nPAUSED\nEDGE\n11 Apr 2026, 20:00 (95.3h) | Unit Shipped\nT0 BATT\n90%\nSATELLITE BATT\n67%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n41.4\u00b0C\nHUMIDITY\n62.2%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nPerth Test\nNoranda, WA\nOFFLINE\nEDGE\n11 Apr 2026, 21:25 (93.8h) | Next check in: overdue by 93h 29m (13:35 UTC)\nT0 BATT\n0%\nPlugged in (USB sample)\nSATELLITE BATT\n100%\nDATA HEALTH\n24%\n34/144 samples (24h)\nPEAK 24H\nTEMP\n0.0\u00b0C\nHUMIDITY\n0.0%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nShangani\nKwale County, Kenya\nPAUSED\nEDGE\n11 Apr 2026, 21:05 (94.2h) | Unit Shipped\nT0 BATT\n36%\nSATELLITE BATT\n68%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n44.9\u00b0C\nHUMIDITY\n68.3%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nSpare\nSpare Station\nPAUSED\nEDGE\n11 Apr 2026, 20:05 (95.2h) | Unit Shipped\nT0 BATT\n79%\nSATELLITE BATT\n91%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n39.9\u00b0C\nHUMIDITY\n59.8%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nOverview Diagnostics\nSTALE\nSeaweed Station Network \u2014 Perth \u2022 Shangani Aramani \u2022 Funzi Island",
+      "errorNodes": [
+        "4 stations via cached overview \u2014 data as of 21:30:09 (5626m old) \u2014 click Fetch Live to rebuild cards from fresh station-detail data."
+      ],
+      "title": "Seaweed Station Overview",
+      "url": "http://127.0.0.1:8765/ESP32_Weather_Station_Dashboard.html"
+    },
+    "runtime_errors": [],
+    "browser_logs": [
+      {
+        "level": "WARNING",
+        "message": "http://127.0.0.1:8765/ESP32_Weather_Station_Dashboard.html 1634:14 \"[Overview] dashboard-overview payload stale; rendering cached cards first and deferring station-detail refresh until manual fetch\"",
+        "timestamp": 1776251781769
+      },
+      {
+        "level": "WARNING",
+        "message": "http://127.0.0.1:8765/ESP32_Weather_Station_Dashboard.html 1634:14 \"[Overview] dashboard-overview payload stale; rendering cached cards first and deferring station-detail refresh until manual fetch\"",
+        "timestamp": 1776251781847
+      }
+    ]
+  },
+  {
+    "page": "index",
+    "path": "/index.html",
+    "snapshot": {
+      "bodyText": "Seaweed Station Overview\nAll monitoring tables at a glance\n\ud83d\udef0 Fetch Live\n4 stations via cached overview \u2014 data as of 21:30:09 (5626m old) \u2014 click Fetch Live to rebuild cards from fresh station-detail data.\nAuto-refresh: every 1m\n\ud83d\udd0b Battery\n\ud83d\udd0b Station Health\n\u2699 Settings\nFunzi\nFunzi Island, Kenya\nPAUSED\nEDGE\n11 Apr 2026, 20:00 (95.3h) | Unit Shipped\nT0 BATT\n90%\nSATELLITE BATT\n67%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n41.4\u00b0C\nHUMIDITY\n62.2%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nPerth Test\nNoranda, WA\nOFFLINE\nEDGE\n11 Apr 2026, 21:25 (93.8h) | Next check in: overdue by 93h 29m (13:35 UTC)\nT0 BATT\n0%\nPlugged in (USB sample)\nSATELLITE BATT\n100%\nDATA HEALTH\n24%\n34/144 samples (24h)\nPEAK 24H\nTEMP\n0.0\u00b0C\nHUMIDITY\n0.0%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nShangani\nKwale County, Kenya\nPAUSED\nEDGE\n11 Apr 2026, 21:05 (94.2h) | Unit Shipped\nT0 BATT\n36%\nSATELLITE BATT\n68%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n44.9\u00b0C\nHUMIDITY\n68.3%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nSpare\nSpare Station\nPAUSED\nEDGE\n11 Apr 2026, 20:05 (95.2h) | Unit Shipped\nT0 BATT\n79%\nSATELLITE BATT\n91%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n39.9\u00b0C\nHUMIDITY\n59.8%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nOverview Diagnostics\nSTALE\nSeaweed Station Network \u2014 Perth \u2022 Shangani Aramani \u2022 Funzi Island",
+      "errorNodes": [
+        "4 stations via cached overview \u2014 data as of 21:30:09 (5626m old) \u2014 click Fetch Live to rebuild cards from fresh station-detail data."
+      ],
+      "title": "Seaweed Station Overview",
+      "url": "http://127.0.0.1:8765/ESP32_Weather_Station_Dashboard.html"
+    },
+    "runtime_errors": [],
+    "browser_logs": [
+      {
+        "level": "WARNING",
+        "message": "http://127.0.0.1:8765/ESP32_Weather_Station_Dashboard.html 1634:14 \"[Overview] dashboard-overview payload stale; rendering cached cards first and deferring station-detail refresh until manual fetch\"",
+        "timestamp": 1776251788936
+      }
+    ]
+  },
+  {
+    "page": "overview",
+    "path": "/ESP32_Weather_Station_Dashboard.html",
+    "snapshot": {
+      "bodyText": "Seaweed Station Overview\nAll monitoring tables at a glance\n\ud83d\udef0 Fetch Live\n4 stations via cached overview \u2014 data as of 21:30:09 (5626m old) \u2014 click Fetch Live to rebuild cards from fresh station-detail data.\nAuto-refresh: every 1m\n\ud83d\udd0b Battery\n\ud83d\udd0b Station Health\n\u2699 Settings\nFunzi\nFunzi Island, Kenya\nPAUSED\nEDGE\n11 Apr 2026, 20:00 (95.3h) | Unit Shipped\nT0 BATT\n90%\nSATELLITE BATT\n67%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n41.4\u00b0C\nHUMIDITY\n62.2%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nPerth Test\nNoranda, WA\nOFFLINE\nEDGE\n11 Apr 2026, 21:25 (93.8h) | Next check in: overdue by 93h 29m (13:35 UTC)\nT0 BATT\n0%\nPlugged in (USB sample)\nSATELLITE BATT\n100%\nDATA HEALTH\n24%\n34/144 samples (24h)\nPEAK 24H\nTEMP\n0.0\u00b0C\nHUMIDITY\n0.0%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nShangani\nKwale County, Kenya\nPAUSED\nEDGE\n11 Apr 2026, 21:05 (94.2h) | Unit Shipped\nT0 BATT\n36%\nSATELLITE BATT\n68%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n44.9\u00b0C\nHUMIDITY\n68.3%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nSpare\nSpare Station\nPAUSED\nEDGE\n11 Apr 2026, 20:05 (95.2h) | Unit Shipped\nT0 BATT\n79%\nSATELLITE BATT\n91%\nDATA HEALTH\nPaused\n14 Apr, 23:59 UTC | Unit Shipped\nPEAK 24H\nTEMP\n39.9\u00b0C\nHUMIDITY\n59.8%\nPEAK 7 DAYS\nTEMP\n--\nHUMIDITY\n--\nOverview Diagnostics\nSTALE\nSeaweed Station Network \u2014 Perth \u2022 Shangani Aramani \u2022 Funzi Island",
+      "errorNodes": [
+        "4 stations via cached overview \u2014 data as of 21:30:09 (5626m old) \u2014 click Fetch Live to rebuild cards from fresh station-detail data."
+      ],
+      "title": "Seaweed Station Overview",
+      "url": "http://127.0.0.1:8765/ESP32_Weather_Station_Dashboard.html"
+    },
+    "runtime_errors": [],
+    "browser_logs": [
+      {
+        "level": "WARNING",
+        "message": "http://127.0.0.1:8765/ESP32_Weather_Station_Dashboard.html 1634:14 \"[Overview] dashboard-overview payload stale; rendering cached cards first and deferring station-detail refresh until manual fetch\"",
+        "timestamp": 1776251788977
+      }
+    ]
+  }
+]

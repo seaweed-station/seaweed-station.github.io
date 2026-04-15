@@ -18,6 +18,33 @@ var weatherState = {
   sunEvents: [],
 };
 
+function setWeatherUnavailableState(reason) {
+  weatherState.fetching = false;
+  weatherState.fetchKey = null;
+  weatherState.pendingFetchKey = null;
+  weatherState.forecastFetching = false;
+  weatherState.data = null;
+  weatherState.daily = null;
+  weatherState.forecast = null;
+  weatherState.forecastDaily = null;
+  weatherState.sunEvents = [];
+
+  var collapsible = document.getElementById('weatherCollapsible');
+  if (collapsible) {
+    collapsible.style.display = 'none';
+  }
+
+  var subhead = document.getElementById('weatherSubhead');
+  if (subhead && reason) {
+    subhead.textContent = reason;
+  }
+
+  var locEl = document.getElementById('weatherLocation');
+  if (locEl) {
+    locEl.textContent = '';
+  }
+}
+
 function buildWeatherSeriesCacheKey(range, seriesName) {
   return ['station', TABLE_ID, 'weather', range || 'week', seriesName].join(':');
 }
@@ -233,6 +260,7 @@ function buildSunEventsForRange(daily, rangeStart, rangeEnd) {
 }
 
 function applyWeatherCache(requireCoverage) {
+  if (!WEATHER_ENABLED) return false;
   if (!window.WEATHER_CACHE || !window.WEATHER_CACHE.hourly || !window.WEATHER_CACHE.hourly.time) {
     return false;
   }
@@ -287,6 +315,11 @@ function refreshWeatherLinkedViews() {
 }
 
 async function fetchWeatherData() {
+  if (!WEATHER_ENABLED) {
+    setWeatherUnavailableState('Weather unavailable for this station');
+    return;
+  }
+
   if (!state.filteredEntries.length) {
     if (applyWeatherCache(false)) {
       console.log('[Weather] Pre-seeded cached weather_data.js');
@@ -294,6 +327,9 @@ async function fetchWeatherData() {
     }
     return;
   }
+
+  var first = state.filteredEntries[0].timestamp;
+  var last  = state.filteredEntries[state.filteredEntries.length - 1].timestamp;
 
   if (applyWeatherCache(true)) {
     console.log('[Weather] Using cached weather_data.js');
@@ -306,8 +342,6 @@ async function fetchWeatherData() {
     return;
   }
 
-  var first = state.filteredEntries[0].timestamp;
-  var last  = state.filteredEntries[state.filteredEntries.length - 1].timestamp;
   var startDate = new Date(first.getTime() - 86400000);
   var endDate   = new Date(Math.min(last.getTime() + 86400000, Date.now()));
   var startStr = startDate.toISOString().slice(0, 10);
@@ -429,6 +463,10 @@ async function fetchWeatherData() {
 }
 
 async function fetchForecastData() {
+  if (!WEATHER_ENABLED) {
+    setWeatherUnavailableState('Weather unavailable for this station');
+    return;
+  }
   if (weatherState.forecastFetching) return;
   if (weatherState.forecast && weatherState.forecast._fetchedAt && Date.now() - weatherState.forecast._fetchedAt < 3600000) { renderWeatherCharts(); return; }
   weatherState.forecastFetching = true;
@@ -453,6 +491,10 @@ async function fetchForecastData() {
 }
 
 function renderWeatherCharts() {
+  if (!WEATHER_ENABLED) {
+    setWeatherUnavailableState('Weather unavailable for this station');
+    return;
+  }
   var _wxr = state.weatherTimeRange || 'week';
   var w = (_wxr === 'forecast') ? weatherState.forecast : weatherState.data;
   var activeDaily = (_wxr === 'forecast') ? weatherState.forecastDaily : weatherState.daily;

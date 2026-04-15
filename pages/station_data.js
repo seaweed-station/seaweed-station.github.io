@@ -908,6 +908,7 @@ function setTimeRange(range) {
 }
 
 function setWeatherTimeRange(r) {
+  if (!WEATHER_ENABLED) return;
   state.weatherTimeRange = r;
   document.querySelectorAll('[data-wxrange]').forEach(function(b) {
     b.classList.toggle('active', b.dataset.wxrange === r);

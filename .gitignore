@@ -13,5 +13,6 @@ logs/
 # Stale archive
 pages.zip
 
-# Generated station data — runtime output, not source
-data/
+# Generated station snapshots and temp files
+data/**/*_supa.json
+data/**/*.tmp

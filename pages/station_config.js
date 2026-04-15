@@ -14,7 +14,16 @@ var DEFAULTS = {
   autoRefreshMin: 15,
 };
 
-var WEATHER_LOCATION = STATION.weather;
+function hasWeatherLocation(location) {
+  return !!location && isFinite(Number(location.lat)) && isFinite(Number(location.lon));
+}
+
+var WEATHER_ENABLED = hasWeatherLocation(STATION.weather);
+var WEATHER_LOCATION = WEATHER_ENABLED ? {
+  name: STATION.weather.name,
+  lat: Number(STATION.weather.lat),
+  lon: Number(STATION.weather.lon)
+} : null;
 
 // =====================================================================
 // STATE

@@ -954,6 +954,17 @@ body {
 <script id="bootLoader">
 // Boot loader: reads ?table= param, injects data scripts
 (function(){
+  function buildWeatherLocation(name, lat, lon) {
+    var parsedLat = Number(lat);
+    var parsedLon = Number(lon);
+    if (!isFinite(parsedLat) || !isFinite(parsedLon)) return null;
+    return {
+      name: name || 'Station Weather',
+      lat: parsedLat,
+      lon: parsedLon
+    };
+  }
+
   var params = new URLSearchParams(window.location.search);
   var tableId = params.get('table') || 'perth';
   window.__TABLE_ID = tableId;
@@ -970,7 +981,7 @@ body {
       dataFolder: s.dataFolder,
       mapLat: s.lat,
       mapLon: s.lon,
-      weather: s.weatherName ? { name: s.weatherName, lat: s.lat, lon: s.lon } : { name: s.name, lat: 0, lon: 0 },
+      weather: buildWeatherLocation(s.weatherName || s.name, s.lat, s.lon),
       tideStation: s.tideStation || 'kenya',
       satellites: 2,
       sensorMap: s.sensorMap || 'funzi'
@@ -1003,7 +1014,7 @@ body {
           dataFolder: 'data_' + id,
           mapLat: null,
           mapLon: null,
-          weather: { name: titleCaseDeviceId(id), lat: 0, lon: 0 },
+          weather: null,
           tideStation: 'kenya',
           satellites: 2,
           sensorMap: 'funzi'
@@ -1012,10 +1023,6 @@ body {
         if (p.name) {
           merged.title = p.name;
           merged.subtitle = p.name + ' -- Seaweed Table T/H Monitoring';
-          if (!base.weather || !base.weather.name) {
-            merged.weather = merged.weather || { lat: 0, lon: 0 };
-            merged.weather.name = p.name;
-          }
         }
         if (p.dataFolder) merged.dataFolder = String(p.dataFolder);
         if (Object.prototype.hasOwnProperty.call(p, 'mapLat')) {
@@ -1028,6 +1035,8 @@ body {
           var cfgLon = Number(rawLon);
           merged.mapLon = (rawLon !== '' && isFinite(cfgLon)) ? cfgLon : null;
         }
+        var weatherLabel = (base.weather && base.weather.name) ? base.weather.name : merged.title;
+        merged.weather = buildWeatherLocation(weatherLabel, merged.mapLat, merged.mapLon);
         out[id] = merged;
       });
     }
@@ -1088,9 +1097,14 @@ body {
 <!-- Cached weather data -->
 <script>
 (function(){
+  function hasWeatherLocation(weather) {
+    return !!weather && isFinite(Number(weather.lat)) && isFinite(Number(weather.lon));
+  }
+
   var df = window.__STATION ? window.__STATION.dataFolder : 'data_3262071_TT';
+  var weather = window.__STATION ? window.__STATION.weather : null;
   if (!/^[\w\-]+$/.test(df)) { console.warn('[Weather] Invalid dataFolder, skipping weather data'); df = null; }
-  if (df) document.write('<scr'+'ipt src="../data/'+df+'/weather_data.js" onerror="console.log(\'[Weather] No cached weather data\')"><\/scr'+'ipt>');
+  if (df && hasWeatherLocation(weather)) document.write('<scr'+'ipt src="../data/'+df+'/weather_data.js" onerror="console.log(\'[Weather] No cached weather data\')"><\/scr'+'ipt>');
 })();
 </script>
 

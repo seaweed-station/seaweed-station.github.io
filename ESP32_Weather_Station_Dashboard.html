@@ -95,7 +95,7 @@ a:hover { text-decoration: underline; }
   background: var(--bg-card);
 }
 .table-card.status-nc::before { background: #a9cfc5; }
-.table-card.status-paused::before { background: var(--warning); }
+.table-card.status-paused::before { background: #9fb6af; }
 .table-card.status-finished::before { background: var(--success); }
 .table-card-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .table-card-header h2 { font-size: 1.15rem; font-weight: 700; }
@@ -614,6 +614,13 @@ function formatNextCheckIn(tableId, lastUpdate, dataHealth) {
       text: pauseText
     };
   }
+  var isStaleEdgeSnapshot = _overviewDiagState && _overviewDiagState.source === 'edge-stale' && _dataSource[tableId] === 'edge';
+  if (isStaleEdgeSnapshot) {
+    return {
+      html: '<span class="next-check next-check-warn">Next check pending live refresh</span>',
+      text: 'Next check pending live refresh'
+    };
+  }
   var statusRow = _deviceStatusById && _deviceStatusById[tableId] ? _deviceStatusById[tableId] : null;
   var nextFromStatus = statusRow && statusRow.nextCheckInAt ? statusRow.nextCheckInAt : null;
   if (nextFromStatus && !isNaN(nextFromStatus.getTime())) {
@@ -785,6 +792,7 @@ function renderTableCard(table, summary) {
   card.onclick = function() { window.location.href = table.page; };
   var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(table.id) : null;
   var datasetEndLabel = datasetMeta && datasetMeta.isActive ? formatDatasetEndUtcLabel(datasetMeta.endMs) : '';
+  var isStaleEdgeSnapshot = _overviewDiagState && _overviewDiagState.source === 'edge-stale' && _dataSource[table.id] === 'edge';
 
   var noData = !summary;
   if (noData) {
@@ -806,11 +814,15 @@ function renderTableCard(table, summary) {
     badgeClass = datasetMeta.status === 'finished' ? 'badge-finished' : 'badge-paused';
     badgeText = datasetMeta.pillLabel;
   }
+  else if (isStaleEdgeSnapshot) {
+    badgeClass = 'badge-warn';
+    badgeText = 'Snapshot';
+  }
   else {
     badgeClass = summary.freshness === 'ok' ? 'badge-ok' : (summary.freshness === 'warn' ? 'badge-warn' : 'badge-err');
     badgeText  = summary.freshness === 'ok' ? 'Online' : (summary.freshness === 'warn' ? 'Stale' : 'Offline');
   }
-  card.className = 'table-card status-' + (noData ? 'nc' : ((datasetMeta && datasetMeta.isActive) ? datasetMeta.status : summary.freshness));
+  card.className = 'table-card status-' + (noData ? 'nc' : ((datasetMeta && datasetMeta.isActive) ? datasetMeta.status : (isStaleEdgeSnapshot ? 'warn' : summary.freshness)));
 
   var fmt = function(v, unit, dp) {
     if (v === null || v === undefined) return '--';
@@ -914,12 +926,17 @@ var _edgePayload = null;    // cached Edge Function payload
 var _edgePayloadAt = 0;     // Date.now() when _edgePayload was fetched
 var _overviewDiagState = { source: 'idle' };
 var OVERVIEW_STALE_SUMMARY_MAX_AGE_MIN = 90;
-var OVERVIEW_DETAIL_POINTS = 2000;
+var OVERVIEW_DETAIL_POINTS = 500;
+var _overviewStaleRefreshPromise = null;
+var _overviewLastStaleRefreshKey = '';
+var _overviewLastStaleRefreshAt = 0;
+var OVERVIEW_STALE_REFRESH_THROTTLE_MS = 5 * 60 * 1000;
+var _overviewLastDetailFallbackHadFailures = false;
 
 function overviewDiagTone(source, error) {
   if (error) return 'error';
   if (source === 'edge') return 'good';
-  if (source === 'edge-cache' || source === 'loading' || source === 'edge-detail-fallback') return 'warn';
+  if (source === 'edge-cache' || source === 'edge-stale' || source === 'loading' || source === 'edge-detail-fallback') return 'warn';
   return 'muted';
 }
 
@@ -927,7 +944,10 @@ function updateOverviewDiagnostics(patch) {
   _overviewDiagState = Object.assign({}, _overviewDiagState, patch || {});
   renderDashboardDiagnostics('dashboardDiagnosticsPanel', {
     summary: 'Overview Diagnostics',
-    pill: _overviewDiagState.error ? 'Error' : (_overviewDiagState.source === 'edge' ? 'Live' : (_overviewDiagState.source === 'loading' ? 'Loading' : 'Cache')),
+    pill: _overviewDiagState.error ? 'Error' :
+      (_overviewDiagState.source === 'edge' ? 'Live' :
+      (_overviewDiagState.source === 'loading' ? 'Loading' :
+      (_overviewDiagState.source === 'edge-stale' ? 'Stale' : 'Cache'))),
     pillTone: overviewDiagTone(_overviewDiagState.source, _overviewDiagState.error),
     rows: [
       { label: 'Source', value: _overviewDiagState.source || '--', tone: _overviewDiagState.error ? 'error' : (_overviewDiagState.source === 'edge' ? 'good' : '') },
@@ -1079,17 +1099,110 @@ function isOverviewPayloadStale(payload) {
   return ageMin != null && ageMin > OVERVIEW_STALE_SUMMARY_MAX_AGE_MIN;
 }
 
+function getOverviewStaleRefreshKey(payload) {
+  return payload && payload.data_as_of ? String(payload.data_as_of) : 'missing-data-as-of';
+}
+
+function renderStaleEdgeOverview(payload, contextLabel, refreshMode) {
+  renderEdgeCards(payload);
+
+  var statusEl = document.getElementById('fetchStatus');
+  var count = payload && payload.stations ? payload.stations.length : 0;
+  var partial = payload && payload.partial ? ' (partial)' : '';
+  var ageMin = getOverviewDataAgeMinutes(payload);
+  var ageText = ageMin != null ? (Math.round(ageMin) + 'm old') : 'stale';
+  var dataOf = payload && payload.data_as_of
+    ? new Date(payload.data_as_of).toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'})
+    : '?';
+  var suffix = 'refreshing cards in the background…';
+  var note = 'Cached overview rendered immediately because dashboard-overview summary is stale; station-detail refresh started in the background (' + contextLabel + ').';
+
+  if (refreshMode === 'running') {
+    suffix = 'background refresh already running…';
+    note = 'Cached overview rendered immediately because dashboard-overview summary is stale; an existing station-detail refresh is still running (' + contextLabel + ').';
+  } else if (refreshMode === 'throttled') {
+    suffix = 'background refresh was attempted recently; waiting before retrying.';
+    note = 'Cached overview rendered immediately because dashboard-overview summary is stale; station-detail refresh was throttled to avoid repeating the heavy fallback too often (' + contextLabel + ').';
+  } else if (refreshMode === 'deferred') {
+    suffix = 'click Fetch Live to rebuild cards from fresh station-detail data.';
+    note = 'Cached overview rendered immediately because dashboard-overview summary is stale; automatic station-detail refresh is deferred for passive loads to avoid repeated backend timeout noise (' + contextLabel + ').';
+  }
+
+  if (statusEl) {
+    statusEl.innerHTML = '<span style="color:var(--warning)">' + count +
+      ' stations via cached overview' + partial + ' — data as of ' + dataOf + ' (' + ageText + ') — ' + suffix + '</span>';
+  }
+
+  updateOverviewDiagnostics({
+    source: 'edge-stale',
+    generatedAt: payload ? payload.generated_at : null,
+    dataAsOf: payload ? payload.data_as_of : null,
+    schemaVersion: payload ? payload.schema_version : null,
+    partial: payload ? payload.partial === true : null,
+    stationCount: count,
+    fetchDurationMs: payload ? payload._response_duration_ms : null,
+    cacheAgeS: ageMin != null ? Math.round(ageMin * 60) : null,
+    lastRefreshAt: Date.now(),
+    error: '',
+    note: note
+  });
+}
+
+function scheduleOverviewUpgradeIfStale(payload, contextLabel) {
+  if (!isOverviewPayloadStale(payload)) return 'fresh';
+  if (_overviewStaleRefreshPromise) return 'running';
+
+  var refreshKey = getOverviewStaleRefreshKey(payload);
+  if (_overviewLastStaleRefreshKey === refreshKey && (Date.now() - _overviewLastStaleRefreshAt) < OVERVIEW_STALE_REFRESH_THROTTLE_MS) {
+    return 'throttled';
+  }
+
+  _overviewLastStaleRefreshKey = refreshKey;
+  _overviewLastStaleRefreshAt = Date.now();
+  _overviewStaleRefreshPromise = new Promise(function(resolve) {
+    setTimeout(async function() {
+      try {
+        var refreshOk = await renderOverviewFromStationDetails(payload, contextLabel, { background: true });
+        if (_overviewLastDetailFallbackHadFailures) {
+          _overviewLastStaleRefreshAt = 0;
+        }
+        resolve(refreshOk);
+      } catch (err) {
+        console.error('[Overview] background stale refresh failed:', err);
+        _overviewLastStaleRefreshAt = 0;
+        var statusEl = document.getElementById('fetchStatus');
+        if (statusEl) {
+          statusEl.innerHTML = '<span style="color:var(--warning)">Cached overview still shown — background refresh failed: ' +
+            escHtml(err && err.message ? err.message : 'Unknown error') + '</span>';
+        }
+        updateOverviewDiagnostics({
+          source: 'edge-stale',
+          lastRefreshAt: Date.now(),
+          error: err && err.message ? err.message : 'Background stale refresh failed',
+          note: 'Cached overview remained visible after the background station-detail refresh failed (' + contextLabel + ').'
+        });
+        resolve(false);
+      } finally {
+        _overviewStaleRefreshPromise = null;
+      }
+    }, 0);
+  });
+
+  return 'started';
+}
+
 async function fetchStationDetailOverviewPayload(stationId) {
   var startedAt = Date.now();
   var supaCfg = getSupabaseConfig();
   var url = supaCfg.url + '/functions/v1/station-detail' +
     '?station_id=' + encodeURIComponent(stationId) +
     '&points=' + encodeURIComponent(String(OVERVIEW_DETAIL_POINTS));
-  var res = await fetchWithTimeout(url, 20000, {
+  var res = await fetchWithTimeout(url, 30000, {
     headers: {
       'Authorization': 'Bearer ' + supaCfg.key,
       'apikey': supaCfg.key
-    }
+    },
+    cache: 'no-store'
   });
   if (!res.ok) {
     var body = null;
@@ -1103,6 +1216,22 @@ async function fetchStationDetailOverviewPayload(stationId) {
   }
   payload._response_duration_ms = Date.now() - startedAt;
   return payload;
+}
+
+async function fetchStationDetailOverviewPayloadWithRetry(stationId) {
+  try {
+    return await fetchStationDetailOverviewPayload(stationId);
+  } catch (firstErr) {
+    console.warn('[Overview] station-detail first attempt failed for ' + stationId + ', retrying:', firstErr && firstErr.message ? firstErr.message : firstErr);
+    await new Promise(function(resolve) { setTimeout(resolve, 500); });
+    try {
+      return await fetchStationDetailOverviewPayload(stationId);
+    } catch (secondErr) {
+      var firstMsg = firstErr && firstErr.message ? firstErr.message : String(firstErr);
+      var secondMsg = secondErr && secondErr.message ? secondErr.message : String(secondErr);
+      throw new Error('station-detail retry failed for ' + stationId + ' | first: ' + firstMsg + ' | second: ' + secondMsg);
+    }
+  }
 }
 
 function stationDetailPayloadToOverviewSummary(table, payload) {
@@ -1122,13 +1251,61 @@ function stationDetailPayloadToOverviewSummary(table, payload) {
   };
 }
 
-async function renderOverviewFromStationDetails(basePayload, contextLabel) {
+function loadLocalOverviewMergedData(table) {
+  return new Promise(function(resolve, reject) {
+    var src = table && table.dataFile ? String(table.dataFile).trim() : '';
+    if (!src) {
+      reject(new Error('No local merged_data.js fallback configured for ' + (table && table.id ? table.id : 'station')));
+      return;
+    }
+
+    var scriptId = 'overviewLocalMergedDataScript_' + String((table && table.id) || 'station').replace(/[^a-z0-9_-]/ig, '_');
+    var existing = document.getElementById(scriptId);
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    window.STATION_DATA = null;
+
+    var script = document.createElement('script');
+    script.id = scriptId;
+    script.src = src + (src.indexOf('?') >= 0 ? '&' : '?') + 'ts=' + Date.now();
+    script.async = true;
+    script.onload = function() {
+      if (window.STATION_DATA && Array.isArray(window.STATION_DATA.feeds)) {
+        resolve(window.STATION_DATA);
+        return;
+      }
+      reject(new Error('Local merged_data.js loaded but did not expose STATION_DATA.feeds for ' + ((table && table.id) || 'station')));
+    };
+    script.onerror = function() {
+      reject(new Error('Local merged_data.js failed to load for ' + ((table && table.id) || 'station')));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+function localOverviewDataToSummary(table, rawData) {
+  var feeds = rawData && Array.isArray(rawData.feeds) ? rawData.feeds : [];
+  var entries = [];
+  for (var i = 0; i < feeds.length; i++) {
+    var parsed = parseEntry(feeds[i]);
+    if (parsed) entries.push(parsed);
+  }
+  entries.sort(function(a, b) { return a.timestamp - b.timestamp; });
+  return {
+    entries: entries,
+    summary: computeSummary(table.id, entries),
+    dataAsOf: entries.length ? entries[entries.length - 1].timestamp.toISOString() : null,
+    fetchDurationMs: null
+  };
+}
+
+async function renderOverviewFromStationDetails(basePayload, contextLabel, options) {
   var grid = document.getElementById('tableGrid');
   var btn = document.getElementById('btnFetchAll');
   var statusEl = document.getElementById('fetchStatus');
   var startedAt = Date.now();
+  var background = !!(options && options.background);
 
-  if (btn) {
+  if (btn && !background) {
     btn.innerHTML = '<span class="spinner"></span> Refreshing...';
     btn.disabled = true;
   }
@@ -1143,21 +1320,26 @@ async function renderOverviewFromStationDetails(basePayload, contextLabel) {
     }
   }
 
-  var jobs = TABLES.map(function(table) {
-    return fetchStationDetailOverviewPayload(table.id)
-      .then(function(payload) {
-        return { table: table, ok: true, payload: payload };
-      })
-      .catch(function(err) {
-        return { table: table, ok: false, error: err };
-      });
-  });
-
-  var results = await Promise.all(jobs);
+  var results = [];
+  for (var jobIdx = 0; jobIdx < TABLES.length; jobIdx++) {
+    var jobTable = TABLES[jobIdx];
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color:var(--warning)">Overview summary is stale — rebuilding ' +
+        escHtml(jobTable.name) + ' (' + (jobIdx + 1) + '/' + TABLES.length + ') from station-detail feeds…</span>';
+    }
+    await yieldToBrowser();
+    try {
+      var jobPayload = await fetchStationDetailOverviewPayloadWithRetry(jobTable.id);
+      results.push({ table: jobTable, ok: true, payload: jobPayload });
+    } catch (jobErr) {
+      results.push({ table: jobTable, ok: false, error: jobErr });
+    }
+  }
   var renderedCount = 0;
   var failureIds = [];
   var latestDataAsOfMs = null;
   var totalFetchDurationMs = 0;
+  _overviewLastDetailFallbackHadFailures = false;
   grid.innerHTML = '';
 
   for (var r = 0; r < results.length; r++) {
@@ -1188,26 +1370,51 @@ async function renderOverviewFromStationDetails(basePayload, contextLabel) {
         }
       }
     } else {
-      failureIds.push(table.id);
-      var fallbackStation = stationsById[table.id] || null;
-      if (fallbackStation) {
-        _dataSource[table.id] = 'edge';
-        card = renderTableCard(table, edgeStationToSummary(fallbackStation));
-      } else {
-        card = renderTableCard(table, null);
+      var localRecovered = false;
+      try {
+        var localData = await loadLocalOverviewMergedData(table);
+        var localDerived = localOverviewDataToSummary(table, localData);
+        if (localDerived.entries.length) {
+          tableEntries[table.id] = localDerived.entries;
+          _dataSource[table.id] = 'file';
+          card = renderTableCard(table, localDerived.summary);
+          renderedCount++;
+          localRecovered = true;
+          if (localDerived.dataAsOf) {
+            var localAsOfMs = new Date(localDerived.dataAsOf).getTime();
+            if (!isNaN(localAsOfMs) && (latestDataAsOfMs === null || localAsOfMs > latestDataAsOfMs)) {
+              latestDataAsOfMs = localAsOfMs;
+            }
+          }
+          console.warn('[Overview] station-detail fallback failed for ' + table.id + ', recovered from local merged_data.js:', result.error);
+        }
+      } catch (localErr) {
+        console.warn('[Overview] local merged_data.js fallback failed for ' + table.id + ':', localErr);
       }
-      console.error('[Overview] station-detail fallback failed for ' + table.id + ':', result.error);
+
+      if (!localRecovered) {
+        failureIds.push(table.id);
+        var fallbackStation = stationsById[table.id] || null;
+        if (fallbackStation) {
+          _dataSource[table.id] = 'edge';
+          card = renderTableCard(table, edgeStationToSummary(fallbackStation));
+        } else {
+          card = renderTableCard(table, null);
+        }
+        console.error('[Overview] station-detail fallback failed for ' + table.id + ':', result.error);
+      }
     }
 
     grid.appendChild(card);
   }
 
-  if (btn) {
+  if (btn && !background) {
     btn.innerHTML = '&#128752; Fetch Live';
     btn.disabled = false;
   }
 
   var latestDataAsOf = latestDataAsOfMs != null ? new Date(latestDataAsOfMs).toISOString() : (basePayload ? basePayload.data_as_of : null);
+  _overviewLastDetailFallbackHadFailures = failureIds.length > 0;
   if (statusEl) {
     var refreshTs = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'});
     var liveTs = latestDataAsOf
@@ -1237,9 +1444,8 @@ async function renderOverviewFromStationDetails(basePayload, contextLabel) {
   return renderedCount > 0;
 }
 
-async function upgradeOverviewIfStale(payload, contextLabel) {
-  if (!isOverviewPayloadStale(payload)) return false;
-  return renderOverviewFromStationDetails(payload, contextLabel);
+function upgradeOverviewIfStale(payload, contextLabel) {
+  return scheduleOverviewUpgradeIfStale(payload, contextLabel);
 }
 
 /**
@@ -1269,7 +1475,8 @@ function renderEdgeCards(payload) {
 /**
  * Edge Function fetch-all (sole data path for dashboard overview).
  */
-async function fetchAllEdge() {
+async function fetchAllEdge(mode) {
+  mode = mode || 'manual';
   var btn = document.getElementById('btnFetchAll');
   var statusEl = document.getElementById('fetchStatus');
   btn.innerHTML = '<span class="spinner"></span> Fetching...';
@@ -1289,7 +1496,7 @@ async function fetchAllEdge() {
         var st = payload.stations[i];
         _deviceStatusById[st.station_id] = {
           batteryPct: st.battery_pct,
-          nextCheckInAt: null,
+          nextCheckInAt: st.next_check_in ? new Date(st.next_check_in) : null,
           lastSeenAt: st.last_seen ? new Date(st.last_seen) : null,
           lastUploadAt: null,
           raw: st
@@ -1297,10 +1504,14 @@ async function fetchAllEdge() {
       }
     }
 
-    var usedFallback = false;
     if (isOverviewPayloadStale(payload)) {
-      usedFallback = await upgradeOverviewIfStale(payload, 'manual refresh');
-      if (usedFallback) return;
+      if (mode === 'manual') {
+        var refreshMode = upgradeOverviewIfStale(payload, 'manual refresh');
+        renderStaleEdgeOverview(payload, 'manual refresh', refreshMode);
+      } else {
+        renderStaleEdgeOverview(payload, mode === 'auto' ? 'auto refresh' : 'passive refresh', 'deferred');
+      }
+      return;
     }
 
     renderEdgeCards(payload);
@@ -1365,8 +1576,8 @@ async function fetchAllEdge() {
 }
 
 /** Fetch all station data via Edge Function. */
-function fetchAllLive() {
-  return fetchAllEdge();
+function fetchAllLive(mode) {
+  return fetchAllEdge(mode || 'manual');
 }
 
 function renderAllCards() {
@@ -1396,7 +1607,7 @@ function setupAutoRefresh() {
   var label = document.getElementById('autoRefreshLabel');
   _autoRefreshTimer = setInterval(function() {
     console.log('[Overview] Auto-refresh triggered');
-    fetchAllLive();
+    fetchAllLive('auto');
   }, 60000);
   if (label) label.textContent = 'Auto-refresh: every 1m';
 }
@@ -1431,7 +1642,7 @@ async function init() {
         var est = payload.stations[ei];
         _deviceStatusById[est.station_id] = {
           batteryPct: est.battery_pct,
-          nextCheckInAt: null,
+          nextCheckInAt: est.next_check_in ? new Date(est.next_check_in) : null,
           lastSeenAt: est.last_seen ? new Date(est.last_seen) : null,
           lastUploadAt: null,
           raw: est
@@ -1439,35 +1650,28 @@ async function init() {
       }
     }
 
-    var initUsedFallback = false;
     if (isOverviewPayloadStale(payload)) {
-      initUsedFallback = await upgradeOverviewIfStale(payload, 'initial page load');
-      if (initUsedFallback) {
-        console.warn('[Overview] dashboard-overview payload stale; using station-detail fallback');
-        setupAutoRefresh();
-        document.body.classList.remove('loading-state');
-        if (mainEl) mainEl.classList.remove('loading-state');
-        return;
-      }
+      renderStaleEdgeOverview(payload, 'initial page load', 'deferred');
+      console.warn('[Overview] dashboard-overview payload stale; rendering cached cards first and deferring station-detail refresh until manual fetch');
+    } else {
+      renderEdgeCards(payload);
+
+      console.log('[Overview] Loaded from Edge Function, ' +
+        (payload.stations ? payload.stations.length : 0) + ' stations');
+      updateOverviewDiagnostics({
+        source: 'edge',
+        generatedAt: payload.generated_at,
+        dataAsOf: payload.data_as_of,
+        schemaVersion: payload.schema_version,
+        partial: payload.partial === true,
+        stationCount: payload.stations ? payload.stations.length : null,
+        fetchDurationMs: payload._response_duration_ms,
+        cacheAgeS: 0,
+        lastRefreshAt: Date.now(),
+        error: '',
+        note: 'Initial page load completed from dashboard-overview Edge Function.'
+      });
     }
-
-    renderEdgeCards(payload);
-
-    console.log('[Overview] Loaded from Edge Function, ' +
-      (payload.stations ? payload.stations.length : 0) + ' stations');
-    updateOverviewDiagnostics({
-      source: 'edge',
-      generatedAt: payload.generated_at,
-      dataAsOf: payload.data_as_of,
-      schemaVersion: payload.schema_version,
-      partial: payload.partial === true,
-      stationCount: payload.stations ? payload.stations.length : null,
-      fetchDurationMs: payload._response_duration_ms,
-      cacheAgeS: 0,
-      lastRefreshAt: Date.now(),
-      error: '',
-      note: 'Initial page load completed from dashboard-overview Edge Function.'
-    });
   } catch (edgeErr) {
     console.error('[Overview] Edge init failed:', edgeErr.message);
     grid.innerHTML = '<div class="loading-text" style="color:var(--danger)">Could not load dashboard data: ' +

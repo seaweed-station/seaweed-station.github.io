@@ -404,11 +404,11 @@ var _deviceSlotsById = {}; // { stationId: { A: 2, B: 1 } }
 var _deviceSlotHistoryById = {}; // { stationId: [{ slotNumber, nodeLetter, assignedAtMs, retiredAtMs }] }
 var _healthDiagMeta = { source: 'idle' };
 var _healthLoadedWindow = null;
-var HEALTH_RECENT_WINDOW_DAYS = 30;
+var HEALTH_RECENT_WINDOW_DAYS = 14;
 var HEALTH_ALL_WINDOW_DAYS = 365;
-var HEALTH_CACHE_DAYS = 45;
-var HEALTH_CACHE_MAX_ENTRIES = 4000;
-var HEALTH_RECENT_POINTS = 500;
+var HEALTH_CACHE_DAYS = 21;
+var HEALTH_CACHE_MAX_ENTRIES = 800;
+var HEALTH_RECENT_POINTS = 350;
 var HEALTH_ALL_POINTS = 1500;
 
 function healthDiagTone(source, error) {
@@ -1035,7 +1035,7 @@ onDashboardDataRefresh(function(msg) {
 
     (async function() {
       try {
-        var payload = await fetchEdgeHealthSummary({ range: 'recent' });
+        var payload = await fetchEdgeHealthSummaryResilient({ range: 'recent' });
         applyEdgeHealthPayload(payload);
         rebuildHealthStations(getOpenHealthStationIds());
 
@@ -1056,12 +1056,24 @@ onDashboardDataRefresh(function(msg) {
           stationSummary: stationSummary,
           lastRefreshAt: Date.now(),
           error: '',
-          note: 'Initial health-summary load completed from Edge Function.'
+          note: healthPayloadNote(
+            payload,
+            'Initial health-summary load completed from Edge Function.',
+            'Initial health-summary load completed from a reduced fallback window after the default recent request timed out.'
+          )
         });
 
         notifyDashboardDataRefresh(STATIONS.map(function(st) { return st.id; }), 'station_health.edgeInit');
       } catch (edgeErr) {
         console.warn('[Health] Edge init failed:', edgeErr.message);
+        if (!preSeeded) {
+          var loadingEl = document.getElementById('loadingMsg');
+          if (loadingEl) {
+            loadingEl.style.display = 'block';
+            loadingEl.style.color = 'var(--danger)';
+            loadingEl.textContent = 'Could not load station health: ' + (edgeErr.message || 'Unknown error');
+          }
+        }
         updateHealthDiagnostics({
           source: preSeeded ? 'cache-preseed' : 'error',
           dataAsOf: getHealthLatestDataAsOf(),

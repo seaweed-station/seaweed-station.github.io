@@ -131,6 +131,11 @@ function setupPage() {
   document.getElementById('stationSubtitle').textContent = STATION.subtitle;
   document.getElementById('footerName').textContent  = STATION.title;
   document.getElementById('channelLabel').textContent = STATION.channelId || '--';
+
+  var weatherCollapsible = document.getElementById('weatherCollapsible');
+  if (weatherCollapsible && !WEATHER_ENABLED) {
+    weatherCollapsible.style.display = 'none';
+  }
 }
 
 // =====================================================================
@@ -159,9 +164,11 @@ document.addEventListener('DOMContentLoaded', function () {
   restoreStationSummaryCache();
 
   // Pre-seed cached weather so night/day shading and Open-Meteo overlays are ready on first render.
-  if (applyWeatherCache(false)) {
+  if (WEATHER_ENABLED && applyWeatherCache(false)) {
     console.log('[Weather] Pre-seeded cached weather_data.js');
     refreshWeatherLinkedViews();
+  } else if (!WEATHER_ENABLED) {
+    console.log('[Weather] Disabled for ' + TABLE_ID + ': no station coordinates configured');
   }
 
   // Pre-seed from cache so the page is not blank during the network call

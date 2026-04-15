@@ -48,6 +48,7 @@ var _healthRangeFetchPromise = null;
 var _healthRangeFetchKey = '';
 var _healthStationRawWindowById = {};
 var _healthStationRawFetchPromiseById = {};
+var HEALTH_RAW_HYDRATION_ENABLED = false;
 var HEALTH_RAW_RECENT_WINDOW_DAYS = 45;
 var HEALTH_RAW_ALL_WINDOW_DAYS = 370;
 var HEALTH_RAW_FETCH_PAGE_SIZE = 1000;
@@ -129,6 +130,7 @@ function getHealthStationNeededRawWindow(stationId, range) {
 }
 
 async function fetchHealthStationRawEntries(stationId, windowLike) {
+  if (!HEALTH_RAW_HYDRATION_ENABLED) return [];
   if (!stationId) return [];
   var bounds = parseHealthWindowBounds(windowLike);
   if (!bounds) return [];
@@ -171,6 +173,7 @@ async function fetchHealthStationRawEntries(stationId, windowLike) {
 
 async function ensureHealthStationRawData(stationId, range, opts) {
   opts = opts || {};
+  if (!HEALTH_RAW_HYDRATION_ENABLED) return false;
   if (!stationId) return false;
   var neededWindow = getHealthStationNeededRawWindow(stationId, range);
   if (healthStationRawCanServeWindow(stationId, neededWindow)) return false;
@@ -293,6 +296,73 @@ async function fetchEdgeHealthSummary(opts) {
   }
   payload._response_duration_ms = Date.now() - startedAt;
   return payload;
+}
+
+function isHealthSummaryRetryableError(err) {
+  var msg = err && err.message ? String(err.message) : String(err || '');
+  var lower = msg.toLowerCase();
+  return lower.indexOf('statement timeout') >= 0 ||
+    lower.indexOf('http 503') >= 0 ||
+    lower.indexOf('http 504') >= 0 ||
+    lower.indexOf('failed to fetch') >= 0 ||
+    lower.indexOf('networkerror') >= 0 ||
+    lower.indexOf('timeout') >= 0;
+}
+
+function buildHealthFallbackRequest(opts, days, points, timeoutMs) {
+  var to = opts && opts.to ? new Date(opts.to) : new Date();
+  if (!(to instanceof Date) || isNaN(to.getTime())) to = new Date();
+  return Object.assign({}, opts || {}, {
+    range: 'recent',
+    from: new Date(to.getTime() - days * 86400000).toISOString(),
+    to: to.toISOString(),
+    points: points,
+    timeoutMs: timeoutMs
+  });
+}
+
+async function fetchEdgeHealthSummaryResilient(opts) {
+  opts = opts || {};
+  try {
+    return await fetchEdgeHealthSummary(opts);
+  } catch (firstErr) {
+    var requestedRange = opts.range || 'recent';
+    if (requestedRange === 'all' || !isHealthSummaryRetryableError(firstErr)) throw firstErr;
+
+    var basePoints = Number(opts.points) || getHealthPointsTarget('recent');
+    var fallbackAttempts = [
+      { days: 14, points: Math.min(basePoints, 350), timeoutMs: 20000 },
+      { days: 7, points: Math.min(basePoints, 250), timeoutMs: 15000 }
+    ];
+    var firstMsg = firstErr && firstErr.message ? firstErr.message : String(firstErr);
+    var lastErr = firstErr;
+
+    for (var i = 0; i < fallbackAttempts.length; i++) {
+      var attempt = fallbackAttempts[i];
+      try {
+        console.warn('[Health] health-summary primary fetch failed, retrying with reduced window:', firstMsg, '| fallback=' + attempt.days + 'd');
+        var payload = await fetchEdgeHealthSummary(buildHealthFallbackRequest(opts, attempt.days, attempt.points, attempt.timeoutMs));
+        payload._healthFallback = {
+          days: attempt.days,
+          points: attempt.points,
+          reason: firstMsg
+        };
+        return payload;
+      } catch (fallbackErr) {
+        lastErr = fallbackErr;
+      }
+    }
+
+    var lastMsg = lastErr && lastErr.message ? lastErr.message : String(lastErr);
+    throw new Error('Edge Function (health-summary): primary recent fetch failed (' + firstMsg + ') and reduced-window retries failed (' + lastMsg + ')');
+  }
+}
+
+function healthPayloadNote(payload, defaultNote, fallbackNote) {
+  if (payload && payload._healthFallback) {
+    return fallbackNote || ('Loaded a reduced ' + payload._healthFallback.days + '-day health window after the default recent query timed out.');
+  }
+  return defaultNote;
 }
 
 /**
@@ -453,7 +523,7 @@ async function ensureHealthRangeLoaded(range) {
 
   _healthRangeFetchKey = requestedRange;
   _healthRangeFetchPromise = (async function() {
-    var payload = await fetchEdgeHealthSummary({
+    var payload = await fetchEdgeHealthSummaryResilient({
       range: requestedRange,
       from: requestWindow.from.toISOString(),
       to: requestWindow.to.toISOString(),
@@ -477,7 +547,11 @@ async function ensureHealthRangeLoaded(range) {
       error: '',
       note: requestedRange === 'all'
         ? 'Expanded Station Health to the full retained window.'
-        : 'Recent Station Health window refreshed from the Edge Function.'
+        : healthPayloadNote(
+            payload,
+            'Recent Station Health window refreshed from the Edge Function.',
+            'Recent Station Health refreshed from a reduced fallback window after the default request timed out.'
+          )
     });
     return true;
   })().finally(function() {
@@ -503,7 +577,7 @@ async function fetchLiveAllEdge() {
   try {
     status.textContent = 'Fetching all stations via Edge Function...';
     var requestWindow = getHealthRequestedWindow(requestedRange);
-    var payload = await fetchEdgeHealthSummary({
+    var payload = await fetchEdgeHealthSummaryResilient({
       range: requestedRange,
       from: requestWindow.from.toISOString(),
       to: requestWindow.to.toISOString(),
@@ -548,13 +622,21 @@ async function fetchLiveAllEdge() {
       error: '',
       note: requestedRange === 'all'
         ? 'Single health-summary Edge payload covering the full retained window for all active stations.'
-        : 'Single health-summary Edge payload for all active stations.'
+        : healthPayloadNote(
+            payload,
+            'Single health-summary Edge payload for all active stations.',
+            'Single health-summary Edge payload loaded from a reduced fallback window after the default recent request timed out.'
+          )
     });
 
     btn.innerHTML = '&#128752; Fetch Live';
     btn.disabled  = false;
     var ts = new Date().toLocaleTimeString('en-GB', {timeZone:'UTC', hour:'2-digit', minute:'2-digit'}) + ' UTC';
-    status.innerHTML = '<span style="color:var(--success)">All ' + STATIONS.length + ' stations updated via edge &mdash; ' + ts + '</span>';
+    status.innerHTML = '<span style="color:var(--success)">' +
+      (payload && payload._healthFallback
+        ? ('Health page updated via reduced ' + payload._healthFallback.days + 'd edge window')
+        : ('All ' + STATIONS.length + ' stations updated via edge')) +
+      ' &mdash; ' + ts + '</span>';
 
     notifyDashboardDataRefresh(STATIONS.map(function(st) { return st.id; }), 'station_health.fetchLiveAllEdge');
 
