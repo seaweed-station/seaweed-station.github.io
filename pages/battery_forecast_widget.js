@@ -972,73 +972,108 @@ window.BatteryForecast = (function () {
     var anchorIdx = getAnchor(entries);
     var anchorTime = anchorIdx >= 0 ? entries[anchorIdx].timestamp.getTime() : null;
 
-    if (chart) {
-      chart.data.datasets = result.datasets;
-      chart._trendInfo = result.info._trendConfidence || [];
-      chart._trendInsufficient = result.info._trendInsufficient || [];
-      chart._trendInsufficient = result.info._trendInsufficient || [];
-      chart._forecastAnchorTime = anchorTime;
-      applyFcRange();
-      chart.update('none');
-    } else {
-      chart = new Chart(canvas, {
-        type: 'line',
-        data: { datasets: result.datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            legend: { position: 'top', labels: { color: '#94a3b8', font: { size: 11 }, usePointStyle: true, pointStyle: 'line' } },
-            tooltip: {
-              backgroundColor: '#1e293b',
-              borderColor: '#334155',
-              borderWidth: 1,
-              titleColor: '#f1f5f9',
-              bodyColor: '#94a3b8',
-              callbacks: {
-                label: function (ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%'; }
+    chart = (window.ChartManager && typeof ChartManager.upsert === 'function')
+      ? ChartManager.upsert({
+          key: 'battery-forecast:main',
+          canvas: canvas,
+          config: {
+            type: 'line',
+            data: { datasets: result.datasets },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                legend: { position: 'top', labels: { color: '#94a3b8', font: { size: 11 }, usePointStyle: true, pointStyle: 'line' } },
+                tooltip: {
+                  backgroundColor: '#1e293b',
+                  borderColor: '#334155',
+                  borderWidth: 1,
+                  titleColor: '#f1f5f9',
+                  bodyColor: '#94a3b8',
+                  callbacks: {
+                    label: function (ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%'; }
+                  }
+                },
+              },
+              scales: {
+                x: {
+                  type: 'time',
+                  time: { unit: 'day', displayFormats: { day: 'dd MMM', hour: 'HH:mm' } },
+                  grid: { color: '#1e293b' },
+                  ticks: { color: '#64748b', maxTicksLimit: 12 },
+                },
+                y: {
+                  min: 0, max: 100,
+                  title: { display: true, text: 'Battery (%)', color: '#94a3b8' },
+                  grid: { color: '#1e293b' },
+                  ticks: { color: '#64748b' },
+                }
+              },
+              onClick: function (evt) {
+                if (anchorMode !== 'locked') return;
+                var xVal = chart.scales.x.getValueForPixel(evt.x);
+                if (!xVal) return;
+                var _clickEntries = _activeState ? _activeState.allEntries : [];
+                var best = -1, bestDist = Infinity;
+                for (var i = 0; i < _clickEntries.length; i++) {
+                  var d = Math.abs(_clickEntries[i].timestamp.getTime() - xVal);
+                  if (d < bestDist) { bestDist = d; best = i; }
+                }
+                if (best >= 0) {
+                  lockedAnchorIdx = best;
+                  try { localStorage.setItem('fc_anchor_time', _clickEntries[best].timestamp.toISOString()); } catch (e) {}
+                  update(_activeState);
+                }
               }
             },
+            plugins: [configAnnotationPlugin, anchorLinePlugin, trendConfidencePlugin]
           },
-          scales: {
-            x: {
-              type: 'time',
-              time: { unit: 'day', displayFormats: { day: 'dd MMM', hour: 'HH:mm' } },
-              grid: { color: '#1e293b' },
-              ticks: { color: '#64748b', maxTicksLimit: 12 },
+          meta: { scope: 'battery-forecast' },
+          updateMode: 'none'
+        })
+      : new Chart(canvas, {
+          type: 'line',
+          data: { datasets: result.datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { position: 'top', labels: { color: '#94a3b8', font: { size: 11 }, usePointStyle: true, pointStyle: 'line' } },
+              tooltip: {
+                backgroundColor: '#1e293b',
+                borderColor: '#334155',
+                borderWidth: 1,
+                titleColor: '#f1f5f9',
+                bodyColor: '#94a3b8',
+                callbacks: {
+                  label: function (ctx) { return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%'; }
+                }
+              },
             },
-            y: {
-              min: 0, max: 100,
-              title: { display: true, text: 'Battery (%)', color: '#94a3b8' },
-              grid: { color: '#1e293b' },
-              ticks: { color: '#64748b' },
+            scales: {
+              x: {
+                type: 'time',
+                time: { unit: 'day', displayFormats: { day: 'dd MMM', hour: 'HH:mm' } },
+                grid: { color: '#1e293b' },
+                ticks: { color: '#64748b', maxTicksLimit: 12 },
+              },
+              y: {
+                min: 0, max: 100,
+                title: { display: true, text: 'Battery (%)', color: '#94a3b8' },
+                grid: { color: '#1e293b' },
+                ticks: { color: '#64748b' },
+              }
             }
           },
-          onClick: function (evt, elements) {
-            if (anchorMode !== 'locked') return;
-            // Click to set anchor on locked mode
-            var xVal = chart.scales.x.getValueForPixel(evt.x);
-            if (!xVal) return;
-            // Find nearest entry in current active dataset
-            var _clickEntries = _activeState ? _activeState.allEntries : [];
-            var best = -1, bestDist = Infinity;
-            for (var i = 0; i < _clickEntries.length; i++) {
-              var d = Math.abs(_clickEntries[i].timestamp.getTime() - xVal);
-              if (d < bestDist) { bestDist = d; best = i; }
-            }
-            if (best >= 0) {
-              lockedAnchorIdx = best;
-              try { localStorage.setItem('fc_anchor_time', _clickEntries[best].timestamp.toISOString()); } catch (e) {}
-              update(_activeState);
-            }
-          }
-        },
-        plugins: [configAnnotationPlugin, anchorLinePlugin, trendConfidencePlugin],
-      });      chart._trendInfo = result.info._trendConfidence || [];      chart._forecastAnchorTime = anchorTime;
-      applyFcRange();
-      chart.update('none');
-    }
+          plugins: [configAnnotationPlugin, anchorLinePlugin, trendConfidencePlugin]
+        });
+    chart._trendInfo = result.info._trendConfidence || [];
+    chart._trendInsufficient = result.info._trendInsufficient || [];
+    chart._forecastAnchorTime = anchorTime;
+    applyFcRange();
+    chart.update('none');
 
     // Update anchor mode button state
     var btnAuto   = document.getElementById('fcAnchorAuto');
@@ -1183,7 +1218,12 @@ window.BatteryForecast = (function () {
 
   // Destroy chart on page unload (cleanup)
   function destroy() {
-    if (chart) { chart.destroy(); chart = null; }
+    if (window.ChartManager && typeof ChartManager.destroy === 'function') {
+      ChartManager.destroy('battery-forecast:main');
+    } else if (chart) {
+      chart.destroy();
+    }
+    chart = null;
   }
 
   // Reset anchor / prior-calc state — call before switching stations

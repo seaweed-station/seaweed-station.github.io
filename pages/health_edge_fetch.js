@@ -46,6 +46,12 @@ async function refreshDeviceSlotMap() {
 
 var _healthRangeFetchPromise = null;
 var _healthRangeFetchKey = '';
+var _healthStationRawWindowById = {};
+var _healthStationRawFetchPromiseById = {};
+var HEALTH_RAW_RECENT_WINDOW_DAYS = 45;
+var HEALTH_RAW_ALL_WINDOW_DAYS = 370;
+var HEALTH_RAW_FETCH_PAGE_SIZE = 1000;
+var HEALTH_RAW_FETCH_MAX_ROWS = 20000;
 
 function healthEntryKey(entry) {
   if (!entry) return '';
@@ -65,6 +71,141 @@ function mergeHealthEntries(existingEntries, incomingEntries) {
     }
   }
   return Array.from(merged.values()).sort(function(a, b) { return a.timestamp - b.timestamp; });
+}
+
+function parseHealthWindowBounds(windowLike) {
+  if (!windowLike) return null;
+  var min = windowLike.min;
+  var max = windowLike.max;
+  if (windowLike.from != null) min = windowLike.from;
+  if (windowLike.to != null) max = windowLike.to;
+  min = min instanceof Date ? min.getTime() : new Date(min).getTime();
+  max = max instanceof Date ? max.getTime() : new Date(max).getTime();
+  if (!isFinite(min) || !isFinite(max) || max < min) return null;
+  return { min: min, max: max };
+}
+
+function mergeHealthStationRawWindow(stationId, windowLike) {
+  if (!stationId) return;
+  var parsed = parseHealthWindowBounds(windowLike);
+  if (!parsed) return;
+  var current = _healthStationRawWindowById[stationId];
+  if (!current) {
+    _healthStationRawWindowById[stationId] = parsed;
+    return;
+  }
+  _healthStationRawWindowById[stationId] = {
+    min: Math.min(current.min, parsed.min),
+    max: Math.max(current.max, parsed.max)
+  };
+}
+
+function getHealthStationRawWindow(stationId) {
+  return stationId ? (_healthStationRawWindowById[stationId] || null) : null;
+}
+
+function healthStationRawCanServeWindow(stationId, windowLike) {
+  var current = getHealthStationRawWindow(stationId);
+  var needed = parseHealthWindowBounds(windowLike);
+  if (!current || !needed) return false;
+  return current.min <= needed.min && current.max >= needed.max;
+}
+
+function getHealthStationNeededRawWindow(stationId, range) {
+  var visibleDays = Math.max(STATION_LOG_ROWS_STEP, Number(_stationLogsVisibleDays[stationId]) || STATION_LOG_ROWS_STEP);
+  var rangeDays = 30;
+  if (range === 'day') rangeDays = 1;
+  else if (range === 'week') rangeDays = 7;
+  else if (range === 'month') rangeDays = 30;
+  else if (range === 'all') rangeDays = HEALTH_RAW_ALL_WINDOW_DAYS;
+
+  var lookbackDays = range === 'all'
+    ? HEALTH_RAW_ALL_WINDOW_DAYS
+    : Math.max(HEALTH_RAW_RECENT_WINDOW_DAYS, rangeDays, visibleDays + 7);
+
+  var to = new Date();
+  var from = new Date(to.getTime() - (lookbackDays * 86400000));
+  return { from: from, to: to };
+}
+
+async function fetchHealthStationRawEntries(stationId, windowLike) {
+  if (!stationId) return [];
+  var bounds = parseHealthWindowBounds(windowLike);
+  if (!bounds) return [];
+  var fromIso = new Date(bounds.min).toISOString();
+  var toIso = new Date(bounds.max).toISOString();
+  var supaCfg = getSupabaseConfig();
+  var hdrs = supabaseHeaders(supaCfg.key);
+  var select = [
+    'id', 'recorded_at',
+    'battery_pct', 'temp_1', 'humidity_1', 'temp_2', 'humidity_2', 'temp_3', 'humidity_3',
+    'battery_v', 'solar_v', 'boot_count', 'fw_version', 'fw_date',
+    'sat_1_installed', 'sat_2_installed',
+    'sat_1_battery_v', 'sat_1_battery_pct', 'sat_1_flash_pct', 'sat_1_fw_ver', 'sat_1_temp_1', 'sat_1_humidity_1', 'sat_1_temp_2', 'sat_1_humidity_2',
+    'sat_2_battery_v', 'sat_2_battery_pct', 'sat_2_flash_pct', 'sat_2_fw_ver', 'sat_2_temp_1', 'sat_2_humidity_1', 'sat_2_temp_2', 'sat_2_humidity_2'
+  ].join(',');
+
+  var rows = [];
+  for (var offset = 0; offset < HEALTH_RAW_FETCH_MAX_ROWS; offset += HEALTH_RAW_FETCH_PAGE_SIZE) {
+    var url = supaCfg.url + '/rest/v1/sensor_readings' +
+      '?select=' + encodeURIComponent(select) +
+      '&device_id=eq.' + encodeURIComponent(stationId) +
+      '&recorded_at=gte.' + encodeURIComponent(fromIso) +
+      '&recorded_at=lte.' + encodeURIComponent(toIso) +
+      '&order=recorded_at.asc' +
+      '&limit=' + HEALTH_RAW_FETCH_PAGE_SIZE +
+      '&offset=' + offset;
+    var res = await fetchWithTimeout(url, 30000, { headers: hdrs });
+    if (!res.ok) throw new Error('sensor_readings HTTP ' + res.status);
+    var batch = await res.json();
+    if (Array.isArray(batch) && batch.length) {
+      rows = rows.concat(batch);
+    }
+    if (!Array.isArray(batch) || batch.length < HEALTH_RAW_FETCH_PAGE_SIZE) break;
+    await yieldToBrowser();
+  }
+
+  var parsed = parseSupabaseData(rows, { id: stationId, name: stationId });
+  return parsed && Array.isArray(parsed.entries) ? parsed.entries : [];
+}
+
+async function ensureHealthStationRawData(stationId, range, opts) {
+  opts = opts || {};
+  if (!stationId) return false;
+  var neededWindow = getHealthStationNeededRawWindow(stationId, range);
+  if (healthStationRawCanServeWindow(stationId, neededWindow)) return false;
+  if (_healthStationRawFetchPromiseById[stationId]) return _healthStationRawFetchPromiseById[stationId];
+
+  _healthStationRawFetchPromiseById[stationId] = (async function() {
+    var rawEntries = await fetchHealthStationRawEntries(stationId, neededWindow);
+    if (!rawEntries.length) return false;
+
+    var mergedEntries = mergeHealthEntries(stationData[stationId] && stationData[stationId].entries, rawEntries);
+    stationData[stationId] = {
+      entries: mergedEntries,
+      raw: stationData[stationId] ? stationData[stationId].raw : null
+    };
+    _stationDataSource[stationId] = { source: 'live', savedAt: Date.now(), rawLoaded: true };
+    mergeHealthStationRawWindow(stationId, neededWindow);
+    saveCacheData(stationId, buildHealthCacheEntries(mergedEntries), {
+      source: 'live',
+      timeRange: range === 'all' ? 'all' : 'recent',
+      windowStart: new Date(neededWindow.from).toISOString(),
+      windowEnd: new Date(neededWindow.to).toISOString()
+    });
+
+    if (opts.rerender !== false && typeof _renderStationRange === 'function') {
+      _renderStationRange(stationId, stationRanges[stationId] || range || 'week', { skipRawEnsure: true });
+    }
+    return true;
+  })().catch(function(err) {
+    console.warn('[Health] Raw station fetch failed for ' + stationId + ':', err && err.message ? err.message : err);
+    return false;
+  }).finally(function() {
+    delete _healthStationRawFetchPromiseById[stationId];
+  });
+
+  return _healthStationRawFetchPromiseById[stationId];
 }
 
 function healthSyncRowKey(row) {
@@ -166,6 +307,7 @@ function applyEdgeHealthPayload(payload) {
   var newDeviceStatus = {};
   var newDeviceConfig = {};
   var newDeviceSlots = {};
+  var newDeviceSlotHistory = {};
 
   for (var i = 0; i < payload.stations.length; i++) {
     var st = payload.stations[i];
@@ -180,7 +322,30 @@ function applyEdgeHealthPayload(payload) {
         newDeviceSlots[sid][smKeys[k]] = Number(st.slot_map[smKeys[k]]);
       }
     } else {
-      newDeviceSlots[sid] = {};
+      newDeviceSlots[sid] = (_deviceSlotsById && _deviceSlotsById[sid]) ? Object.assign({}, _deviceSlotsById[sid]) : {};
+    }
+
+    // ── Historical slot assignments ───────────────────
+    newDeviceSlotHistory[sid] = (_deviceSlotHistoryById && Array.isArray(_deviceSlotHistoryById[sid]))
+      ? _deviceSlotHistoryById[sid].slice()
+      : [];
+    if (Array.isArray(st.slot_history)) {
+      newDeviceSlotHistory[sid] = st.slot_history.map(function(row) {
+        var slotNumber = Number(row && row.slot_number);
+        var nodeLetter = String((row && row.node_letter) || '').trim().toUpperCase();
+        var assignedAtMs = row && row.assigned_at ? new Date(row.assigned_at).getTime() : NaN;
+        var retiredAtMs = row && row.retired_at ? new Date(row.retired_at).getTime() : Infinity;
+        if (!isFinite(slotNumber) || slotNumber <= 0 || !nodeLetter || !isFinite(assignedAtMs)) return null;
+        return {
+          slotNumber: slotNumber,
+          nodeLetter: nodeLetter,
+          assignedAtMs: assignedAtMs,
+          retiredAtMs: isFinite(retiredAtMs) ? retiredAtMs : Infinity
+        };
+      }).filter(function(row) { return !!row; }).sort(function(a, b) {
+        if (a.slotNumber !== b.slotNumber) return a.slotNumber - b.slotNumber;
+        return a.assignedAtMs - b.assignedAtMs;
+      });
     }
 
     // ── Feeds → entries via feedToEntry ───────────────────
@@ -269,6 +434,7 @@ function applyEdgeHealthPayload(payload) {
   _deviceStatusById = newDeviceStatus;
   _deviceConfigById = newDeviceConfig;
   _deviceSlotsById = newDeviceSlots;
+  _deviceSlotHistoryById = newDeviceSlotHistory;
 }
 
 async function ensureHealthRangeLoaded(range) {

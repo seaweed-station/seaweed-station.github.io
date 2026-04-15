@@ -6,18 +6,37 @@ function renderSyncCharts(container, entries, stationId, range) {
   var stationEntries = (stationData[stationId] && Array.isArray(stationData[stationId].entries) && stationData[stationId].entries.length)
     ? stationData[stationId].entries
     : entries;
-  var slot1Enabled = isSatelliteVisible(stationId, stationEntries, 1);
-  var slot2Enabled = isSatelliteVisible(stationId, stationEntries, 2);
-  var slot1Label = satelliteDisplayName(stationId, 1);
-  var slot2Label = satelliteDisplayName(stationId, 2);
-  var slot1Node = satelliteNodeLetter(stationId, 1);
-  var slot2Node = satelliteNodeLetter(stationId, 2);
+
+  function appendPendingBox(title, detail) {
+    var box = document.createElement('div');
+    box.className = 'chart-box';
+    box.innerHTML = '<h4>' + title + ' (' + rangeLabel(range) + ')</h4>' +
+      '<div style="padding:18px 14px;color:var(--text-sec);font-size:0.78rem;line-height:1.45">' +
+      escHtml(detail) +
+      '</div>';
+    container.appendChild(box);
+  }
+
+  if (typeof healthStationSyncContextPending === 'function' && healthStationSyncContextPending(stationId, stationEntries)) {
+    appendPendingBox('Satellite Sync Reliability', 'Waiting for live sync timeline. Cached station entries are loaded, but sync diagnostics have not arrived from the Edge payload yet.');
+    appendPendingBox('Satellite Sync Drift', 'Waiting for live sync timeline. Drift is derived from sync sessions, so this plot is held until live diagnostics are available.');
+    appendPendingBox('RSSI', 'Waiting for live sync timeline. RSSI is derived from sync sessions, so this plot is held until live diagnostics are available.');
+    return;
+  }
+
   var syncBoxWrap = null;
   var driftCanvas = null, driftBox = null, rssiCanvas = null, rssiBox = null;
   var sampleStartMs = stationEntries[0].timestamp.getTime();
   var sampleEndMs = stationEntries[stationEntries.length - 1].timestamp.getTime();
   var syncRowsAll = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
   var uploadRowsAll = Array.isArray(_stationUploadTimeline[stationId]) ? _stationUploadTimeline[stationId] : [];
+  var slotCtx = typeof getHealthSlotContext === 'function' ? getHealthSlotContext(stationId, stationEntries, syncRowsAll) : null;
+  var slot1Enabled = slotCtx ? slotCtx.slot1.enabled : isSatelliteVisible(stationId, stationEntries, 1);
+  var slot2Enabled = slotCtx ? slotCtx.slot2.enabled : isSatelliteVisible(stationId, stationEntries, 2);
+  var slot1Label = slotCtx ? slotCtx.slot1.label : satelliteDisplayName(stationId, 1);
+  var slot2Label = slotCtx ? slotCtx.slot2.label : satelliteDisplayName(stationId, 2);
+  var slot1Node = slotCtx ? slotCtx.slot1.nodeLetter : satelliteNodeLetter(stationId, 1);
+  var slot2Node = slotCtx ? slotCtx.slot2.nodeLetter : satelliteNodeLetter(stationId, 2);
 
   function syncRowTimeMs(row) {
     return row && row.sync_started_at ? new Date(ensureUTC(row.sync_started_at)).getTime() : NaN;
@@ -72,6 +91,7 @@ function renderSyncCharts(container, entries, stationId, range) {
   });
 
   function rowSyncLooksReal(row) {
+    if (typeof healthSyncRowLooksReal === 'function') return healthSyncRowLooksReal(row);
     if (!row) return false;
     var okNum = Number(row.sync_ok);
     if (isFinite(okNum) && okNum > 0) return true;
@@ -139,11 +159,7 @@ function renderSyncCharts(container, entries, stationId, range) {
   var syncCanvas = document.createElement('canvas');
   syncBoxWrap.appendChild(syncCanvas);
     function isSuccessfulSyncRow(row) {
-      if (!row) return false;
-      var okNum = Number(row.sync_ok);
-      if (isFinite(okNum)) return okNum > 0;
-      var s = String(row.status || '').trim().toLowerCase();
-      return s === 'ok' || s === 'success' || s === 'succeeded' || s === 'complete' || s === 'completed';
+      return rowSyncLooksReal(row);
     }
 
     var slot1ObservedEventTimes = syncRows.filter(function(row) {
@@ -252,11 +268,13 @@ function renderSyncCharts(container, entries, stationId, range) {
           var slot2Missed = bucketKeys.map(function(k) { return byBucket[k].slot2Total - byBucket[k].slot2; });
           var slot1HasObserved = slot1ObservedEventTimes.length > 0;
           var slot2HasObserved = slot2ObservedEventTimes.length > 0;
-          if (slot1HasObserved) {
+          var slot1HasWindows = !!(slot1WindowEval && slot1WindowEval.total > 0);
+          var slot2HasWindows = !!(slot2WindowEval && slot2WindowEval.total > 0);
+          if (slot1HasObserved || slot1HasWindows) {
             ds.push({ label: slot1Label + ' Synced', data: slot1Synced, backgroundColor: '#22c55e99', stack: 'a' });
             ds.push({ label: slot1Label + ' Missed', data: slot1Missed, backgroundColor: '#ef444466', stack: 'a' });
           }
-          if (slot2Enabled && slot2HasObserved) {
+          if (slot2Enabled && (slot2HasObserved || slot2HasWindows)) {
             ds.push({ label: slot2Label + ' Synced', data: slot2Synced, backgroundColor: '#3b82f699', stack: 'b' });
             ds.push({ label: slot2Label + ' Missed', data: slot2Missed, backgroundColor: '#f59e0b66', stack: 'b' });
           }
@@ -314,11 +332,11 @@ function renderSyncCharts(container, entries, stationId, range) {
       if (isNaN(t.getTime())) return;
       var node = (row.node_id || '').toUpperCase();
       if (slot1Node && node === slot1Node) {
-        if (isUsableSyncDrift(row.sat_drift_s, row)) slot1DriftSeries.push({ x: t, y: row.sat_drift_s });
-        if (row.sat_rssi_avg !== null && row.sat_rssi_avg !== undefined && row.sat_rssi_avg !== 0) slot1RssiSeries.push({ x: t, y: row.sat_rssi_avg });
+        if (isUsableSyncDrift(row.sat_drift_s, row)) slot1DriftSeries.push({ x: t, y: Number(row.sat_drift_s) });
+        if (row.sat_rssi_avg !== null && row.sat_rssi_avg !== undefined && row.sat_rssi_avg !== 0) slot1RssiSeries.push({ x: t, y: Number(row.sat_rssi_avg) });
       } else if (slot2Enabled && slot2Node && node === slot2Node) {
-        if (isUsableSyncDrift(row.sat_drift_s, row)) slot2DriftSeries.push({ x: t, y: row.sat_drift_s });
-        if (row.sat_rssi_avg !== null && row.sat_rssi_avg !== undefined && row.sat_rssi_avg !== 0) slot2RssiSeries.push({ x: t, y: row.sat_rssi_avg });
+        if (isUsableSyncDrift(row.sat_drift_s, row)) slot2DriftSeries.push({ x: t, y: Number(row.sat_drift_s) });
+        if (row.sat_rssi_avg !== null && row.sat_rssi_avg !== undefined && row.sat_rssi_avg !== 0) slot2RssiSeries.push({ x: t, y: Number(row.sat_rssi_avg) });
       }
     });
   }
@@ -334,7 +352,10 @@ function renderSyncCharts(container, entries, stationId, range) {
   var _lastSysDriftTs = null;
 
   // Legacy fallback for pre-v2 datasets where drift/RSSI lived in entry fields.
-  var _needLegacySatSeries = !slot1DriftSeries.length && !slot2DriftSeries.length && !slot1RssiSeries.length && !slot2RssiSeries.length;
+  var _needLegacySlot1Drift = !slot1DriftSeries.length;
+  var _needLegacySlot2Drift = !slot2DriftSeries.length;
+  var _needLegacySlot1Rssi = !slot1RssiSeries.length;
+  var _needLegacySlot2Rssi = !slot2RssiSeries.length;
   var lastSlot1SampleId = null, lastSlot2SampleId = null;
   var slot1LastDrift = null, slot2LastDrift = null;
   var slot1LastRssi = null, slot2LastRssi = null;
@@ -358,7 +379,7 @@ function renderSyncCharts(container, entries, stationId, range) {
       _prevRawField8 = e._rawField8;
     }
 
-    if (_needLegacySatSeries && isUsableLegacyDrift(e.sat1SyncDrift, e.sat1Rssi, e.sat1SampleId)) {
+    if (_needLegacySlot1Drift && isUsableLegacyDrift(e.sat1SyncDrift, e.sat1Rssi, e.sat1SampleId)) {
       var emitSlot1Drift = slot1NewSync || slot1LastDrift === null || e.sat1SyncDrift !== slot1LastDrift || slot1LastDriftTs === null || (tsMs - slot1LastDriftTs >= MAX_POINT_GAP_MS);
       if (emitSlot1Drift) {
         slot1DriftSeries.push({ x: e.timestamp, y: e.sat1SyncDrift });
@@ -366,7 +387,7 @@ function renderSyncCharts(container, entries, stationId, range) {
         slot1LastDriftTs = tsMs;
       }
     }
-    if (_needLegacySatSeries && slot2Enabled && isUsableLegacyDrift(e.sat2SyncDrift, e.sat2Rssi, e.sat2SampleId)) {
+    if (_needLegacySlot2Drift && slot2Enabled && isUsableLegacyDrift(e.sat2SyncDrift, e.sat2Rssi, e.sat2SampleId)) {
       var emitSlot2Drift = slot2NewSync || slot2LastDrift === null || e.sat2SyncDrift !== slot2LastDrift || slot2LastDriftTs === null || (tsMs - slot2LastDriftTs >= MAX_POINT_GAP_MS);
       if (emitSlot2Drift) {
         slot2DriftSeries.push({ x: e.timestamp, y: e.sat2SyncDrift });
@@ -389,7 +410,7 @@ function renderSyncCharts(container, entries, stationId, range) {
       }
     }
 
-    if (_needLegacySatSeries && e.sat1Rssi !== null && e.sat1Rssi !== 0) {
+    if (_needLegacySlot1Rssi && e.sat1Rssi !== null && e.sat1Rssi !== 0) {
       var emitSlot1Rssi = slot1NewSync || slot1LastRssi === null || e.sat1Rssi !== slot1LastRssi || slot1LastRssiTs === null || (tsMs - slot1LastRssiTs >= MAX_POINT_GAP_MS);
       if (emitSlot1Rssi) {
         slot1RssiSeries.push({ x: e.timestamp, y: e.sat1Rssi });
@@ -397,7 +418,7 @@ function renderSyncCharts(container, entries, stationId, range) {
         slot1LastRssiTs = tsMs;
       }
     }
-    if (_needLegacySatSeries && slot2Enabled && e.sat2Rssi !== null && e.sat2Rssi !== 0) {
+    if (_needLegacySlot2Rssi && slot2Enabled && e.sat2Rssi !== null && e.sat2Rssi !== 0) {
       var emitSlot2Rssi = slot2NewSync || slot2LastRssi === null || e.sat2Rssi !== slot2LastRssi || slot2LastRssiTs === null || (tsMs - slot2LastRssiTs >= MAX_POINT_GAP_MS);
       if (emitSlot2Rssi) {
         slot2RssiSeries.push({ x: e.timestamp, y: e.sat2Rssi });
@@ -419,6 +440,10 @@ function renderSyncCharts(container, entries, stationId, range) {
       fill: false
     };
   }
+
+  var t0SeriesColor = '#60a5fa';
+  var slot1SeriesColor = '#34d399';
+  var slot2SeriesColor = '#fbbf24';
 
   var T0_DRIFT_PLOT_CAP_S = 300;
   var t0DriftOutlierCount = 0;
@@ -470,9 +495,9 @@ function renderSyncCharts(container, entries, stationId, range) {
     }
 
     var driftDatasets = [];
-    if (slot1DriftSeries.length) driftDatasets.push(makeSeriesDS(lttbDownsample(slot1DriftSeries), slot1Label + ' Drift', '#22c55e'));
-    if (slot2Enabled && slot2DriftSeries.length) driftDatasets.push(makeSeriesDS(lttbDownsample(slot2DriftSeries), slot2Label + ' Drift', '#3b82f6'));
-    if (sysDriftSeriesCapped.length) { var _sdDS = makeSeriesDS(lttbDownsample(sysDriftSeriesCapped), 'T0 Clock Drift', '#f59e0b'); _sdDS.stepped = 'before'; _sdDS.tension = 0; driftDatasets.push(_sdDS); }
+    if (slot1DriftSeries.length) driftDatasets.push(makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':sync-drift:' + range + ':slot1', slot1DriftSeries), slot1Label + ' Drift', slot1SeriesColor));
+    if (slot2Enabled && slot2DriftSeries.length) driftDatasets.push(makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':sync-drift:' + range + ':slot2', slot2DriftSeries), slot2Label + ' Drift', slot2SeriesColor));
+    if (sysDriftSeriesCapped.length) { var _sdDS = makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':sync-drift:' + range + ':t0', sysDriftSeriesCapped), 'T0 Clock Drift', t0SeriesColor); _sdDS.stepped = 'before'; _sdDS.tension = 0; driftDatasets.push(_sdDS); }
     makeLiveChart(driftBox, driftCanvas, 'Satellite Sync Drift \u2013 ' + rangeLabel(range), {
       type: 'line',
       data: { datasets: driftDatasets },
@@ -485,8 +510,8 @@ function renderSyncCharts(container, entries, stationId, range) {
       type: 'line',
       data: { datasets: (function() {
         var ds = [];
-        if (slot1RssiSeries.length) ds.push(makeSeriesDS(lttbDownsample(slot1RssiSeries), slot1Label + ' RSSI', '#22c55e'));
-        if (slot2Enabled && slot2RssiSeries.length) ds.push(makeSeriesDS(lttbDownsample(slot2RssiSeries), slot2Label + ' RSSI', '#3b82f6'));
+        if (slot1RssiSeries.length) ds.push(makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':rssi:' + range + ':slot1', slot1RssiSeries), slot1Label + ' RSSI', slot1SeriesColor));
+        if (slot2Enabled && slot2RssiSeries.length) ds.push(makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':rssi:' + range + ':slot2', slot2RssiSeries), slot2Label + ' RSSI', slot2SeriesColor));
         return ds;
       })()},
       options: chartOpts('RSSI (dBm)', -100, 0, range, stationId, rangeStartMs, rangeEndMs),

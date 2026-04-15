@@ -21,12 +21,11 @@ var WEATHER_LOCATION = STATION.weather;
 // =====================================================================
 var state = {
   allEntries:       [],
+  summaryEntries:   [],
   filteredEntries:  [],
   syncSessions:     [],
   deviceStatus:     null,
   timeRange:        'week',
-  dateStart:        null,
-  dateEnd:          null,
   channelInfo:      null,
   dataSource:       '',
   charts:           { temp: null, hum: null, bat: null, volt: null, weather: null },
@@ -277,7 +276,7 @@ function timeRangeLabel() {
   if (!state.filteredEntries.length) return 'No data';
   var first = state.filteredEntries[0].timestamp;
   var last  = state.filteredEntries[state.filteredEntries.length - 1].timestamp;
-  var rangeText = { day: 'Last 24 hours', week: 'Last 7 days', month: 'Last 30 days', all: 'All data', custom: 'Custom range' };
+  var rangeText = { day: 'Last 24 hours', week: 'Last 7 days', month: 'Last 30 days', all: 'All data' };
   return (rangeText[state.timeRange] || 'All data') + ' | ' +
     first.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' - ' +
     last.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +

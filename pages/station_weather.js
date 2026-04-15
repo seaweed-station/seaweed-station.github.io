@@ -13,8 +13,38 @@ var weatherState = {
   fetchKey: null,
   pendingFetchKey: null,
   forecast: null, forecastDaily: null, forecastFetching: false,
+  recentUvOverlay: null,
+  recentUvOverlayKey: null,
   sunEvents: [],
 };
+
+function buildWeatherSeriesCacheKey(range, seriesName) {
+  return ['station', TABLE_ID, 'weather', range || 'week', seriesName].join(':');
+}
+
+function memoizedWeatherSeries(cacheKey, points, range) {
+  if (!Array.isArray(points) || !points.length || !window.PlotCore || typeof PlotCore.memoizeSeries !== 'function') {
+    return Array.isArray(points) ? points.slice() : [];
+  }
+  return PlotCore.memoizeSeries(cacheKey, PlotCore.buildSequenceSignature(points), function() {
+    return PlotCore.lttbDownsample(points, PlotCore.resolveMaxPoints('station-weather-line', range, points.length));
+  });
+}
+
+function buildWeatherChartOverlays(includeDailyExtrema, includeNowLine) {
+  var overlays = [
+    {
+      id: 'sun-events',
+      options: {
+        getEvents: function() { return weatherState.sunEvents || []; }
+      }
+    },
+    { id: 'day-labels' }
+  ];
+  if (includeDailyExtrema) overlays.push({ id: 'daily-extrema-labels' });
+  if (includeNowLine) overlays.push({ id: 'now-line' });
+  return overlays;
+}
 
 function mergeOpenMeteoSeries(parts) {
   var validParts = (parts || []).filter(function(part) {
@@ -65,6 +95,143 @@ function buildOpenMeteoUrl(apiBase, startStr, endStr) {
     '&daily=sunrise,sunset&timezone=auto';
 }
 
+function buildOpenMeteoForecastUrl(startStr, endStr) {
+  return 'https://api.open-meteo.com/v1/forecast?latitude=' + WEATHER_LOCATION.lat + '&longitude=' + WEATHER_LOCATION.lon +
+    '&start_date=' + startStr + '&end_date=' + endStr +
+    '&hourly=temperature_2m,relative_humidity_2m,precipitation,cloud_cover,weather_code,uv_index' +
+    '&daily=sunrise,sunset&timezone=auto';
+}
+
+function buildOpenMeteoRecentForecastUrl(pastDays, forecastDays) {
+  return 'https://api.open-meteo.com/v1/forecast?latitude=' + WEATHER_LOCATION.lat + '&longitude=' + WEATHER_LOCATION.lon +
+    '&past_days=' + pastDays + '&forecast_days=' + forecastDays +
+    '&hourly=temperature_2m,relative_humidity_2m,precipitation,cloud_cover,weather_code,uv_index' +
+    '&daily=sunrise,sunset&timezone=auto';
+}
+
+function buildRecentForecastBackfillParams(startMs, endMs) {
+  var dayMs = 86400000;
+  var todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  var todayStartMs = todayStart.getTime();
+  var recentFloorMs = todayStartMs - 7 * dayMs;
+  if (endMs < recentFloorMs) return null;
+
+  var clampedStartMs = Math.max(startMs, recentFloorMs);
+  var pastDays = Math.max(1, Math.ceil((todayStartMs - clampedStartMs) / dayMs));
+  var forecastDays = Math.max(1, Math.ceil((Math.max(endMs, todayStartMs) - todayStartMs) / dayMs) + 1);
+  pastDays = Math.min(pastDays, 7);
+  forecastDays = Math.min(forecastDays, 7);
+  return { pastDays: pastDays, forecastDays: forecastDays };
+}
+
+function mergeHourlyUvOverlay(baseHourly, overlayHourly) {
+  if (!overlayHourly || !Array.isArray(overlayHourly.time) || !overlayHourly.time.length) return baseHourly;
+  var partial = {
+    time: overlayHourly.time.slice(),
+    uv_index: Array.isArray(overlayHourly.uv_index) ? overlayHourly.uv_index.slice() : []
+  };
+  return mergeOpenMeteoSeries([baseHourly, partial]);
+}
+
+async function fetchRecentForecastUvOverlay(params) {
+  if (!params) return null;
+  var key = params.pastDays + '|' + params.forecastDays;
+  if (weatherState.recentUvOverlay && weatherState.recentUvOverlayKey === key) {
+    return weatherState.recentUvOverlay;
+  }
+
+  var resp = await fetch(buildOpenMeteoRecentForecastUrl(params.pastDays, params.forecastDays));
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  var json = await resp.json();
+  if (!(json.hourly && Array.isArray(json.hourly.time) && json.hourly.time.length)) {
+    throw new Error('Recent forecast response missing hourly data');
+  }
+
+  weatherState.recentUvOverlay = {
+    hourly: {
+      time: json.hourly.time.slice(),
+      uv_index: Array.isArray(json.hourly.uv_index) ? json.hourly.uv_index.slice() : []
+    },
+    daily: json.daily || null,
+    timezone: json.timezone || ''
+  };
+  weatherState.recentUvOverlayKey = key;
+  return weatherState.recentUvOverlay;
+}
+
+async function backfillRecentForecastUv(hourly, daily, startMs, endMs) {
+  var params = buildRecentForecastBackfillParams(startMs, endMs);
+  if (!params) return { hourly: hourly, daily: daily };
+
+  try {
+    var overlay = await fetchRecentForecastUvOverlay(params);
+    if (!overlay || !overlay.hourly) return { hourly: hourly, daily: daily };
+    return {
+      hourly: mergeHourlyUvOverlay(hourly, overlay.hourly),
+      daily: mergeOpenMeteoSeries([daily, overlay.daily]) || daily,
+      timezone: overlay.timezone || '',
+      updated: true
+    };
+  } catch (err) {
+    console.warn('[Weather] Recent UV backfill failed:', err);
+    return { hourly: hourly, daily: daily };
+  }
+}
+
+function weatherSeriesCoversWindow(hourly, startMs, endMs) {
+  if (!hourly || !Array.isArray(hourly.time) || !hourly.time.length) return false;
+  var seriesStart = new Date(hourly.time[0]).getTime();
+  var seriesEnd = new Date(hourly.time[hourly.time.length - 1]).getTime();
+  if (!isFinite(seriesStart) || !isFinite(seriesEnd)) return false;
+  return seriesStart <= startMs && seriesEnd >= (endMs - 3600000);
+}
+
+function extendSunEventsCoverage(events, rangeStart, rangeEnd) {
+  var dayMs = 24 * 3600000;
+  var out = (events || []).filter(function(evt) {
+    return evt && isFinite(evt.rise) && isFinite(evt.set) && evt.set > evt.rise;
+  }).sort(function(a, b) {
+    return a.rise - b.rise;
+  });
+  if (!out.length) return [];
+
+  var filled = [out[0]];
+  for (var i = 1; i < out.length; i++) {
+    var prev = filled[filled.length - 1];
+    var next = out[i];
+    while ((next.rise - prev.rise) > (dayMs * 1.5)) {
+      prev = { rise: prev.rise + dayMs, set: prev.set + dayMs };
+      filled.push(prev);
+    }
+    filled.push(next);
+  }
+
+  while ((filled[0].rise - dayMs) >= (rangeStart - dayMs)) {
+    filled.unshift({ rise: filled[0].rise - dayMs, set: filled[0].set - dayMs });
+  }
+  while (filled[filled.length - 1].set < (rangeEnd + dayMs)) {
+    var tail = filled[filled.length - 1];
+    filled.push({ rise: tail.rise + dayMs, set: tail.set + dayMs });
+  }
+
+  return filled.filter(function(evt) {
+    return evt.set >= (rangeStart - dayMs) && evt.rise <= (rangeEnd + dayMs);
+  });
+}
+
+function buildSunEventsForRange(daily, rangeStart, rangeEnd) {
+  if (!daily || !Array.isArray(daily.sunrise) || !Array.isArray(daily.sunset)) return [];
+  var events = [];
+  for (var i = 0; i < daily.sunrise.length; i++) {
+    var rise = new Date(daily.sunrise[i]).getTime();
+    var set = new Date(daily.sunset[i]).getTime();
+    if (!isFinite(rise) || !isFinite(set) || set <= rise) continue;
+    events.push({ rise: rise, set: set });
+  }
+  return extendSunEventsCoverage(events, rangeStart, rangeEnd);
+}
+
 function applyWeatherCache(requireCoverage) {
   if (!window.WEATHER_CACHE || !window.WEATHER_CACHE.hourly || !window.WEATHER_CACHE.hourly.time) {
     return false;
@@ -99,7 +266,7 @@ function getWeatherWindowForRange(range, weatherData) {
     return { min: 0, max: Infinity };
   }
 
-  var bounds = getEntriesBounds(state.timeRange === 'custom' ? state.filteredEntries : state.allEntries);
+  var bounds = getEntriesBounds(state.allEntries);
   if (!bounds) bounds = getEntriesBounds(state.filteredEntries);
   if (!bounds && weatherData && weatherData.time && weatherData.time.length) {
     bounds = {
@@ -130,6 +297,11 @@ async function fetchWeatherData() {
 
   if (applyWeatherCache(true)) {
     console.log('[Weather] Using cached weather_data.js');
+    var cacheBackfill = await backfillRecentForecastUv(weatherState.data, weatherState.daily, first.getTime() - 86400000, last.getTime() + 86400000);
+    weatherState.data = cacheBackfill.hourly || weatherState.data;
+    if (cacheBackfill.daily) weatherState.daily = cacheBackfill.daily;
+    weatherState.data._timezone = cacheBackfill.timezone || weatherState.data._timezone || window.WEATHER_CACHE.timezone || '';
+    weatherState.data._location = WEATHER_LOCATION.name;
     refreshWeatherLinkedViews();
     return;
   }
@@ -172,30 +344,70 @@ async function fetchWeatherData() {
 
     if (startStr <= yesterdayStr) {
       var archiveEndStr = endStr < todayStr ? endStr : yesterdayStr;
-      requests.push(fetch(buildOpenMeteoUrl('https://archive-api.open-meteo.com/v1/archive', startStr, archiveEndStr)));
+      requests.push({
+        source: 'archive',
+        promise: fetch(buildOpenMeteoUrl('https://archive-api.open-meteo.com/v1/archive', startStr, archiveEndStr))
+      });
     }
     if (endStr >= todayStr) {
       var forecastStartStr = startStr > todayStr ? startStr : todayStr;
-      requests.push(fetch(buildOpenMeteoUrl('https://api.open-meteo.com/v1/forecast', forecastStartStr, endStr)));
+      requests.push({
+        source: 'forecast',
+        promise: fetch(buildOpenMeteoForecastUrl(forecastStartStr, endStr))
+      });
     }
 
-    if (!requests.length) requests.push(fetch(buildOpenMeteoUrl('https://archive-api.open-meteo.com/v1/archive', startStr, endStr)));
+    if (!requests.length) {
+      requests.push({
+        source: 'archive',
+        promise: fetch(buildOpenMeteoUrl('https://archive-api.open-meteo.com/v1/archive', startStr, endStr))
+      });
+    }
 
-    var responses = await Promise.all(requests);
+    var settled = await Promise.all(requests.map(function(req) {
+      return req.promise.then(function(res) {
+        return { status: 'fulfilled', source: req.source, response: res };
+      }).catch(function(err) {
+        return { status: 'rejected', source: req.source, reason: err };
+      });
+    }));
+
     var payloads = [];
-    for (var ri = 0; ri < responses.length; ri++) {
-      if (!responses[ri].ok) throw new Error('HTTP ' + responses[ri].status);
-      payloads.push(await responses[ri].json());
+    var failures = [];
+    for (var ri = 0; ri < settled.length; ri++) {
+      var result = settled[ri];
+      if (result.status !== 'fulfilled') {
+        failures.push(result.source + ': ' + (result.reason && result.reason.message ? result.reason.message : result.reason));
+        continue;
+      }
+      if (!result.response.ok) {
+        failures.push(result.source + ': HTTP ' + result.response.status);
+        continue;
+      }
+      payloads.push(await result.response.json());
+    }
+
+    if (!payloads.length) {
+      throw new Error(failures.length ? failures.join('; ') : 'No Open-Meteo payloads returned');
     }
 
     var mergedHourly = mergeOpenMeteoSeries(payloads.map(function(p) { return p.hourly; }));
     var mergedDaily = mergeOpenMeteoSeries(payloads.map(function(p) { return p.daily; }));
+    var backfilled = await backfillRecentForecastUv(mergedHourly, mergedDaily, startDate.getTime(), endDate.getTime());
+    mergedHourly = backfilled.hourly || mergedHourly;
+    mergedDaily = backfilled.daily || mergedDaily;
 
     if (mergedHourly && mergedHourly.time) {
+      if (!weatherSeriesCoversWindow(mergedHourly, startDate.getTime(), endDate.getTime())) {
+        console.warn('[Weather] Partial coverage for requested window ' + startStr + ' -> ' + endStr);
+      }
       weatherState.data = mergedHourly;
-      weatherState.data._timezone = (payloads[payloads.length - 1] && payloads[payloads.length - 1].timezone) || '';
+      weatherState.data._timezone = backfilled.timezone || (payloads[payloads.length - 1] && payloads[payloads.length - 1].timezone) || '';
       weatherState.data._location = WEATHER_LOCATION.name;
       if (mergedDaily) weatherState.daily = mergedDaily;
+      if (failures.length) {
+        console.warn('[Weather] Partial fetch failures:', failures.join('; '));
+      }
       refreshWeatherLinkedViews();
     }
   } catch (err) {
@@ -281,14 +493,19 @@ function renderWeatherCharts() {
   weatherState.tempPoints = tempPoints;
   weatherState.humPoints  = humPoints;
 
+  var tempPointsRaw = tempPoints.slice();
+  var humPointsRaw = humPoints.slice();
+  var precipPointsRaw = precipPoints.slice();
+  var uvPointsRaw = uvPoints.slice();
+  if (window.PlotCore && typeof PlotCore.lttbDownsample === 'function') {
+    tempPoints = memoizedWeatherSeries(buildWeatherSeriesCacheKey(_wxr, 'temp'), tempPoints, _wxr);
+    humPoints = memoizedWeatherSeries(buildWeatherSeriesCacheKey(_wxr, 'hum'), humPoints, _wxr);
+    uvPoints = memoizedWeatherSeries(buildWeatherSeriesCacheKey(_wxr, 'uv'), uvPoints, _wxr);
+  }
+
   var timeCfg = getWeatherAxisConfig(_wxr);
 
-  weatherState.sunEvents = [];
-  if (activeDaily && activeDaily.sunrise && activeDaily.sunset) {
-    for (var si = 0; si < activeDaily.sunrise.length; si++) {
-      weatherState.sunEvents.push({ rise: new Date(activeDaily.sunrise[si]).getTime(), set: new Date(activeDaily.sunset[si]).getTime() });
-    }
-  }
+  weatherState.sunEvents = buildSunEventsForRange(activeDaily, rangeStart, rangeEnd);
 
   function weatherChartOpts(label, yMin, yMax) {
     var opts = baseChartOptions(label, yMin, yMax);
@@ -300,25 +517,45 @@ function renderWeatherCharts() {
     return opts;
   }
 
+  function upsertWeatherChart(chartKey, canvasId, config, overlays) {
+    if (window.ChartManager && typeof ChartManager.upsert === 'function') {
+      return ChartManager.upsert({
+        key: 'station:' + TABLE_ID + ':weather:' + chartKey,
+        canvas: document.getElementById(canvasId),
+        config: config,
+        overlays: overlays,
+        meta: { stationId: TABLE_ID, chartKey: chartKey, scope: 'station-weather' },
+        recreateOnUpdate: true,
+        updateMode: 'none'
+      });
+    }
+    var existing = weatherState.charts[chartKey];
+    if (existing) {
+      existing.data.datasets = config.data.datasets;
+      existing.options = config.options;
+      existing.update('none');
+      return existing;
+    }
+    return new Chart(document.getElementById(canvasId), config);
+  }
+
   // Weather Temperature
-  var wTempDS = [{ label: 'Temperature', data: tempPoints, borderColor: '#f59e0b', backgroundColor: '#f59e0b22', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true }];
-  if (weatherState.charts.temp) { weatherState.charts.temp.data.datasets = wTempDS; weatherState.charts.temp.options.scales.x.time = timeCfg; weatherState.charts.temp.options.scales.x.min = rangeStart; weatherState.charts.temp.options.scales.x.max = rangeEnd; weatherState.charts.temp.options.scales.x.ticks.color = (_wxr === 'day') ? '#64748b' : 'transparent'; weatherState.charts.temp.update('none'); }
-  else { weatherState.charts.temp = new Chart(document.getElementById('weatherTempChart'), { type: 'line', data: { datasets: wTempDS }, options: weatherChartOpts('Weather Temp (\u00B0C)'), plugins: [nightShadingPlugin, dayLabelPlugin, dailyMinMaxPlugin, nowLinePlugin] }); }
+  var wTempDS = [{ label: 'Temperature', data: tempPoints, borderColor: '#f59e0b', backgroundColor: '#f59e0b22', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true, _rawData: tempPointsRaw }];
+  weatherState.charts.temp = upsertWeatherChart('temp', 'weatherTempChart', { type: 'line', data: { datasets: wTempDS }, options: weatherChartOpts('Weather Temp (\u00B0C)') }, buildWeatherChartOverlays(true, true));
 
   // Weather Humidity
-  var wHumDS = [{ label: 'Humidity', data: humPoints, borderColor: '#06b6d4', backgroundColor: '#06b6d422', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true }];
-  if (weatherState.charts.hum) { weatherState.charts.hum.data.datasets = wHumDS; weatherState.charts.hum.options.scales.x.time = timeCfg; weatherState.charts.hum.options.scales.x.min = rangeStart; weatherState.charts.hum.options.scales.x.max = rangeEnd; weatherState.charts.hum.options.scales.x.ticks.color = (_wxr === 'day') ? '#64748b' : 'transparent'; weatherState.charts.hum.update('none'); }
-  else { weatherState.charts.hum = new Chart(document.getElementById('weatherHumChart'), { type: 'line', data: { datasets: wHumDS }, options: weatherChartOpts('Weather Humidity (%)', 0, 100), plugins: [nightShadingPlugin, dayLabelPlugin, dailyMinMaxPlugin, nowLinePlugin] }); }
+  var wHumDS = [{ label: 'Humidity', data: humPoints, borderColor: '#06b6d4', backgroundColor: '#06b6d422', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true, _rawData: humPointsRaw }];
+  weatherState.charts.hum = upsertWeatherChart('hum', 'weatherHumChart', { type: 'line', data: { datasets: wHumDS }, options: weatherChartOpts('Weather Humidity (%)', 0, 100) }, buildWeatherChartOverlays(true, true));
 
   // Precipitation
-  var precipDS = [{ label: 'Precipitation', data: precipPoints, borderColor: '#3b82f688', backgroundColor: '#3b82f666', borderWidth: 1, pointRadius: 0, type: 'bar' }];
+  var precipDS = [{ label: 'Precipitation', data: precipPoints, borderColor: '#3b82f688', backgroundColor: '#3b82f666', borderWidth: 1, pointRadius: 0, type: 'bar', _rawData: precipPointsRaw }];
   var precipOpts = weatherChartOpts('Precipitation (mm)');
   precipOpts.plugins.tooltip = { mode: 'index', intersect: false, backgroundColor: '#1e293bee', titleColor: '#f1f5f9', bodyColor: '#cbd5e1', callbacks: { label: function(ctx) { return ' ' + ctx.parsed.y.toFixed(1) + ' mm'; } } };
-  if (weatherState.charts.precip) { weatherState.charts.precip.data.datasets = precipDS; weatherState.charts.precip.options.scales.x.time = timeCfg; weatherState.charts.precip.options.scales.x.min = rangeStart; weatherState.charts.precip.options.scales.x.max = rangeEnd; weatherState.charts.precip.options.scales.x.ticks.color = (_wxr === 'day') ? '#64748b' : 'transparent'; weatherState.charts.precip.update('none'); }
-  else { weatherState.charts.precip = new Chart(document.getElementById('weatherPrecipChart'), { type: 'bar', data: { datasets: precipDS }, options: precipOpts, plugins: [nightShadingPlugin, dayLabelPlugin, dailyMinMaxPlugin, nowLinePlugin] }); }
+  weatherState.charts.precip = upsertWeatherChart('precip', 'weatherPrecipChart', { type: 'bar', data: { datasets: precipDS }, options: precipOpts }, buildWeatherChartOverlays(true, true));
 
   // UV Index
   var uvDS = [{ label: 'UV Index', data: uvPoints, borderColor: '#a855f7', backgroundColor: '#a855f722', borderWidth: 1.5, pointRadius: 0, tension: 0.3, fill: true,
+    _rawData: uvPointsRaw,
     segment: { borderColor: function(ctx) { var v = ctx.p1.parsed.y; return v >= 11 ? '#dc2626' : v >= 8 ? '#ef4444' : v >= 6 ? '#f59e0b' : v >= 3 ? '#eab308' : '#22c55e'; } }
   }];
   var uvOpts = weatherChartOpts('UV Index', 0);
@@ -326,8 +563,7 @@ function renderWeatherCharts() {
   uvOpts.plugins.tooltip = { mode: 'index', intersect: false, backgroundColor: '#1e293bee', titleColor: '#f1f5f9', bodyColor: '#cbd5e1',
     callbacks: { label: function(ctx) { var v = ctx.parsed.y; var cat = v >= 11 ? 'Extreme' : v >= 8 ? 'Very High' : v >= 6 ? 'High' : v >= 3 ? 'Moderate' : 'Low'; return ' UV ' + v.toFixed(1) + ' (' + cat + ')'; } }
   };
-  if (weatherState.charts.uv) { weatherState.charts.uv.data.datasets = uvDS; weatherState.charts.uv.options.scales.x.time = timeCfg; weatherState.charts.uv.options.scales.x.min = rangeStart; weatherState.charts.uv.options.scales.x.max = rangeEnd; weatherState.charts.uv.options.scales.x.ticks.color = (_wxr === 'day') ? '#64748b' : 'transparent'; weatherState.charts.uv.update('none'); }
-  else { weatherState.charts.uv = new Chart(document.getElementById('weatherUVChart'), { type: 'line', data: { datasets: uvDS }, options: uvOpts, plugins: [nightShadingPlugin, dayLabelPlugin, dailyMinMaxPlugin, nowLinePlugin] }); }
+  weatherState.charts.uv = upsertWeatherChart('uv', 'weatherUVChart', { type: 'line', data: { datasets: uvDS }, options: uvOpts }, buildWeatherChartOverlays(false, true));
 
   // Refresh daily summary table so Open-Meteo columns appear
   if (typeof updatePeaksTable === 'function' && state.filteredEntries && state.filteredEntries.length) updatePeaksTable();

@@ -43,15 +43,70 @@ function shouldBreakTrendSegment(ctx, gapMs) {
   return isFinite(p0x) && isFinite(p1x) && (p1x - p0x) > gapMs;
 }
 
+function filterSeriesToWindow(points, windowLike) {
+  if (!Array.isArray(points) || !points.length || !windowLike) return Array.isArray(points) ? points.slice() : [];
+  return points.filter(function(pt) {
+    var x = pt && pt.x instanceof Date ? pt.x.getTime() : (pt ? new Date(pt.x).getTime() : NaN);
+    return isFinite(x) && (!isFinite(windowLike.min) || x >= windowLike.min) && (!isFinite(windowLike.max) || x <= windowLike.max);
+  });
+}
+
+function buildStationSeriesCacheKey(chartKey, seriesKey, range) {
+  return ['station', TABLE_ID, chartKey, seriesKey, range || state.timeRange || 'all'].join(':');
+}
+
+function downsamplePlotSeries(points, kind, range, overrideMaxPts) {
+  if (!Array.isArray(points) || !points.length) return [];
+  if (!window.PlotCore || typeof PlotCore.lttbDownsample !== 'function') return points.slice();
+  var maxPts = PlotCore.resolveMaxPoints(kind, range, points.length, overrideMaxPts);
+  return PlotCore.lttbDownsample(points, maxPts);
+}
+
+function memoizedDownsampleSeries(cacheKey, points, kind, range, overrideMaxPts) {
+  if (!Array.isArray(points) || !points.length) return [];
+  if (!window.PlotCore || typeof PlotCore.memoizeSeries !== 'function') {
+    return downsamplePlotSeries(points, kind, range, overrideMaxPts);
+  }
+  return PlotCore.memoizeSeries(cacheKey, PlotCore.buildSequenceSignature(points), function() {
+    return downsamplePlotSeries(points, kind, range, overrideMaxPts);
+  });
+}
+
+function buildSensorChartOverlays() {
+  return [
+    {
+      id: 'harvest-bands',
+      options: {
+        enabled: function() { return !!(window._sensorOpts || {}).harvest; },
+        getWindows: function() { return window._tideWindows || []; },
+        fillColor: 'rgba(34, 197, 94, 0.10)'
+      }
+    },
+    {
+      id: 'sun-events',
+      options: {
+        enabled: function() { return !!(window._sensorOpts || {}).night; },
+        getEvents: function(chart) {
+          var xScale = chart && chart.scales ? chart.scales.x : null;
+          return xScale ? getSensorSunEventsForWindow({ min: xScale.min, max: xScale.max }) : [];
+        }
+      }
+    },
+    { id: 'daily-extrema-labels' }
+  ];
+}
+
 function makeDataset(entries, key, label, color, dashed) {
-  var data = [];
-  entries.forEach(function (e) { if (e[key] !== null) data.push({ x: e.timestamp, y: e[key] }); });
+  var rawData = [];
+  entries.forEach(function (e) { if (e[key] !== null) rawData.push({ x: e.timestamp, y: e[key] }); });
+  var data = memoizedDownsampleSeries(buildStationSeriesCacheKey('sensor', key, state.timeRange), rawData, 'station-sensor', state.timeRange);
   return {
-    label: label + (data.length === 0 ? ' (No Data)' : ' (' + data.length + ')'),
+    label: label + (rawData.length === 0 ? ' (No Data)' : ' (' + rawData.length + ')'),
     data: data, borderColor: color, backgroundColor: color + '22',
     borderWidth: data.length > 0 ? 1.5 : 0, borderDash: dashed ? [5, 3] : [],
     pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: color,
     tension: 0.3, fill: false, hidden: data.length === 0, spanGaps: false,
+    _rawData: rawData,
     segment: {
       borderColor: function(ctx) {
         return shouldBreakTrendSegment(ctx, SENSOR_TRENDLINE_GAP_MS) ? 'rgba(0, 0, 0, 0)' : color;
@@ -64,6 +119,18 @@ function makeDataset(entries, key, label, color, dashed) {
 // CHART PLUGINS
 // =====================================================================
 window._sensorOpts = { night: true, harvest: true, wx: false };
+
+function getSensorSunEventsForWindow(windowLike) {
+  if (!windowLike || !isFinite(windowLike.min) || !isFinite(windowLike.max)) return [];
+  if (typeof buildSunEventsForRange !== 'function') return [];
+  var daily = weatherState ? weatherState.daily : null;
+  return buildSunEventsForRange(daily, windowLike.min, windowLike.max);
+}
+
+function setSensorChartSunEvents(chart, windowLike) {
+  if (!chart) return;
+  chart.$sensorSunEvents = getSensorSunEventsForWindow(windowLike);
+}
 
 var sensorBandsPlugin = {
   id: 'sensorBands',
@@ -89,13 +156,7 @@ var sensorBandsPlugin = {
     }
 
     if (opts.night) {
-      var wd = weatherState ? weatherState.daily : null;
-      var sunEvents = [];
-      if (wd && wd.sunrise && wd.sunset) {
-        for (var si = 0; si < wd.sunrise.length; si++) {
-          sunEvents.push({ rise: new Date(wd.sunrise[si]).getTime(), set: new Date(wd.sunset[si]).getTime() });
-        }
-      }
+      var sunEvents = Array.isArray(chart.$sensorSunEvents) ? chart.$sensorSunEvents : [];
       if (sunEvents.length) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
         if (sunEvents[0].rise > minX) {
@@ -140,7 +201,8 @@ var dailyMinMaxPlugin = {
       if (meta.hidden) return;
       var color = (typeof ds.borderColor === 'string') ? ds.borderColor : '#94a3b8';
       if (/^#[0-9a-fA-F]{8}$/.test(color)) color = color.slice(0, 7);
-      ds.data.forEach(function(pt) {
+      var plotData = Array.isArray(ds._rawData) && ds._rawData.length ? ds._rawData : ds.data;
+      plotData.forEach(function(pt) {
         if (!pt || pt.y === null || pt.y === undefined) return;
         var d = new Date(pt.x);
         var key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
@@ -362,16 +424,15 @@ function baseChartOptions(yLabel, yMin, yMax) {
 }
 
 function createOrUpdateCharts() {
-  var e = state.filteredEntries;
-  var chartEntries = state.timeRange === 'custom' ? state.filteredEntries : state.allEntries;
-  if (!chartEntries || !chartEntries.length) chartEntries = state.filteredEntries;
+  var chartEntries = state.filteredEntries;
+  if (!chartEntries || !chartEntries.length) chartEntries = state.allEntries;
   if (!chartEntries || !chartEntries.length) return;
   var chartBounds = getEntriesBounds(chartEntries);
   var chartWindow = getWindowForRange(chartBounds, state.timeRange);
   var sensorColors = resolveSensorColors();
   var sensorDefs = buildStationSensorDefinitions(TABLE_ID, state.allEntries, _stationSlotMap, sensorColors);
-  var _wxMin = chartBounds ? chartBounds.min : -Infinity;
-  var _wxMax = chartBounds ? chartBounds.max : Infinity;
+  var _wxMin = chartWindow && isFinite(chartWindow.min) ? chartWindow.min : (chartBounds ? chartBounds.min : -Infinity);
+  var _wxMax = chartWindow && isFinite(chartWindow.max) ? chartWindow.max : (chartBounds ? chartBounds.max : Infinity);
   var _wxOverlayTemp = [], _wxOverlayHum = [];
   if ((window._sensorOpts || {}).wx && weatherState.data && weatherState.data.time) {
     var _wd = weatherState.data;
@@ -382,6 +443,10 @@ function createOrUpdateCharts() {
       if (_wd.relative_humidity_2m[_wi] !== null) _wxOverlayHum.push({ x: _wt, y: _wd.relative_humidity_2m[_wi] });
     }
   }
+  var _wxOverlayTempRaw = _wxOverlayTemp.slice();
+  var _wxOverlayHumRaw = _wxOverlayHum.slice();
+  _wxOverlayTemp = downsamplePlotSeries(_wxOverlayTemp, 'station-weather-line', state.timeRange);
+  _wxOverlayHum = downsamplePlotSeries(_wxOverlayHum, 'station-weather-line', state.timeRange);
 
   var timeCfg = getTimeAxisConfig();
   Object.keys(state.charts).forEach(function(k) {
@@ -399,26 +464,26 @@ function createOrUpdateCharts() {
   if ((window._sensorOpts || {}).wx && _wxOverlayTemp.length) {
     tempDS.push({ label: 'Open-Meteo Temp', data: _wxOverlayTemp,
       borderColor: '#f59e0b99', backgroundColor: 'transparent', borderWidth: 1.5,
-      borderDash: [6, 4], pointRadius: 0, tension: 0.3, fill: false });
+      borderDash: [6, 4], pointRadius: 0, tension: 0.3, fill: false, _rawData: _wxOverlayTempRaw });
   }
 
-  if (state.charts.temp) {
-    state.charts.temp.data.datasets = tempDS;
-    if (state.charts.temp.options && state.charts.temp.options.scales && state.charts.temp.options.scales.x) {
-      state.charts.temp.options.scales.x.min = chartWindow.min;
-      state.charts.temp.options.scales.x.max = chartWindow.max;
-    }
-    state.charts.temp.update('none');
-  }
-  else {
-    var _tOpts = baseChartOptions('Temperature (\u00B0C)');
-    _tOpts.plugins.legend.position = 'left';
-    _tOpts.scales.x.min = chartWindow.min;
-    _tOpts.scales.x.max = chartWindow.max;
-    state.charts.temp = new Chart(document.getElementById('tempChart'), {
-      type: 'line', data: { datasets: tempDS }, options: _tOpts, plugins: [sensorBandsPlugin, dailyMinMaxPlugin],
-    });
-  }
+  var _tOpts = baseChartOptions('Temperature (\u00B0C)');
+  _tOpts.plugins.legend.position = 'left';
+  _tOpts.scales.x.min = chartWindow.min;
+  _tOpts.scales.x.max = chartWindow.max;
+  state.charts.temp = (window.ChartManager && typeof ChartManager.upsert === 'function')
+    ? ChartManager.upsert({
+        key: 'station:' + TABLE_ID + ':sensor:temp',
+        canvas: document.getElementById('tempChart'),
+        config: { type: 'line', data: { datasets: tempDS }, options: _tOpts },
+        overlays: buildSensorChartOverlays(),
+        meta: { stationId: TABLE_ID, chartKey: 'temp', scope: 'station-main' },
+        recreateOnUpdate: true,
+        updateMode: 'none'
+      })
+    : (state.charts.temp || new Chart(document.getElementById('tempChart'), {
+        type: 'line', data: { datasets: tempDS }, options: _tOpts, plugins: [sensorBandsPlugin, dailyMinMaxPlugin]
+      }));
 
   // -- Humidity --
   var humDS = sensorDefs.map(function(sensorDef, index) {
@@ -429,26 +494,26 @@ function createOrUpdateCharts() {
   if ((window._sensorOpts || {}).wx && _wxOverlayHum.length) {
     humDS.push({ label: 'Open-Meteo Humidity', data: _wxOverlayHum,
       borderColor: '#06b6d499', backgroundColor: 'transparent', borderWidth: 1.5,
-      borderDash: [6, 4], pointRadius: 0, tension: 0.3, fill: false });
+      borderDash: [6, 4], pointRadius: 0, tension: 0.3, fill: false, _rawData: _wxOverlayHumRaw });
   }
 
-  if (state.charts.hum) {
-    state.charts.hum.data.datasets = humDS;
-    if (state.charts.hum.options && state.charts.hum.options.scales && state.charts.hum.options.scales.x) {
-      state.charts.hum.options.scales.x.min = chartWindow.min;
-      state.charts.hum.options.scales.x.max = chartWindow.max;
-    }
-    state.charts.hum.update('none');
-  }
-  else {
-    var _hOpts2 = baseChartOptions('Humidity (%RH)', 0, 100);
-    _hOpts2.plugins.legend.position = 'left';
-    _hOpts2.scales.x.min = chartWindow.min;
-    _hOpts2.scales.x.max = chartWindow.max;
-    state.charts.hum = new Chart(document.getElementById('humChart'), {
-      type: 'line', data: { datasets: humDS }, options: _hOpts2, plugins: [sensorBandsPlugin, dailyMinMaxPlugin],
-    });
-  }
+  var _hOpts2 = baseChartOptions('Humidity (%RH)', 0, 100);
+  _hOpts2.plugins.legend.position = 'left';
+  _hOpts2.scales.x.min = chartWindow.min;
+  _hOpts2.scales.x.max = chartWindow.max;
+  state.charts.hum = (window.ChartManager && typeof ChartManager.upsert === 'function')
+    ? ChartManager.upsert({
+        key: 'station:' + TABLE_ID + ':sensor:hum',
+        canvas: document.getElementById('humChart'),
+        config: { type: 'line', data: { datasets: humDS }, options: _hOpts2 },
+        overlays: buildSensorChartOverlays(),
+        meta: { stationId: TABLE_ID, chartKey: 'hum', scope: 'station-main' },
+        recreateOnUpdate: true,
+        updateMode: 'none'
+      })
+    : (state.charts.hum || new Chart(document.getElementById('humChart'), {
+        type: 'line', data: { datasets: humDS }, options: _hOpts2, plugins: [sensorBandsPlugin, dailyMinMaxPlugin]
+      }));
 
   // Battery, Sync, Drift charts removed -- see station_health.html
 }
@@ -485,7 +550,7 @@ function openSensorChartModal(chartKey) {
   var srcChart = state.charts[chartKey];
   if (!srcChart) return;
   _sensorModalSourceKey = chartKey;
-  _sensorModalRange = state.timeRange === 'custom' ? 'all' : state.timeRange;
+  _sensorModalRange = state.timeRange;
   var title = chartKey === 'hum' ? 'Humidity (%RH)' : 'Temperature (°C)';
   document.getElementById('sensorChartModalTitle').textContent = title;
   syncSensorModalOverlayChecks();
@@ -504,10 +569,16 @@ function openSensorChartModal(chartKey) {
   var srcY = (srcChart.options && srcChart.options.scales && srcChart.options.scales.y) ? srcChart.options.scales.y : {};
   var yTitle = srcY.title && srcY.title.text ? srcY.title.text : '';
   var modalData = cloneChartDataForModal(srcChart.data);
-  var bounds = getEntriesBounds(state.timeRange === 'custom' ? state.filteredEntries : state.allEntries);
+  var bounds = getEntriesBounds(state.allEntries);
   var win = getWindowForRange(bounds, _sensorModalRange);
+  modalData.datasets.forEach(function(ds) {
+    var rawData = Array.isArray(ds._rawData) && ds._rawData.length ? ds._rawData : ds.data;
+    if (!Array.isArray(rawData) || !rawData.length) return;
+    ds._rawData = rawData.slice();
+    ds.data = downsamplePlotSeries(filterSeriesToWindow(rawData, win), 'modal-series', _sensorModalRange);
+  });
 
-  _sensorModalChart = new Chart(modalCanvas, {
+  var modalConfig = {
     type: srcChart.config.type,
     data: modalData,
     options: {
@@ -540,9 +611,19 @@ function openSensorChartModal(chartKey) {
           ticks: { color: '#64748b', font: { size: 10 } }
         }
       }
-    },
-    plugins: [sensorBandsPlugin, dailyMinMaxPlugin]
-  });
+    }
+  };
+  _sensorModalChart = (window.ChartManager && typeof ChartManager.upsert === 'function')
+    ? ChartManager.upsert({
+        key: 'station:' + TABLE_ID + ':sensor:modal',
+        canvas: modalCanvas,
+        config: modalConfig,
+        overlays: buildSensorChartOverlays(),
+        meta: { stationId: TABLE_ID, chartKey: 'sensor-modal', scope: 'station-modal' },
+        recreateOnUpdate: true,
+        updateMode: 'none'
+      })
+    : new Chart(modalCanvas, Object.assign({}, modalConfig, { plugins: [sensorBandsPlugin, dailyMinMaxPlugin] }));
 
   updateSensorModalRangeButtons();
 }
@@ -551,12 +632,20 @@ function setSensorModalRange(range) {
   _sensorModalRange = range;
   updateSensorModalRangeButtons();
   if (!_sensorModalChart) return;
-  var bounds = getEntriesBounds(state.timeRange === 'custom' ? state.filteredEntries : state.allEntries);
+  var bounds = getEntriesBounds(state.allEntries);
   var win = getWindowForRange(bounds, range);
+  if (_sensorModalChart.data && Array.isArray(_sensorModalChart.data.datasets)) {
+    _sensorModalChart.data.datasets.forEach(function(ds) {
+      var rawData = Array.isArray(ds._rawData) && ds._rawData.length ? ds._rawData : ds.data;
+      if (!Array.isArray(rawData) || !rawData.length) return;
+      ds.data = downsamplePlotSeries(filterSeriesToWindow(rawData, win), 'modal-series', range);
+    });
+  }
   if (_sensorModalChart.options && _sensorModalChart.options.scales && _sensorModalChart.options.scales.x) {
     _sensorModalChart.options.scales.x.min = win.min;
     _sensorModalChart.options.scales.x.max = win.max;
   }
+  setSensorChartSunEvents(_sensorModalChart, win);
   _sensorModalChart.update('none');
 }
 
@@ -571,7 +660,8 @@ function closeSensorChartModal(evt) {
   var overlay = document.getElementById('sensorChartModalOverlay');
   overlay.style.display = 'none';
   if (_sensorModalChart) {
-    _sensorModalChart.destroy();
+    if (window.ChartManager && typeof ChartManager.destroy === 'function') ChartManager.destroy('station:' + TABLE_ID + ':sensor:modal');
+    else _sensorModalChart.destroy();
     _sensorModalChart = null;
   }
   _sensorModalSourceKey = null;

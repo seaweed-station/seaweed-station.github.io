@@ -7,12 +7,6 @@ function renderDailyHealth(container, entries, stationId) {
   if (!_stationLogsVisibleDays[stationId] || _stationLogsVisibleDays[stationId] < STATION_LOG_ROWS_STEP) {
     _stationLogsVisibleDays[stationId] = STATION_LOG_ROWS_STEP;
   }
-  var slot1Enabled = isSatelliteVisible(stationId, entries, 1);
-  var slot2Enabled = isSatelliteVisible(stationId, entries, 2);
-  var slot1Label = satelliteDisplayName(stationId, 1);
-  var slot2Label = satelliteDisplayName(stationId, 2);
-  var slot1Node = satelliteNodeLetter(stationId, 1);
-  var slot2Node = satelliteNodeLetter(stationId, 2);
   var syncRowsAll = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
   var uploadRowsAll = Array.isArray(_stationUploadTimeline[stationId]) ? _stationUploadTimeline[stationId] : [];
   var configRow = stationId ? (_deviceConfigById[stationId] || null) : null;
@@ -27,6 +21,36 @@ function renderDailyHealth(container, entries, stationId) {
 
   var wrap = document.createElement('div');
   wrap.className = 'health-table-wrap';
+
+  function appendDatasetStateBanner() {
+    if (!datasetMeta || !datasetMeta.isActive) return;
+    var banner = document.createElement('div');
+    banner.style.margin = '0 0 10px';
+    banner.style.fontSize = '0.74rem';
+    banner.style.color = 'var(--text-sec)';
+    banner.style.padding = '8px 10px';
+    banner.style.border = '1px solid var(--border)';
+    banner.style.borderRadius = '8px';
+    banner.style.background = 'var(--bg)';
+    banner.innerHTML = '<strong>' + escHtml(datasetMeta.statusLabel) + '</strong> on ' + escHtml(formatDatasetEndLabel(datasetMeta.endMs)) +
+      (datasetMeta.note ? ' -- ' + escHtml(datasetMeta.note) : '');
+    wrap.appendChild(banner);
+  }
+
+  if (typeof healthStationSyncContextPending === 'function' && healthStationSyncContextPending(stationId, entries)) {
+    appendDatasetStateBanner();
+    var note = document.createElement('div');
+    note.style.fontSize = '0.78rem';
+    note.style.color = 'var(--text-sec)';
+    note.style.padding = '10px 12px';
+    note.style.border = '1px solid var(--border)';
+    note.style.borderRadius = '8px';
+    note.style.background = 'var(--bg)';
+    note.textContent = 'Waiting for live sync timeline. Cached station samples are loaded, but sync-derived log fields will appear after the Edge payload finishes loading.';
+    wrap.appendChild(note);
+    container.appendChild(wrap);
+    return;
+  }
 
   function formatDatasetEndLabel(endMs) {
     if (!isFinite(endMs)) return '--';
@@ -256,6 +280,7 @@ function renderDailyHealth(container, entries, stationId) {
   }
 
   function isSyncSuccess(row) {
+    if (typeof healthSyncRowLooksReal === 'function') return healthSyncRowLooksReal(row);
     if (!row) return false;
     var okNum = num(row.sync_ok);
     if (okNum != null) return okNum > 0;
@@ -351,6 +376,32 @@ function renderDailyHealth(container, entries, stationId) {
     return null;
   }
 
+  function latestAppliedFwForDay(dayUploadRows, allUploadRows, dayEndMs) {
+    var i;
+    for (i = dayUploadRows.length - 1; i >= 0; i--) {
+      var dayVer = String(dayUploadRows[i] && dayUploadRows[i].applied_fw_version || '').trim();
+      if (dayVer) return dayVer;
+    }
+    for (i = allUploadRows.length - 1; i >= 0; i--) {
+      var row = allUploadRows[i] || {};
+      var ts = row.upload_started_at ? new Date(ensureUTC(row.upload_started_at)).getTime() : NaN;
+      if (!isFinite(ts) || ts >= dayEndMs) continue;
+      var ver = String(row.applied_fw_version || '').trim();
+      if (ver) return ver;
+    }
+    return null;
+  }
+
+  function slotMapForWindow(startMs, endMs, fallbackSlot1Node, fallbackSlot2Node) {
+    if (typeof getHealthSlotStateForWindow === 'function') {
+      return getHealthSlotStateForWindow(stationId, startMs, endMs);
+    }
+    var fallback = {};
+    if (fallbackSlot1Node) fallback[1] = fallbackSlot1Node;
+    if (fallbackSlot2Node) fallback[2] = fallbackSlot2Node;
+    return fallback;
+  }
+
   function batteryTrend(arr, key) {
     var first = arr.find(function(e) { return e[key] !== null && e[key] !== undefined && !isNaN(e[key]); });
     var last = arr.slice().reverse().find(function(e) { return e[key] !== null && e[key] !== undefined && !isNaN(e[key]); });
@@ -364,6 +415,25 @@ function renderDailyHealth(container, entries, stationId) {
     return '<span style="color:' + color + '">' + a.toFixed(0) + arrow + b.toFixed(0) + '</span>';
   }
 
+  var allDays = Object.keys(byDay).sort().reverse();
+  var visibleDays = Math.max(STATION_LOG_ROWS_STEP, Number(_stationLogsVisibleDays[stationId]) || STATION_LOG_ROWS_STEP);
+  var days = allDays.slice(0, visibleDays);
+  var visibleWindowStart = days.length ? Date.parse(days[days.length - 1] + 'T00:00:00Z') : NaN;
+  var visibleWindowEnd = days.length ? Date.parse(days[0] + 'T00:00:00Z') + (24 * 3600000) : NaN;
+  var slotCtx = typeof getHealthSlotContext === 'function'
+    ? getHealthSlotContext(stationId, entries, syncRowsAll, {
+        windowStartMs: visibleWindowStart,
+        windowEndMs: visibleWindowEnd
+      })
+    : null;
+  var slot1Enabled = slotCtx ? slotCtx.slot1.enabled : isSatelliteVisible(stationId, entries, 1);
+  var slot2Enabled = slotCtx ? slotCtx.slot2.enabled : isSatelliteVisible(stationId, entries, 2);
+  var slot1Label = slotCtx ? slotCtx.slot1.label : satelliteDisplayName(stationId, 1);
+  var slot2Label = slotCtx ? slotCtx.slot2.label : satelliteDisplayName(stationId, 2);
+  var slot1Node = slotCtx ? slotCtx.slot1.nodeLetter : satelliteNodeLetter(stationId, 1);
+  var slot2Node = slotCtx ? slotCtx.slot2.nodeLetter : satelliteNodeLetter(stationId, 2);
+
+  var configCols = 4 + (slot1Enabled ? 2 : 0) + (slot2Enabled ? 2 : 0);
   var batteryCols = 1 + (slot1Enabled ? 1 : 0) + (slot2Enabled ? 1 : 0);
   var sampleCols = 1 + (slot1Enabled ? 1 : 0) + (slot2Enabled ? 1 : 0);
   var gapCols = 1 + (slot1Enabled ? 1 : 0) + (slot2Enabled ? 1 : 0);
@@ -381,13 +451,17 @@ function renderDailyHealth(container, entries, stationId) {
   var html = '<table class="health-table"><thead>' +
     '<tr>' +
       '<th rowspan="2">Date</th>' +
-      groupTh('Configuration', 6, 'grp-config') +
+      groupTh('Configuration', configCols, 'grp-config') +
       groupTh('Battery', batteryCols, 'grp-battery group-start') +
       groupTh('Data', dataCols, 'grp-data group-start') +
       groupTh('Radio and Satellite Syncs', radioSyncCols, 'grp-radio group-start') +
     '</tr>' +
     '<tr>' +
-      '<th class="grp-config">Sample Period<br><span style="font-weight:400">(min)</span></th><th class="grp-config">Upload Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">Sat Sync Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">T0 FW</th><th class="grp-config">Satellite FW</th><th class="grp-config">Slot Mapping</th>' +
+      '<th class="grp-config">Sample Period<br><span style="font-weight:400">(min)</span></th><th class="grp-config">Upload Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">Sat Sync Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">T0 FW</th>' +
+      (slot1Enabled ? '<th class="grp-config">' + slot1Label + ' FW</th>' : '') +
+      (slot2Enabled ? '<th class="grp-config">' + slot2Label + ' FW</th>' : '') +
+      (slot1Enabled ? '<th class="grp-config">' + slot1Label + ' Mapping</th>' : '') +
+      (slot2Enabled ? '<th class="grp-config">' + slot2Label + ' Mapping</th>' : '') +
       '<th class="grp-battery group-start">T0 Bat<br><span style="font-weight:400">(%)</span></th>' + (slot1Enabled ? '<th class="grp-battery">' + slot1Label + ' Bat<br><span style="font-weight:400">(%)</span></th>' : '') + (slot2Enabled ? '<th class="grp-battery">' + slot2Label + ' Bat<br><span style="font-weight:400">(%)</span></th>' : '') +
       '<th class="grp-data group-start">T0 Samples<br><span style="font-weight:400">(sync rec/exp)</span></th>' +
       (slot1Enabled ? '<th class="grp-data">' + slot1Label + ' Samples<br><span style="font-weight:400">(sync rec/exp)</span></th>' : '') +
@@ -408,9 +482,6 @@ function renderDailyHealth(container, entries, stationId) {
     '</tr>' +
     '</thead><tbody>';
 
-  var allDays = Object.keys(byDay).sort().reverse();
-  var visibleDays = Math.max(STATION_LOG_ROWS_STEP, Number(_stationLogsVisibleDays[stationId]) || STATION_LOG_ROWS_STEP);
-  var days = allDays.slice(0, visibleDays);
   var nowMs = Date.now();
   var datasetEndDayKey = datasetMeta && datasetMeta.isActive ? datasetMeta.endDayKey : null;
 
@@ -428,6 +499,9 @@ function renderDailyHealth(container, entries, stationId) {
     var dayEnd = dayStart + 24 * 3600000;
     var dayEvalEnd = Math.min(dayEnd, nowMs);
     var dayWindowMs = Math.max(0, dayEvalEnd - dayStart);
+    var daySlotMap = slotMapForWindow(dayStart, dayEnd, slot1Node, slot2Node);
+    var daySlot1Node = daySlotMap[1] || slot1Node;
+    var daySlot2Node = daySlotMap[2] || slot2Node;
 
     var daySyncRows = syncRowsAll.filter(function(r) {
       var t = r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)).getTime() : NaN;
@@ -467,27 +541,20 @@ function renderDailyHealth(container, entries, stationId) {
       ? Math.round(effectiveBulkFreqHours * 3600000)
       : (mode(dayUploadIntervals) || globalUploadIntervalMs);
 
-    var dayT0Fw = fmtFwValue(latestFwForDay(de, entries, 't0FwVersion', dayEnd));
+    var dayT0Fw = fmtFwValue(
+      latestFwForDay(de, entries, 't0FwVersion', dayEnd) ||
+      latestAppliedFwForDay(dayUploadRows, uploadRowsAll, dayEnd)
+    );
     var daySlot1Fw = fmtFwValue(
-      latestSyncFwForNode(daySyncRows, syncRowsAll, slot1Node, dayEnd) ||
+      latestSyncFwForNode(daySyncRows, syncRowsAll, daySlot1Node, dayEnd) ||
       latestFwForDay(de, entries, 'sat1FwVersion', dayEnd)
     );
     var daySlot2Fw = fmtFwValue(
-      latestSyncFwForNode(daySyncRows, syncRowsAll, slot2Node, dayEnd) ||
+      latestSyncFwForNode(daySyncRows, syncRowsAll, daySlot2Node, dayEnd) ||
       latestFwForDay(de, entries, 'sat2FwVersion', dayEnd)
     );
-    var daySatFw = '--';
-    if (slot1Enabled && slot2Enabled) daySatFw = slot1Label + ' ' + daySlot1Fw + ' | ' + slot2Label + ' ' + daySlot2Fw;
-    else if (slot1Enabled) daySatFw = daySlot1Fw;
-    else if (slot2Enabled) daySatFw = daySlot2Fw;
-
-    var slotMapText = '--';
-    if (slot1Enabled || slot2Enabled) {
-      var mapParts = [];
-      if (slot1Enabled) mapParts.push(slot1Label + ' Node ' + (slot1Node || '?'));
-      if (slot2Enabled) mapParts.push(slot2Label + ' Node ' + (slot2Node || '?'));
-      slotMapText = mapParts.join(' | ');
-    }
+    var daySlot1MapText = daySlot1Node ? ('Node ' + escHtml(daySlot1Node)) : '--';
+    var daySlot2MapText = daySlot2Node ? ('Node ' + escHtml(daySlot2Node)) : '--';
 
     var t0SamplesActual = de.length;
     var dayT0IntervalMs = medianIntervalMs(de, function(r) { return r.timestamp ? r.timestamp.getTime() : null; });
@@ -498,10 +565,10 @@ function renderDailyHealth(container, entries, stationId) {
     }
 
     var nodeADay = daySyncRows.filter(function(r) {
-      return slot1Node && String((r && r.node_id) || '').toUpperCase() === slot1Node;
+      return daySlot1Node && String((r && r.node_id) || '').toUpperCase() === daySlot1Node;
     });
     var nodeBDay = daySyncRows.filter(function(r) {
-      return slot2Node && String((r && r.node_id) || '').toUpperCase() === slot2Node;
+      return daySlot2Node && String((r && r.node_id) || '').toUpperCase() === daySlot2Node;
     });
 
     var slot1SamplesActual = nodeADay.reduce(function(acc, r) {
@@ -560,8 +627,10 @@ function renderDailyHealth(container, entries, stationId) {
       '<td class="grp-config">' + fmtPeriodMs(cfgUploadMs) + '</td>' +
       '<td class="grp-config">' + fmtPeriodSeconds(cfgSyncSec) + '</td>' +
       '<td class="grp-config">' + dayT0Fw + '</td>' +
-      '<td class="grp-config">' + daySatFw + '</td>' +
-      '<td class="grp-config">' + slotMapText + '</td>' +
+      (slot1Enabled ? '<td class="grp-config">' + daySlot1Fw + '</td>' : '') +
+      (slot2Enabled ? '<td class="grp-config">' + daySlot2Fw + '</td>' : '') +
+      (slot1Enabled ? '<td class="grp-config">' + daySlot1MapText + '</td>' : '') +
+      (slot2Enabled ? '<td class="grp-config">' + daySlot2MapText + '</td>' : '') +
       '<td class="grp-battery group-start">' + batteryTrend(de, 't0BatPct') + '</td>' +
       (slot1Enabled ? '<td class="grp-battery">' + batteryTrend(de, 'sat1BatPct') + '</td>' : '') +
       (slot2Enabled ? '<td class="grp-battery">' + batteryTrend(de, 'sat2BatPct') + '</td>' : '') +

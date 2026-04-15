@@ -6,7 +6,9 @@
 // ============================================================
 function renderBatteryCharts(container, entries, stationId, range) {
   if (!entries || !entries.length) return;
-  var slot2Enabled = isSatelliteVisible(stationId, entries, 2);
+  var syncRowsAll = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
+  var slotCtx = typeof getHealthSlotContext === 'function' ? getHealthSlotContext(stationId, entries, syncRowsAll) : null;
+  var slot2Enabled = slotCtx ? slotCtx.slot2.enabled : isSatelliteVisible(stationId, entries, 2);
   var firstTs = entries[0].timestamp;
   var lastTs = entries[entries.length - 1].timestamp;
   var CUTOFF_V = 3.3;
@@ -67,7 +69,7 @@ function renderBatteryCharts(container, entries, stationId, range) {
       .map(function(e) { return { x: e.timestamp, y: Number(e[key]) }; });
     return {
       label: label,
-      data: lttbDownsample(pts),
+      data: memoizeHealthSeries('health:' + stationId + ':battery:' + range + ':' + key, pts),
       yAxisID: 'y',
       borderColor: color,
       backgroundColor: 'transparent',
@@ -362,10 +364,10 @@ function renderBatteryCharts(container, entries, stationId, range) {
   var calcAnchorMs = rangeStartMs;
   var uploadRows = Array.isArray(_stationUploadTimeline[stationId]) ? _stationUploadTimeline[stationId] : [];
   var syncRows = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
-  var slot1Label = satelliteDisplayName(stationId, 1);
-  var slot2Label = satelliteDisplayName(stationId, 2);
-  var slot1Node = satelliteNodeLetter(stationId, 1);
-  var slot2Node = satelliteNodeLetter(stationId, 2);
+  var slot1Label = slotCtx ? slotCtx.slot1.label : satelliteDisplayName(stationId, 1);
+  var slot2Label = slotCtx ? slotCtx.slot2.label : satelliteDisplayName(stationId, 2);
+  var slot1Node = slotCtx ? slotCtx.slot1.nodeLetter : satelliteNodeLetter(stationId, 1);
+  var slot2Node = slotCtx ? slotCtx.slot2.nodeLetter : satelliteNodeLetter(stationId, 2);
   var uploadEventTimes = uniqSortedTimes(uploadRows.map(function(r) {
     return r && r.upload_started_at ? new Date(ensureUTC(r.upload_started_at)) : null;
   }).filter(function(d) {
@@ -675,7 +677,7 @@ function renderSolarChart(container, entries, stationId, range) {
     data: {
       datasets: [{
         label: 'Solar',
-        data: lttbDownsample(solarPoints),
+        data: memoizeHealthSeries('health:' + stationId + ':solar:' + range + ':t0SolarV', solarPoints),
         borderColor: '#f59e0b',
         backgroundColor: 'transparent',
         borderWidth: 2,

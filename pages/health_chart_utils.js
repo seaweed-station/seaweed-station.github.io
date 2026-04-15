@@ -3,8 +3,14 @@
 
 // Largest-Triangle-Three-Buckets downsampling for {x,y} arrays.
 // Keeps first & last point, picks the most visually significant point per bucket.
-var MAX_CHART_POINTS = 350;
+var MAX_CHART_POINTS = (window.PlotCore && typeof PlotCore.resolveMaxPoints === 'function')
+  ? PlotCore.resolveMaxPoints('health-series', 'all')
+  : 350;
 function lttbDownsample(data, maxPts) {
+  if (window.PlotCore && typeof PlotCore.lttbDownsample === 'function') {
+    maxPts = maxPts || _currentRangeMaxPts || MAX_CHART_POINTS;
+    return PlotCore.lttbDownsample(data, maxPts);
+  }
   maxPts = maxPts || _currentRangeMaxPts || MAX_CHART_POINTS;
   if (!data || data.length <= maxPts) return data;
   var len = data.length;
@@ -35,7 +41,20 @@ function lttbDownsample(data, maxPts) {
   return sampled;
 }
 
+function memoizeHealthSeries(cacheKey, data, maxPts) {
+  if (!Array.isArray(data) || !data.length) return [];
+  if (!(window.PlotCore && typeof PlotCore.memoizeSeries === 'function' && typeof PlotCore.buildSequenceSignature === 'function')) {
+    return lttbDownsample(data, maxPts);
+  }
+  return PlotCore.memoizeSeries(cacheKey, PlotCore.buildSequenceSignature(data), function() {
+    return lttbDownsample(data, maxPts);
+  });
+}
+
 function rangeLabel(range) {
+  if (window.PlotCore && typeof PlotCore.rangeLabel === 'function') {
+    return PlotCore.rangeLabel(range);
+  }
   if (range === 'day') return 'Day';
   if (range === 'week') return 'Week';
   if (range === 'month') return 'Month';
@@ -49,16 +68,19 @@ var _modalChart = null;
 var _modalSource = null;
 
 function cloneChartDataForModal(data) {
-  var out = { datasets: [] };
-  if (data && Array.isArray(data.labels)) out.labels = data.labels.slice();
-  if (data && Array.isArray(data.datasets)) {
-    out.datasets = data.datasets.map(function(ds) {
-      var copy = Object.assign({}, ds);
-      if (Array.isArray(ds.data)) copy.data = ds.data.slice();
-      return copy;
-    });
-  }
-  return out;
+  return {
+    labels: data && Array.isArray(data.labels) ? data.labels.slice() : undefined,
+    datasets: (data && Array.isArray(data.datasets) ? data.datasets : []).map(function(ds) {
+      var out = Object.assign({}, ds);
+      if (Array.isArray(ds.data)) {
+        out.data = ds.data.map(function(point) {
+          if (point && typeof point === 'object') return Object.assign({}, point);
+          return point;
+        });
+      }
+      return out;
+    })
+  };
 }
 
 function pointXMs(pt) {
@@ -97,6 +119,9 @@ function getObservedBoundsFromData(data) {
 }
 
 function getWindowForRange(bounds, range) {
+  if (window.PlotCore && typeof PlotCore.getWindowForRange === 'function') {
+    return PlotCore.getWindowForRange(bounds, range);
+  }
   if (!bounds || !isFinite(bounds.min) || !isFinite(bounds.max)) return { min: undefined, max: undefined };
   if (range === 'all') return { min: bounds.min, max: bounds.max };
   var spanMs = 0;
@@ -113,7 +138,7 @@ function getChartSnapshotForRange(stationId, chartKey, range) {
   if (!stationId || !chartKey) return null;
   var prevRange = stationRanges[stationId] || 'week';
   var changed = prevRange !== range;
-  if (changed) setStationRange(stationId, range, { skipEnsure: true });
+  if (changed) setStationRange(stationId, range, { skipEnsure: true, skipRawEnsure: true });
   var canvas = findStationChartCanvas(stationId, chartKey);
   var chart = canvas ? Chart.getChart(canvas) : null;
   var snapshot = null;
@@ -124,7 +149,7 @@ function getChartSnapshotForRange(stationId, chartKey, range) {
       options: chart.options
     };
   }
-  if (changed) setStationRange(stationId, prevRange, { skipEnsure: true });
+  if (changed) setStationRange(stationId, prevRange, { skipEnsure: true, skipRawEnsure: true });
   return snapshot;
 }
 
@@ -139,8 +164,22 @@ function makeLiveChart(box, canvas, title, cfg, meta) {
   btn.innerHTML = '\u2922';
   btn.onclick = function(e) { e.stopPropagation(); openChartModal(canvas._expandTitle, canvas); };
   box.appendChild(btn);
-  var inst = new Chart(canvas, cfg);
-  liveCharts.push(inst);
+  var managerKey = (meta && meta.managerKey)
+    ? meta.managerKey
+    : ('health:' + (meta && meta.stationId ? meta.stationId : 'global') + ':' + (meta && meta.chartKey ? meta.chartKey : (canvas.id || 'chart')));
+  var inst = (window.ChartManager && typeof ChartManager.upsert === 'function')
+    ? ChartManager.upsert({
+        key: managerKey,
+        canvas: canvas,
+        config: cfg,
+        meta: {
+          stationId: meta && meta.stationId ? meta.stationId : null,
+          chartKey: meta && meta.chartKey ? meta.chartKey : null,
+          scope: 'health-live'
+        },
+        updateMode: 'none'
+      })
+    : new Chart(canvas, cfg);
   return inst;
 }
 
@@ -157,11 +196,11 @@ function chartOpts(yLabel, yMin, yMax, range, stationId, xMinMs, xMaxMs) {
     xMaxTicks = 9;
     xAutoSkip = false;
   } else if (range === 'week') {
-    xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, round: 'day', displayFormats: { day: 'dd MMM' } };
+    xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, displayFormats: { day: 'dd MMM' } };
     xMaxTicks = 8;
     xAutoSkip = false;
   } else if (range === 'month') {
-    xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, round: 'day', displayFormats: { day: 'dd MMM' } };
+    xTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, displayFormats: { day: 'dd MMM' } };
     xMaxTicks = 10;
     xAutoSkip = true;
   } else {
@@ -171,12 +210,6 @@ function chartOpts(yLabel, yMin, yMax, range, stationId, xMinMs, xMaxMs) {
   }
   var xScaleMin = isFinite(xMinMs) ? xMinMs : undefined;
   var xScaleMax = isFinite(xMaxMs) ? xMaxMs : undefined;
-  if ((range === 'week' || range === 'month') && isFinite(xMinMs) && isFinite(xMaxMs)) {
-    var minD = new Date(xMinMs);
-    var maxD = new Date(xMaxMs);
-    xScaleMin = Date.UTC(minD.getUTCFullYear(), minD.getUTCMonth(), minD.getUTCDate(), 0, 0, 0, 0);
-    xScaleMax = Date.UTC(maxD.getUTCFullYear(), maxD.getUTCMonth(), maxD.getUTCDate(), 23, 59, 59, 999);
-  }
   function tickDate(v) {
     if (v === null || v === undefined) return null;
     var d = null;

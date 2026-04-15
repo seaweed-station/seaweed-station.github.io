@@ -14,6 +14,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2/dist/chartjs-plugin-zoom.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="plot_core.js"></script>
+<script src="plot_overlays.js"></script>
+<script src="chart_manager.js"></script>
 
 <style>
 /* ===================================================================
@@ -166,20 +169,6 @@ body {
 .next-check-pill.late { background: var(--danger-dim); color: var(--danger); border-color: var(--danger); }
 .next-check-pill.unknown { background: var(--bg); color: var(--text-muted); border-color: var(--border); }
 .next-check-pill.paused { background: #f2f5f4; color: var(--text-sec); border-color: #9fb6af; }
-
-/* -- Date range bar ------------------------------------------------ */
-.date-range-bar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 10px 16px;
-}
-.date-range-label { font-size: 0.8rem; font-weight: 600; color: var(--text-sec); }
-.date-range-sep { font-size: 0.8rem; color: var(--text-muted); }
-.date-range-bar input[type="date"] {
-  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-  padding: 4px 8px; color: var(--text); font-size: 0.82rem; width: 145px;
-}
-.date-range-bar input[type="date"]:focus { outline: none; border-color: var(--accent); }
 
 /* -- Sensor placement map ------------------------------------------ */
 .sensor-map-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -688,16 +677,6 @@ body {
     <p>Click <strong>Fetch Live</strong> to pull data from Supabase.</p>
     <button class="btn btn-primary" onclick="fetchLiveData()" style="margin-top:10px">Fetch Live Now</button>
   </div>
-
-  <!-- Date Range Filter (always visible) -->
-  <section class="date-range-bar" id="dateRangeBar" style="display:none">
-    <span class="date-range-label">Date Range:</span>
-    <input type="date" id="dateStart" title="Start date (leave empty for earliest)">
-    <span class="date-range-sep">to</span>
-    <input type="date" id="dateEnd" title="End date (leave empty for latest)">
-    <button class="btn btn-sm" onclick="applyDateRange()">Apply</button>
-    <button class="btn btn-sm" onclick="clearDateRange()" title="Reset to all data">Clear</button>
-  </section>
 
   <!-- Sensor Placement Map (populated per-station by JS) -->
   <div class="sensor-map-panel" id="sensorMapPanel" style="display:none">

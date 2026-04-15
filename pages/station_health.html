@@ -12,6 +12,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2/dist/chartjs-plugin-zoom.min.js"></script>
 <script src="seaweed_common.js"></script>
 <script src="seaweed_sync.js"></script>
+<script src="plot_core.js"></script>
+<script src="plot_overlays.js"></script>
+<script src="chart_manager.js"></script>
 <script src="battery_model.js"></script>
 <script src="battery_forecast_widget.js"></script>
 <style>
@@ -379,7 +382,6 @@ syncConfiguredStationUI();
 
 // Timezone helpers (all display uses UTC)
 
-var liveCharts = [];  // track Chart.js instances for cleanup on refresh
 var stationRanges = {}; // { stationId: 'day'|'week'|'month'|'all' }
 var _syncWindowCache = {}; // cache evaluateSyncWindows per station+range
 var _stationChartsRendered = {}; // lazy-render: true once charts are built for a station
@@ -395,9 +397,11 @@ var stationData = {}; // { stationId: { entries: [], raw: {} } }
 var _stationDiag = {}; // v2: { stationId: { upload: <row>, sync: { A: <row>, B: <row> } } }
 var _stationSyncTimeline = {}; // { stationId: sync_sessions[] }
 var _stationUploadTimeline = {}; // { stationId: upload_sessions[] }
+var _healthTimelineHydrationPromise = null;
 var _deviceStatusById = {}; // { stationId: { nextCheckInAt, ... } }
 var _deviceConfigById = {}; // { stationId: { bulk_freq_hours, ... } }
 var _deviceSlotsById = {}; // { stationId: { A: 2, B: 1 } }
+var _deviceSlotHistoryById = {}; // { stationId: [{ slotNumber, nodeLetter, assignedAtMs, retiredAtMs }] }
 var _healthDiagMeta = { source: 'idle' };
 var _healthLoadedWindow = null;
 var HEALTH_RECENT_WINDOW_DAYS = 30;
@@ -545,9 +549,74 @@ function getOpenHealthStationIds() {
   return openIds;
 }
 
+function healthStationHasTimelineData(stationId) {
+  return !!(
+    (Array.isArray(_stationSyncTimeline[stationId]) && _stationSyncTimeline[stationId].length) ||
+    (Array.isArray(_stationUploadTimeline[stationId]) && _stationUploadTimeline[stationId].length)
+  );
+}
+
+function hydrateHealthTimelinesAfterCacheSync(stationIds) {
+  if (_healthTimelineHydrationPromise) return _healthTimelineHydrationPromise;
+  var requestedRange = getPreferredHealthFetchRange();
+  var requestWindow = getHealthRequestedWindow(requestedRange);
+  updateHealthDiagnostics({
+    source: 'loading',
+    lastRefreshAt: Date.now(),
+    error: '',
+    note: 'Cache refresh updated station feeds. Reloading sync/upload timelines from Edge Function to keep health charts consistent.'
+  });
+  _healthTimelineHydrationPromise = fetchEdgeHealthSummary({
+    range: requestedRange,
+    from: requestWindow.from.toISOString(),
+    to: requestWindow.to.toISOString(),
+    points: getHealthPointsTarget(requestedRange)
+  }).then(function(payload) {
+    applyEdgeHealthPayload(payload);
+    rebuildHealthStations(getOpenHealthStationIds());
+    updateHealthDiagnostics({
+      source: 'edge',
+      generatedAt: payload.generated_at,
+      dataAsOf: getHealthLatestDataAsOf(),
+      schemaVersion: payload.schema_version,
+      rangeLabel: payload.time_range ? (dashboardDiagFormatUtc(payload.time_range.from) + ' → ' + dashboardDiagFormatUtc(payload.time_range.to)) : '--',
+      stationCount: payload.station_count,
+      fetchDurationMs: payload._response_duration_ms,
+      cacheAgeS: 0,
+      stationSummary: (payload.stations || []).map(function(s) {
+        return s.station_id + ':' + (Array.isArray(s.feeds) ? s.feeds.length : 0) + 'f';
+      }).join(', '),
+      lastRefreshAt: Date.now(),
+      error: '',
+      note: 'Reloaded health timelines after a cache-only station refresh so sync charts remain populated.'
+    });
+    return true;
+  }).catch(function(err) {
+    console.warn('[Health] Timeline hydration after cache sync failed:', err && err.message ? err.message : err, stationIds || []);
+    rebuildHealthStations(getOpenHealthStationIds());
+    updateHealthDiagnostics({
+      source: 'cache-sync',
+      dataAsOf: getHealthLatestDataAsOf(),
+      stationCount: STATIONS.length,
+      cacheAgeS: getHealthLatestCacheAgeS(),
+      stationSummary: getHealthStationSummary(),
+      lastRefreshAt: Date.now(),
+      error: err && err.message ? err.message : 'Timeline hydration failed',
+      note: 'Station feed cache updated, but sync/upload timelines could not be refreshed. Sync charts may be incomplete until the next successful Edge fetch.'
+    });
+    return false;
+  }).finally(function() {
+    _healthTimelineHydrationPromise = null;
+  });
+  return _healthTimelineHydrationPromise;
+}
+
 function rebuildHealthStations(openStationIds) {
-  liveCharts.forEach(function(c) { try { c.destroy(); } catch(e){} });
-  liveCharts = [];
+  if (window.ChartManager && typeof ChartManager.destroyMatching === 'function') {
+    ChartManager.destroyMatching(function(chart) {
+      return chart && chart.$scope === 'health-live';
+    });
+  }
   _syncWindowCache = {};
   _stationChartsRendered = {};
 
@@ -762,34 +831,8 @@ function toggleStation(id) {
 function _renderStationCharts(stationId) {
   var data = stationData[stationId];
   if (!data || !data.entries || !data.entries.length) return;
-  var body = document.getElementById('body_' + stationId);
-  if (!body) return;
   var range = stationRanges[stationId] || 'week';
-  var chartEntries = filterByRange(data.entries, range);
-  // Adaptive LTTB: fewer points for "All" range with large datasets
-  _currentRangeMaxPts = (range === 'all' && data.entries.length > 3000) ? 200 : MAX_CHART_POINTS;
-  var chartsDiv = document.createElement('div');
-  chartsDiv.id = 'charts_' + stationId;
-  chartsDiv.appendChild(buildStationRangeBar(stationId, range));
-  renderBatteryCharts(chartsDiv, chartEntries, stationId, range);
-  var chartGrid = document.createElement('div');
-  chartGrid.className = 'chart-grid-quad';
-  renderSolarChart(chartGrid, chartEntries, stationId, range);
-  renderSyncCharts(chartGrid, chartEntries, stationId, range);
-  chartsDiv.appendChild(chartGrid);
-  var logsPanel = document.createElement('div');
-  logsPanel.className = 'logs-panel';
-  var logsTitle = document.createElement('div');
-  logsTitle.className = 'section-title';
-  logsTitle.textContent = 'Station Logs:';
-  logsPanel.appendChild(logsTitle);
-  // Station logs are always all-time, independent from chart range toggles.
-  renderDailyHealth(logsPanel, data.entries, stationId);
-  renderStationConfigChangeLog(logsPanel, data.entries, stationId);
-  chartsDiv.appendChild(logsPanel);
-  body.appendChild(chartsDiv);
-  _currentRangeMaxPts = MAX_CHART_POINTS; // reset
-  _stationChartsRendered[stationId] = true;
+  _renderStationRange(stationId, range);
 }
 
 function filterByRange(entries, range) {
@@ -804,17 +847,15 @@ function filterByRange(entries, range) {
 }
 
 function _destroyStationCharts(stationId) {
-  // Properly destroy Chart.js instances for this station to prevent memory leaks
-  liveCharts = liveCharts.filter(function(c) {
-    if (c.canvas && c.canvas._stationId === stationId) {
-      c.destroy();
-      return false;
-    }
-    return true;
-  });
+  if (window.ChartManager && typeof ChartManager.destroyMatching === 'function') {
+    ChartManager.destroyMatching(function(chart) {
+      return chart && chart.$scope === 'health-live' && chart.$stationId === stationId;
+    });
+  }
 }
 
-function _renderStationRange(stationId, range) {
+function _renderStationRange(stationId, range, opts) {
+  opts = opts || {};
   stationRanges[stationId] = range;
   // Invalidate cached sync windows for this station
   Object.keys(_syncWindowCache).forEach(function(k) { if (k.indexOf(stationId) === 0) delete _syncWindowCache[k]; });
@@ -830,8 +871,8 @@ function _renderStationRange(stationId, range) {
   var oldCharts = document.getElementById('charts_' + stationId);
   if (oldCharts) oldCharts.remove();
 
-  // Adaptive LTTB: fewer points for "All" range with large datasets
-  _currentRangeMaxPts = (range === 'all' && data.entries.length > 3000) ? 200 : MAX_CHART_POINTS;
+  // Keep health plots at station-entry granularity; backend edge downsampling is handled separately.
+  _currentRangeMaxPts = 50000;
 
   // Build new charts container
   var chartEntries = filterByRange(data.entries, range);
@@ -857,11 +898,16 @@ function _renderStationRange(stationId, range) {
   body.appendChild(chartsDiv);
   _currentRangeMaxPts = MAX_CHART_POINTS; // reset
   _stationChartsRendered[stationId] = true;
+  if (!opts.skipRawEnsure && typeof ensureHealthStationRawData === 'function') {
+    ensureHealthStationRawData(stationId, range, { rerender: true }).catch(function(err) {
+      console.warn('[Health] Raw hydration failed for ' + stationId + ':', err && err.message ? err.message : err);
+    });
+  }
 }
 
 function setStationRange(stationId, range, opts) {
   opts = opts || {};
-  _renderStationRange(stationId, range);
+  _renderStationRange(stationId, range, opts);
   if (!opts.skipEnsure && range === 'all' && typeof ensureHealthRangeLoaded === 'function' && !healthDataCanServeRange('all')) {
     ensureHealthRangeLoaded('all').catch(function(err) {
       console.warn('[Health] All-range fetch failed:', err && err.message ? err.message : err);
@@ -904,6 +950,7 @@ function applySharedCacheToHealth(stationIds) {
     ? stationIds
     : STATIONS.map(function(st) { return st.id; });
   var changed = false;
+  var missingTimelineIds = [];
 
   ids.forEach(function(id) {
     try {
@@ -928,12 +975,17 @@ function applySharedCacheToHealth(stationIds) {
       _stationDataSource[id] = { source: cached.source || 'cache', savedAt: cached.savedAt || null };
       mergeHealthLoadedWindow({ from: entries[0].timestamp, to: entries[entries.length - 1].timestamp });
       changed = true;
+      if (!healthStationHasTimelineData(id) && missingTimelineIds.indexOf(id) < 0) missingTimelineIds.push(id);
     } catch (e) {
       console.warn('[Health] Shared cache sync failed for ' + id + ':', e.message);
     }
   });
 
   if (!changed) return;
+  if (missingTimelineIds.length) {
+    hydrateHealthTimelinesAfterCacheSync(missingTimelineIds);
+    return;
+  }
   rebuildHealthStations(getOpenHealthStationIds());
 }
 
@@ -1036,17 +1088,17 @@ onDashboardDataRefresh(function(msg) {
       <h3 id="chartModalTitle"></h3>
       <div class="chart-modal-actions">
         <div class="chart-modal-range" id="chartModalRange">
-          <button class="btn btn-sm" data-mrange="day" onclick="setModalRange('day')">Day</button>
-          <button class="btn btn-sm" data-mrange="week" onclick="setModalRange('week')">Week</button>
-          <button class="btn btn-sm" data-mrange="month" onclick="setModalRange('month')">Month</button>
-          <button class="btn btn-sm" data-mrange="all" onclick="setModalRange('all')">All</button>
+          <button class="btn btn-sm" type="button" data-mrange="day">Day</button>
+          <button class="btn btn-sm" type="button" data-mrange="week">Week</button>
+          <button class="btn btn-sm" type="button" data-mrange="month">Month</button>
+          <button class="btn btn-sm" type="button" data-mrange="all">All</button>
         </div>
         <div class="chart-modal-toggles" id="chartModalToggles">
-          <button class="btn btn-sm" id="chartModalCalcBtn" onclick="toggleModalCalculated()">Show Calculated</button>
-          <button class="btn btn-sm" id="chartModalEventBtn" onclick="toggleModalEvents()">Show Events</button>
+          <button class="btn btn-sm" type="button" id="chartModalCalcBtn">Show Calculated</button>
+          <button class="btn btn-sm" type="button" id="chartModalEventBtn">Show Events</button>
         </div>
         <span class="chart-modal-hint">Scroll = zoom &nbsp;&bull;&nbsp; Drag = pan &nbsp;&bull;&nbsp; Dbl-click = reset</span>
-        <button class="chart-modal-close" onclick="closeChartModal({target:this})">&#10005; Close</button>
+        <button class="chart-modal-close" type="button">&#10005; Close</button>
       </div>
     </div>
     <div class="chart-modal-wrap">

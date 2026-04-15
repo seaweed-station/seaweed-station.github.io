@@ -1,17 +1,171 @@
 ﻿// health_chart_modal.js — Extracted from station_health.html (Sprint 6)
 // Expanded chart modal: open, range controls, toggle calculated/events
 
+function cloneModalVisibilityState() {
+  var s = getModalDatasetStats();
+  return {
+    calculatedVisible: !!s.calculatedVisible,
+    eventsVisible: !!s.eventsVisible
+  };
+}
+
+function bindHealthModalControls() {
+  var overlay = document.getElementById('chartModalOverlay');
+  if (!overlay || overlay._controlsBound) return;
+  overlay._controlsBound = true;
+
+  var modal = overlay.querySelector('.chart-modal');
+  if (modal) {
+    modal.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+    });
+  }
+
+  var rangeWrap = document.getElementById('chartModalRange');
+  if (rangeWrap) {
+    rangeWrap.addEventListener('click', function(ev) {
+      var btn = ev.target.closest('[data-mrange]');
+      if (!btn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      setModalRange(btn.getAttribute('data-mrange'));
+    });
+  }
+
+  var calcBtn = document.getElementById('chartModalCalcBtn');
+  if (calcBtn) {
+    calcBtn.addEventListener('click', function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      toggleModalCalculated();
+    });
+  }
+
+  var eventBtn = document.getElementById('chartModalEventBtn');
+  if (eventBtn) {
+    eventBtn.addEventListener('click', function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      toggleModalEvents();
+    });
+  }
+
+  var closeBtn = overlay.querySelector('.chart-modal-close');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeChartModal({ target: closeBtn });
+    });
+  }
+}
+
+function applyModalDatasetVisibilityState(state) {
+  if (!_modalChart || !_modalChart.data || !Array.isArray(_modalChart.data.datasets) || !state) return;
+  var sets = _modalChart.data.datasets;
+  for (var i = 0; i < sets.length; i++) {
+    var ds = sets[i];
+    if (!ds) continue;
+    if (ds._isCalculated) ds.hidden = !state.calculatedVisible;
+    if (ds._isEvent) ds.hidden = ds._eventType === 'sample' || ds._eventType === 'config' ? true : !state.eventsVisible;
+  }
+}
+
+function getModalSnapshotForRange(range) {
+  if (!_modalSource) return null;
+  var stationId = _modalSource.stationId;
+  var chartKey = _modalSource.chartKey;
+  if (stationId && chartKey && typeof getChartSnapshotForRange === 'function') {
+    var snap = getChartSnapshotForRange(stationId, chartKey, range);
+    if (snap && snap.data) return snap;
+  }
+  var sourceCanvas = _modalSource.sourceCanvas || findStationChartCanvas(stationId, chartKey);
+  var sourceChart = sourceCanvas ? Chart.getChart(sourceCanvas) : null;
+  if (!sourceChart) return null;
+  return {
+    type: sourceChart.config.type,
+    data: cloneChartDataForModal(sourceChart.data),
+    options: sourceChart.options
+  };
+}
+
+function buildModalTimeAxis(range) {
+  if (range === 'day') {
+    return { time: { tooltipFormat: 'dd MMM HH:mm', unit: 'hour', stepSize: 3, displayFormats: { hour: 'HH:mm', minute: 'HH:mm' } }, maxTicks: 9, autoSkip: false };
+  }
+  if (range === 'week') {
+    return { time: { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, displayFormats: { day: 'dd MMM' } }, maxTicks: 8, autoSkip: false };
+  }
+  if (range === 'month') {
+    return { time: { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, displayFormats: { day: 'dd MMM' } }, maxTicks: 10, autoSkip: true };
+  }
+  return { time: { tooltipFormat: 'dd MMM HH:mm', unit: 'day', displayFormats: { day: 'dd MMM' } }, maxTicks: 12, autoSkip: true };
+}
+
+function applyModalLineRange(range, observedBounds) {
+  if (!_modalChart || !_modalChart.options || !_modalChart.options.scales || !_modalChart.options.scales.x) return;
+  var xScale = _modalChart.options.scales.x;
+  var axisCfg = buildModalTimeAxis(range);
+  var win = getWindowForRange(observedBounds, range);
+
+  function tickDate(v) {
+    if (v === null || v === undefined) return null;
+    var d = null;
+    if (typeof v === 'number' && isFinite(v)) d = new Date(v);
+    if (!d || isNaN(d.getTime())) {
+      var n = Number(v);
+      if (isFinite(n)) d = new Date(n);
+    }
+    if (!d || isNaN(d.getTime())) d = new Date(v);
+    return (d && !isNaN(d.getTime())) ? d : null;
+  }
+
+  xScale.type = 'time';
+  xScale.time = axisCfg.time;
+  xScale.adapters = { date: { zone: 'UTC' } };
+  xScale.min = isFinite(win.min) ? win.min : undefined;
+  xScale.max = isFinite(win.max) ? win.max : undefined;
+  xScale.ticks = xScale.ticks || {};
+  xScale.ticks.color = '#64748b';
+  xScale.ticks.font = { size: 11 };
+  xScale.ticks.maxTicksLimit = axisCfg.maxTicks;
+  xScale.ticks.autoSkip = axisCfg.autoSkip;
+  xScale.ticks.major = { enabled: range === 'week' || range === 'month' };
+  xScale.ticks.callback = function(value) {
+    if (range === 'week' || range === 'month') {
+      var dayTick = tickDate(value);
+      return dayTick ? dayTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);
+    }
+    return this.getLabelForValue(value);
+  };
+  xScale.grid = xScale.grid || {};
+  xScale.grid.color = function(ctx) {
+    if (range === 'week') return 'rgba(148, 163, 184, 0.42)';
+    if (range !== 'month' || !ctx.tick) return '#d6e3df';
+    var d = tickDate(ctx.tick.value);
+    if (!d) return '#d6e3df';
+    return (d.getUTCDate() === 1 || (d.getUTCDate() % 5) === 0) ? 'rgba(148, 163, 184, 0.42)' : '#d6e3df';
+  };
+  xScale.grid.lineWidth = function(ctx) {
+    if (range === 'week') return 1.1;
+    if (range !== 'month' || !ctx.tick) return 1;
+    var d = tickDate(ctx.tick.value);
+    if (!d) return 1;
+    return (d.getUTCDate() === 1 || (d.getUTCDate() % 5) === 0) ? 1.1 : 1;
+  };
+}
+
 function openChartModal(title, srcCanvas) {
+  bindHealthModalControls();
   var srcChart = Chart.getChart(srcCanvas);
   if (!srcChart) return;
   var stationId = srcCanvas._stationId || null;
   var chartKey = srcCanvas._chartKey || null;
   var activeRange = stationId ? (stationRanges[stationId] || 'week') : 'week';
-  var fullSnap = getChartSnapshotForRange(stationId, chartKey, 'all');
-  var modalType = fullSnap && fullSnap.type ? fullSnap.type : srcChart.config.type;
-  var modalData = fullSnap && fullSnap.data ? fullSnap.data : cloneChartDataForModal(srcChart.data);
+  var rangeSnap = stationId && chartKey ? getChartSnapshotForRange(stationId, chartKey, activeRange) : null;
+  var modalType = rangeSnap && rangeSnap.type ? rangeSnap.type : srcChart.config.type;
+  var modalData = rangeSnap && rangeSnap.data ? rangeSnap.data : cloneChartDataForModal(srcChart.data);
   var observedBounds = getObservedBoundsFromData(modalData);
-  var initialWindow = getWindowForRange(observedBounds, activeRange);
   var liveSourceCanvas = findStationChartCanvas(stationId, chartKey) || srcCanvas;
   _modalSource = {
     stationId: stationId,
@@ -72,27 +226,11 @@ function openChartModal(title, srcCanvas) {
       },
       scales: (function() {
         var mRange = (_modalSource && _modalSource.stationId) ? (stationRanges[_modalSource.stationId] || 'week') : 'week';
-        var mxTime, mMaxTicks, mAutoSkip;
-        if (mRange === 'day') {
-          mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'hour', stepSize: 3, displayFormats: { hour: 'HH:mm', minute: 'HH:mm' } };
-          mMaxTicks = 9;
-          mAutoSkip = false;
-        } else if (mRange === 'week') {
-          mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, round: 'day', displayFormats: { day: 'dd MMM' } };
-          mMaxTicks = 8;
-          mAutoSkip = false;
-        } else if (mRange === 'month') {
-          mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', stepSize: 1, round: 'day', displayFormats: { day: 'dd MMM' } };
-          mMaxTicks = 10;
-          mAutoSkip = true;
-        } else {
-          mxTime = { tooltipFormat: 'dd MMM HH:mm', unit: 'day', displayFormats: { day: 'dd MMM' } };
-          mMaxTicks = 12;
-          mAutoSkip = true;
-        }
+        var axisCfg = buildModalTimeAxis(mRange);
         var mAdapters = { date: { zone: 'UTC' } };
-        var mMin = initialWindow.min;
-        var mMax = initialWindow.max;
+        var mWin = getWindowForRange(observedBounds, activeRange);
+        var mMin = mWin.min;
+        var mMax = mWin.max;
         function tickDate(v) {
           if (v === null || v === undefined) return null;
           var d = null;
@@ -105,14 +243,14 @@ function openChartModal(title, srcCanvas) {
           return (d && !isNaN(d.getTime())) ? d : null;
         }
         return {
-          x: { type: 'time', time: mxTime, adapters: mAdapters,
+          x: { type: 'time', time: axisCfg.time, adapters: mAdapters,
                min: (isFinite(mMin) ? mMin : undefined),
                max: (isFinite(mMax) ? mMax : undefined),
                ticks: {
                  color: '#64748b',
                  font: { size: 11 },
-                 maxTicksLimit: mMaxTicks,
-                 autoSkip: mAutoSkip,
+                 maxTicksLimit: axisCfg.maxTicks,
+                 autoSkip: axisCfg.autoSkip,
                  major: { enabled: mRange === 'week' || mRange === 'month' },
                  callback: function(value, index, ticks) {
                    if (mRange === 'week') {
@@ -162,16 +300,19 @@ function openChartModal(title, srcCanvas) {
 function syncModalDataFromSource() {
   if (!_modalChart || !_modalSource) return;
   var liveCanvas = findStationChartCanvas(_modalSource.stationId, _modalSource.chartKey) || _modalSource.sourceCanvas;
-  if (!liveCanvas) return;
-  _modalSource.sourceCanvas = liveCanvas;
-  var srcChart = Chart.getChart(liveCanvas);
-  if (!srcChart) return;
+  if (liveCanvas) _modalSource.sourceCanvas = liveCanvas;
+  var visibilityState = cloneModalVisibilityState();
+  var snap = getModalSnapshotForRange((_modalSource && _modalSource.modalRange) || 'week');
+  if (!snap || !snap.data) return;
   var xOpts = _modalChart.options && _modalChart.options.scales ? _modalChart.options.scales.x : null;
   var curMin = xOpts ? xOpts.min : undefined;
   var curMax = xOpts ? xOpts.max : undefined;
-  _modalChart.data = cloneChartDataForModal(srcChart.data);
+  _modalChart.config.type = snap.type || _modalChart.config.type;
+  _modalChart.data = cloneChartDataForModal(snap.data);
   _modalSource.observedBounds = getObservedBoundsFromData(_modalChart.data);
+  applyModalDatasetVisibilityState(visibilityState);
   if (xOpts) {
+    applyModalLineRange((_modalSource && _modalSource.modalRange) || 'week', _modalSource.observedBounds);
     xOpts.min = curMin;
     xOpts.max = curMax;
   }
@@ -301,24 +442,35 @@ function findStationChartCanvas(stationId, chartKey) {
 
 async function setModalRange(range) {
   if (!_modalSource || !_modalChart) return;
-  _modalSource.modalRange = range;
+  var stationId = _modalSource.stationId;
+  var chartKey = _modalSource.chartKey;
+  var title = document.getElementById('chartModalTitle').textContent || '';
+  var visibilityState = cloneModalVisibilityState();
+
   if (range === 'all' && typeof healthDataCanServeRange === 'function' && !healthDataCanServeRange('all')) {
     try {
       if (typeof ensureHealthRangeLoaded === 'function') {
         await ensureHealthRangeLoaded('all');
-        syncModalDataFromSource();
       }
     } catch (e) {
       console.warn('[Health] Modal all-range fetch failed:', e && e.message ? e.message : e);
     }
   }
-  var win = getWindowForRange(_modalSource.observedBounds, range);
-  if (_modalChart.options && _modalChart.options.scales && _modalChart.options.scales.x) {
-    _modalChart.options.scales.x.min = win.min;
-    _modalChart.options.scales.x.max = win.max;
+
+  if (stationId && typeof setStationRange === 'function') {
+    setStationRange(stationId, range, { skipEnsure: true, skipRawEnsure: true });
   }
-  _modalChart.update('none');
+
+  var liveCanvas = (stationId && chartKey) ? findStationChartCanvas(stationId, chartKey) : null;
+  if (!liveCanvas) liveCanvas = _modalSource.sourceCanvas;
+  if (!liveCanvas) return;
+
+  openChartModal(title, liveCanvas);
+  if (_modalSource) _modalSource.modalRange = range;
+  applyModalDatasetVisibilityState(visibilityState);
+  if (_modalChart) _modalChart.update('none');
   updateModalRangeControls();
+  updateModalToggleControls();
 }
 
 function closeChartModal(evt) {
@@ -335,6 +487,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 function bindModalCanvasReanchor() {
+  bindHealthModalControls();
   var modalCanvasEl = document.getElementById('chartModalCanvas');
   if (!modalCanvasEl || modalCanvasEl._reanchorBound) return;
   modalCanvasEl.addEventListener('click', function(ev) {

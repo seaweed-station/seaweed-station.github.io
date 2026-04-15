@@ -32,7 +32,6 @@ function _renderDashboardCore() {
   var hasData = state.allEntries.length > 0;
   document.getElementById('emptyState').style.display      = hasData ? 'none' : 'block';
   document.getElementById('dashboardContent').style.display = hasData ? 'block' : 'none';
-  document.getElementById('dateRangeBar').style.display     = hasData ? 'flex' : 'none';
   document.getElementById('btnExportCSV').style.display     = hasData ? '' : 'none';
   if (!hasData) return;
 
@@ -41,8 +40,8 @@ function _renderDashboardCore() {
   updateSensorCards();
   createOrUpdateCharts();
   updateChartSubheads();
-  updatePeaksTable();
   updateTimeButtons();
+  updatePeaksTable();
 
   // Fetch weather data
   fetchWeatherData();
@@ -309,7 +308,7 @@ function loadMoreDailySummary() {
 }
 
 function updatePeaksTable() {
-  var entries = state.allEntries;
+  var entries = (state.summaryEntries && state.summaryEntries.length) ? state.summaryEntries : state.allEntries;
   if (!entries.length) return;
   var datasetMeta = getStationDatasetRenderMeta(TABLE_ID);
   var datasetEndDayKey = datasetMeta ? datasetMeta.endDayKey : null;

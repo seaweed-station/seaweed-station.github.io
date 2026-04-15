@@ -255,6 +255,23 @@ function fmtDateTime(d) {
     d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
+function upsertTideChart(chartKey, canvasId, config, overlays) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  if (window.ChartManager && typeof ChartManager.upsert === 'function') {
+    return ChartManager.upsert({
+      key: 'tides:' + chartKey,
+      canvas: canvas,
+      config: config,
+      overlays: overlays,
+      meta: { scope: 'tides', chartKey: chartKey },
+      recreateOnUpdate: true,
+      updateMode: 'none'
+    });
+  }
+  return new Chart(canvas, config);
+}
+
 // =================================================================
 // HARVEST DAY RANGES (per-day eligibility for chart shading)
 // Returns [{start: Date, end: Date}, ...] for each calendar day in
@@ -363,7 +380,8 @@ function renderDetailChart(canvasId, curve, extremes, windows, locationKey, now)
   var lows = extremes.filter(function (e) { return e.type === 'low'; })
     .map(function (e) { return { x: e.t, y: Math.round(e.height * 100) / 100 }; });
 
-  new Chart(el, {
+  var _hOpts = window._harvestOpts || { enabled: true, maxHeight: 0.50 };
+  upsertTideChart('detail', canvasId, {
     type: 'line',
     data: {
       datasets: [
@@ -409,58 +427,6 @@ function renderDetailChart(canvasId, curve, extremes, windows, locationKey, now)
         },
       ],
     },
-    plugins: [{
-      id: 'harvestBands',
-      beforeDraw: function (chart) {
-        var ctx = chart.ctx, xA = chart.scales.x, yA = chart.scales.y;
-        var _hO = window._harvestOpts || { enabled: true, maxHeight: 0.50 };
-        // Green band top = threshold pixel (or chart top if threshold is above visible range)
-        var bandTop = _hO.enabled ? Math.max(yA.top, Math.min(yA.getPixelForValue(_hO.maxHeight), yA.bottom)) : yA.top;
-        for (var i = 0; i < windows.length; i++) {
-          var x1 = xA.getPixelForValue(windows[i].start.getTime());
-          var x2 = xA.getPixelForValue(windows[i].end.getTime());
-          if (x2 < xA.left || x1 > xA.right) continue;
-          x1 = Math.max(x1, xA.left); x2 = Math.min(x2, xA.right);
-          ctx.save();
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.09)';
-          ctx.fillRect(x1, yA.top, x2 - x1, Math.max(0, bandTop - yA.top));
-          ctx.fillStyle = 'rgba(22, 163, 74, 0.22)';
-          ctx.fillRect(x1, bandTop, x2 - x1, yA.bottom - bandTop);
-          ctx.strokeStyle = 'rgba(22, 163, 74, 0.60)';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([4, 4]);
-          ctx.strokeRect(x1, yA.top, x2 - x1, yA.bottom - yA.top);
-          ctx.restore();
-        }
-        // Now line
-        var nx = xA.getPixelForValue(now.getTime());
-        if (nx >= xA.left && nx <= xA.right) {
-          ctx.save();
-          ctx.strokeStyle = '#ef444488';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath(); ctx.moveTo(nx, yA.top); ctx.lineTo(nx, yA.bottom); ctx.stroke();
-          ctx.restore();
-        }
-        // Harvest threshold line
-        var _hOpts = window._harvestOpts || { enabled: true, maxHeight: 0.50 };
-        if (_hOpts.enabled) {
-          var ty = yA.getPixelForValue(_hOpts.maxHeight);
-          if (ty >= yA.top && ty <= yA.bottom) {
-            ctx.save();
-            ctx.strokeStyle = '#16a34acc';
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([6, 3]);
-            ctx.beginPath(); ctx.moveTo(xA.left, ty); ctx.lineTo(xA.right, ty); ctx.stroke();
-            ctx.fillStyle = '#15803dcc';
-            ctx.font = 'bold 10px sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText('\u2264 ' + _hOpts.maxHeight.toFixed(2) + 'm harvest', xA.left + 4, ty - 3);
-            ctx.restore();
-          }
-        }
-      }
-    }],
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
@@ -499,7 +465,29 @@ function renderDetailChart(canvasId, curve, extremes, windows, locationKey, now)
         },
       },
     },
-  });
+  }, [
+    {
+      id: 'harvest-bands',
+      options: {
+        enabled: function() { return !!(window._harvestOpts || {}).enabled; },
+        getWindows: function() { return windows; },
+        thresholdValue: function() { return (window._harvestOpts || {}).maxHeight; },
+        borderColor: 'rgba(22, 163, 74, 0.60)',
+        borderWidth: 1.5,
+        thresholdLabel: function() {
+          var opts = window._harvestOpts || { maxHeight: 0.50 };
+          return '\u2264 ' + Number(opts.maxHeight || 0).toFixed(2) + 'm harvest';
+        }
+      }
+    },
+    {
+      id: 'now-line',
+      options: {
+        getTimeMs: function() { return now.getTime(); },
+        label: ''
+      }
+    }
+  ]);
 }
 
 // =================================================================
@@ -516,7 +504,7 @@ function renderOverviewChart(canvasId, curve, extremes, windows, events, locatio
     return { x: e.date.getTime(), y: tideHeight(e.date, locationKey), label: e.label };
   });
 
-  new Chart(el, {
+  upsertTideChart('overview', canvasId, {
     type: 'line',
     data: {
       datasets: [
@@ -541,92 +529,6 @@ function renderOverviewChart(canvasId, curve, extremes, windows, events, locatio
         },
       ],
     },
-    plugins: [{
-      id: 'overviewBands',
-      beforeDraw: function (chart) {
-        var ctx = chart.ctx, xA = chart.scales.x, yA = chart.scales.y;
-        var _hO = window._harvestOpts || { enabled: true, maxHeight: 0.50 };
-        var bandTop = _hO.enabled ? Math.max(yA.top, Math.min(yA.getPixelForValue(_hO.maxHeight), yA.bottom)) : yA.top;
-        // Merge consecutive days into contiguous groups for cleaner rendering
-        var groups = [];
-        for (var i = 0; i < windows.length; i++) {
-          var ws = windows[i].start.getTime(), we = windows[i].end.getTime();
-          if (groups.length && ws - groups[groups.length - 1].end <= 86400000 * 1.1) {
-            groups[groups.length - 1].end = we; // extend group
-          } else {
-            groups.push({ start: ws, end: we });
-          }
-        }
-        for (var g = 0; g < groups.length; g++) {
-          var x1 = xA.getPixelForValue(groups[g].start);
-          var x2 = xA.getPixelForValue(groups[g].end);
-          if (x2 < xA.left || x1 > xA.right) continue;
-          x1 = Math.max(x1, xA.left); x2 = Math.min(x2, xA.right);
-          ctx.save();
-          ctx.fillStyle = 'rgba(34, 197, 94, 0.08)';
-          ctx.fillRect(x1, yA.top, x2 - x1, Math.max(0, bandTop - yA.top));
-          ctx.fillStyle = 'rgba(22, 163, 74, 0.20)';
-          ctx.fillRect(x1, bandTop, x2 - x1, yA.bottom - bandTop);
-          ctx.strokeStyle = 'rgba(22, 163, 74, 0.48)';
-          ctx.lineWidth = 1.25;
-          ctx.setLineDash([4, 4]);
-          ctx.strokeRect(x1, yA.top, x2 - x1, yA.bottom - yA.top);
-          // Label once per group
-          ctx.fillStyle = '#15803dcc';
-          ctx.font = 'bold 10px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText('Harvest', (x1 + x2) / 2, yA.top + 10);
-          ctx.restore();
-        }
-        // Moon events
-        for (var j = 0; j < events.length; j++) {
-          var mx = xA.getPixelForValue(events[j].date.getTime());
-          if (mx >= xA.left && mx <= xA.right) {
-            ctx.save();
-            ctx.strokeStyle = '#fbbf2466';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([2, 4]);
-            ctx.beginPath(); ctx.moveTo(mx, yA.top); ctx.lineTo(mx, yA.bottom); ctx.stroke();
-            ctx.fillStyle = '#fbbf24';
-            ctx.font = '10px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(events[j].emoji + ' ' + events[j].label, mx, yA.bottom + 12);
-            ctx.restore();
-          }
-        }
-        // Now line
-        var nx = xA.getPixelForValue(now.getTime());
-        if (nx >= xA.left && nx <= xA.right) {
-          ctx.save();
-          ctx.strokeStyle = '#ef444488';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath(); ctx.moveTo(nx, yA.top); ctx.lineTo(nx, yA.bottom); ctx.stroke();
-          ctx.fillStyle = '#ef4444cc';
-          ctx.font = 'bold 9px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText('TODAY', nx, yA.top - 4);
-          ctx.restore();
-        }
-        // Harvest threshold line
-        var _hOpts = window._harvestOpts || { enabled: true, maxHeight: 0.50 };
-        if (_hOpts.enabled) {
-          var ty = yA.getPixelForValue(_hOpts.maxHeight);
-          if (ty >= yA.top && ty <= yA.bottom) {
-            ctx.save();
-            ctx.strokeStyle = '#16a34acc';
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([6, 3]);
-            ctx.beginPath(); ctx.moveTo(xA.left, ty); ctx.lineTo(xA.right, ty); ctx.stroke();
-            ctx.fillStyle = '#15803dcc';
-            ctx.font = 'bold 10px sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText('\u2264 ' + _hOpts.maxHeight.toFixed(2) + 'm harvest', xA.left + 4, ty - 3);
-            ctx.restore();
-          }
-        }
-      }
-    }],
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'nearest', intersect: false },
@@ -662,7 +564,42 @@ function renderOverviewChart(canvasId, curve, extremes, windows, events, locatio
       },
       layout: { padding: { bottom: 18 } },
     },
-  });
+  }, [
+    {
+      id: 'harvest-bands',
+      options: {
+        enabled: function() { return !!(window._harvestOpts || {}).enabled; },
+        getWindows: function() { return windows; },
+        thresholdValue: function() { return (window._harvestOpts || {}).maxHeight; },
+        groupGapMs: 86400000 * 1.1,
+        fillTopColor: 'rgba(34, 197, 94, 0.08)',
+        fillBottomColor: 'rgba(22, 163, 74, 0.20)',
+        borderColor: 'rgba(22, 163, 74, 0.48)',
+        borderWidth: 1.25,
+        label: 'Harvest',
+        thresholdLabel: function() {
+          var opts = window._harvestOpts || { maxHeight: 0.50 };
+          return '\u2264 ' + Number(opts.maxHeight || 0).toFixed(2) + 'm harvest';
+        }
+      }
+    },
+    {
+      id: 'moon-markers',
+      options: {
+        getEvents: function() { return events; }
+      }
+    },
+    {
+      id: 'now-line',
+      options: {
+        getTimeMs: function() { return now.getTime(); },
+        label: 'TODAY',
+        textAlign: 'center',
+        labelOffsetX: 0,
+        labelOffsetY: -4
+      }
+    }
+  ]);
 }
 
 // =================================================================
@@ -673,9 +610,7 @@ function renderHarvestCalendar(windows, events, now, locationKey) {
   if (!el) return;
 
   var _hOpts = window._harvestOpts || { enabled: true, maxHeight: 0.50 };
-
   var months = [];
-  // Current month + next month
   var m0 = new Date(now.getFullYear(), now.getMonth(), 1);
   months.push(m0);
   months.push(new Date(m0.getFullYear(), m0.getMonth() + 1, 1));
@@ -686,46 +621,39 @@ function renderHarvestCalendar(windows, events, now, locationKey) {
     var mStart = months[mi];
     var mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0);
     var daysInMonth = mEnd.getDate();
-    var firstDow = (mStart.getDay() + 6) % 7; // Mon=0
+    var firstDow = (mStart.getDay() + 6) % 7;
 
     html += '<div class="cal-month">';
     html += '<div class="cal-title">' + mStart.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) + '</div>';
     html += '<div class="cal-grid">';
-    // Day-of-week headers
     var dows = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
     for (var di = 0; di < 7; di++) html += '<div class="cal-dow">' + dows[di] + '</div>';
-
-    // Empty cells before 1st
     for (var e = 0; e < firstDow; e++) html += '<div class="cal-day empty"></div>';
 
     for (var day = 1; day <= daysInMonth; day++) {
       var dayDate = new Date(mStart.getFullYear(), mStart.getMonth(), day, 12, 0, 0);
       var dayMs = dayDate.getTime();
       var inWin = isInHarvestWindow(dayMs, windows);
-
-      // Check if the day's lowest tide is below harvest threshold
       var isHarvest = false;
+
       if (inWin && _hOpts.enabled && locationKey) {
         var dayStart = new Date(mStart.getFullYear(), mStart.getMonth(), day, 0, 0, 0);
-        var dayEnd   = new Date(mStart.getFullYear(), mStart.getMonth(), day, 23, 59, 0);
+        var dayEnd = new Date(mStart.getFullYear(), mStart.getMonth(), day, 23, 59, 0);
         var dayCurve = tideCurve(dayStart, dayEnd, locationKey, 30);
-        var dayEx    = tideExtremes(dayCurve);
-        var dayLows  = dayEx.filter(function (ex) { return ex.type === 'low'; });
+        var dayEx = tideExtremes(dayCurve);
+        var dayLows = dayEx.filter(function (ex) { return ex.type === 'low'; });
         if (dayLows.length) {
           var minH = dayLows.reduce(function (m, l) { return l.height < m ? l.height : m; }, Infinity);
           isHarvest = minH <= _hOpts.maxHeight;
         }
-      } else if (inWin && !_hOpts.enabled) {
-        isHarvest = false;
       }
 
       var isToday = (dayDate.toDateString() === now.toDateString());
-
-      // Check for moon event on this day
       var moonEv = null;
       for (var ei = 0; ei < events.length; ei++) {
         if (events[ei].date.toDateString() === dayDate.toDateString()) {
-          moonEv = events[ei]; break;
+          moonEv = events[ei];
+          break;
         }
       }
 

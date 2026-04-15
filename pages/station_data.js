@@ -178,6 +178,179 @@ var _edgeDetailPayload = null;   // last successful Edge payload
 var _edgeDetailPayloadAt = 0;    // Date.now() when fetched
 var _stationLoadedWindow = null; // { min, max } for the current in-memory allEntries set
 var _stationDiagMeta = { source: 'idle' };
+var STATION_SUMMARY_HISTORY_DAYS = 370;
+var STATION_SUMMARY_PAGE_SIZE = 1000;
+var STATION_SUMMARY_MAX_ROWS = 50000;
+var STATION_SUMMARY_REFRESH_MS = 30 * 60 * 1000;
+var _stationSummaryFetchPromise = null;
+
+function getStationSummaryCacheKey() {
+  return 'seaweed_summary_cache_' + TABLE_ID;
+}
+
+function getStationSummaryRangeStart() {
+  var cutoffMs = getResetCutoffMs(TABLE_ID);
+  var earliestMs = Date.now() - STATION_SUMMARY_HISTORY_DAYS * 86400000;
+  if (isFinite(cutoffMs) && cutoffMs > earliestMs) earliestMs = cutoffMs;
+  return new Date(earliestMs);
+}
+
+function getStationSummaryLatestMs() {
+  if (!state.summaryEntries || !state.summaryEntries.length) return NaN;
+  var latest = state.summaryEntries[state.summaryEntries.length - 1].timestamp;
+  return latest instanceof Date ? latest.getTime() : new Date(latest).getTime();
+}
+
+function rawSummaryRowToEntry(row) {
+  if (!row) return null;
+  var slotMap = _stationSlotMap || {};
+  var feed = {
+    created_at: ensureUTC(row.recorded_at),
+    entry_id: row.id,
+    temp_1: row.temp_1,
+    humidity_1: row.humidity_1,
+    temp_2: row.temp_2,
+    humidity_2: row.humidity_2,
+    temp_3: row.temp_3,
+    humidity_3: row.humidity_3
+  };
+
+  function assignSlot(nodeLetter, rawPrefix, fallbackSlot) {
+    var slotNumber = Number(slotMap[nodeLetter]);
+    if (!isFinite(slotNumber) || slotNumber <= 0) slotNumber = fallbackSlot;
+    if (!isFinite(slotNumber) || slotNumber <= 0) return null;
+    feed['sat_' + slotNumber + '_temp_1'] = row[rawPrefix + 'temp_1'];
+    feed['sat_' + slotNumber + '_humidity_1'] = row[rawPrefix + 'humidity_1'];
+    feed['sat_' + slotNumber + '_temp_2'] = row[rawPrefix + 'temp_2'];
+    feed['sat_' + slotNumber + '_humidity_2'] = row[rawPrefix + 'humidity_2'];
+    return slotNumber;
+  }
+
+  var discoveredSlots = [];
+  var slotA = assignSlot('A', 'sat_a_', 1);
+  var slotB = assignSlot('B', 'sat_b_', 2);
+  if (isFinite(slotA) && discoveredSlots.indexOf(slotA) < 0) discoveredSlots.push(slotA);
+  if (isFinite(slotB) && discoveredSlots.indexOf(slotB) < 0) discoveredSlots.push(slotB);
+  discoveredSlots.sort(function(a, b) { return a - b; });
+
+  return feedToEntry(feed, discoveredSlots);
+}
+
+function saveStationSummaryCache(entries, meta) {
+  if (!Array.isArray(entries) || !entries.length) return;
+  meta = meta || {};
+  try {
+    localStorage.setItem(getStationSummaryCacheKey(), JSON.stringify({
+      allEntries: entries,
+      fetchedAt: Date.now(),
+      rangeStart: meta.rangeStart || null
+    }));
+  } catch (e) {
+    console.warn('[Summary] Could not save summary cache for ' + TABLE_ID + ':', e.message || e);
+  }
+}
+
+function restoreStationSummaryCache() {
+  try {
+    var raw = localStorage.getItem(getStationSummaryCacheKey());
+    if (!raw) return false;
+    var cached = JSON.parse(raw);
+    if (!cached || !Array.isArray(cached.allEntries) || !cached.allEntries.length) return false;
+    var parsed = normalizeCachedEntries(cached.allEntries);
+    if (!parsed.length) return false;
+    state.summaryEntries = parsed;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function stationSummaryNeedsRefresh() {
+  if (!state.summaryEntries || !state.summaryEntries.length) return true;
+  var latestSummaryMs = getStationSummaryLatestMs();
+  var latestChartMs = state.allEntries && state.allEntries.length
+    ? state.allEntries[state.allEntries.length - 1].timestamp.getTime()
+    : NaN;
+  if (isFinite(latestChartMs) && (!isFinite(latestSummaryMs) || latestSummaryMs < latestChartMs)) return true;
+
+  try {
+    var raw = localStorage.getItem(getStationSummaryCacheKey());
+    if (!raw) return true;
+    var cached = JSON.parse(raw);
+    var fetchedAt = Number(cached && cached.fetchedAt) || 0;
+    return !fetchedAt || (Date.now() - fetchedAt) > STATION_SUMMARY_REFRESH_MS;
+  } catch (e) {
+    return true;
+  }
+}
+
+async function fetchStationSummaryHistory() {
+  var supaCfg = getSupabaseConfig();
+  var hdrs = supabaseHeaders(supaCfg.key);
+  var fromDate = getStationSummaryRangeStart();
+  var fromIso = fromDate.toISOString();
+  var rows = [];
+  var offset = 0;
+  var selectClause = [
+    'id', 'recorded_at',
+    'temp_1', 'humidity_1', 'temp_2', 'humidity_2', 'temp_3', 'humidity_3',
+    'sat_a_temp_1', 'sat_a_humidity_1', 'sat_a_temp_2', 'sat_a_humidity_2',
+    'sat_b_temp_1', 'sat_b_humidity_1', 'sat_b_temp_2', 'sat_b_humidity_2'
+  ].join(',');
+
+  while (rows.length < STATION_SUMMARY_MAX_ROWS) {
+    var url = supaCfg.url + '/rest/v1/sensor_readings' +
+      '?select=' + encodeURIComponent(selectClause) +
+      '&device_id=eq.' + encodeURIComponent(TABLE_ID) +
+      '&recorded_at=gte.' + encodeURIComponent(fromIso) +
+      '&order=recorded_at.asc' +
+      '&limit=' + STATION_SUMMARY_PAGE_SIZE +
+      '&offset=' + offset;
+
+    var res = await fetchWithTimeout(url, 20000, { headers: hdrs });
+    if (!res.ok) throw new Error('Summary history HTTP ' + res.status);
+    var batch = await res.json();
+    if (!Array.isArray(batch) || !batch.length) break;
+    rows = rows.concat(batch);
+    if (batch.length < STATION_SUMMARY_PAGE_SIZE) break;
+    offset += batch.length;
+  }
+
+  var entries = rows.map(rawSummaryRowToEntry).filter(function(entry) {
+    return entry && entry.timestamp instanceof Date && !isNaN(entry.timestamp.getTime());
+  }).sort(function(a, b) {
+    return a.timestamp - b.timestamp;
+  });
+
+  if (typeof filterEntryArrayByResetWindow === 'function') {
+    entries = filterEntryArrayByResetWindow(TABLE_ID, entries);
+  }
+
+  state.summaryEntries = entries;
+  saveStationSummaryCache(entries, { rangeStart: fromIso });
+  return entries;
+}
+
+function ensureStationSummaryHistory(force) {
+  if (!force && !stationSummaryNeedsRefresh()) {
+    if (state.summaryEntries && state.summaryEntries.length) return Promise.resolve(state.summaryEntries);
+  }
+  if (_stationSummaryFetchPromise) return _stationSummaryFetchPromise;
+
+  _stationSummaryFetchPromise = (async function() {
+    try {
+      var entries = await fetchStationSummaryHistory();
+      updatePeaksTable();
+      return entries;
+    } catch (err) {
+      console.warn('[Summary] History fetch failed:', err.message || err);
+      throw err;
+    } finally {
+      _stationSummaryFetchPromise = null;
+    }
+  })();
+  return _stationSummaryFetchPromise;
+}
 
 function setStationLoadedWindow(windowLike) {
   if (!windowLike) {
@@ -270,19 +443,14 @@ function updateStationDiagnostics(patch) {
 function getEdgeTimeWindow() {
   var now = new Date();
   var from;
-  if (state.timeRange === 'custom' && state.dateStart) {
-    from = state.dateStart;
-  } else {
-    switch (state.timeRange) {
-      case 'day':   from = new Date(now.getTime() - 1  * 86400000); break;
-      case 'month': from = new Date(now.getTime() - 30 * 86400000); break;
-      case 'all':   from = new Date('2024-01-01T00:00:00Z');        break;
-      case 'week':
-      default:      from = new Date(now.getTime() - 7  * 86400000); break;
-    }
+  switch (state.timeRange) {
+    case 'day':   from = new Date(now.getTime() - 1  * 86400000); break;
+    case 'month': from = new Date(now.getTime() - 30 * 86400000); break;
+    case 'all':   from = new Date('2024-01-01T00:00:00Z');        break;
+    case 'week':
+    default:      from = new Date(now.getTime() - 7  * 86400000); break;
   }
-  var to = (state.timeRange === 'custom' && state.dateEnd) ? state.dateEnd : now;
-  return { from: from, to: to };
+  return { from: from, to: now };
 }
 
 /**
@@ -297,6 +465,52 @@ function getEdgePointsTarget() {
     case 'all':   return 1500;
     default:      return 500;
   }
+}
+
+function loadLocalMergedStationData() {
+  return new Promise(function(resolve, reject) {
+    var dataFolder = STATION && STATION.dataFolder ? normalizeDataFolder(STATION.dataFolder, STATION.dataFolder) : null;
+    if (!dataFolder || !/^[\w\-]+$/.test(dataFolder)) {
+      reject(new Error('No local merged_data.js fallback configured'));
+      return;
+    }
+
+    var existing = document.getElementById('stationLocalMergedDataScript');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    window.STATION_DATA = null;
+
+    var script = document.createElement('script');
+    script.id = 'stationLocalMergedDataScript';
+    script.src = '../data/' + dataFolder + '/merged_data.js?ts=' + Date.now();
+    script.async = true;
+    script.onload = function() {
+      if (window.STATION_DATA && Array.isArray(window.STATION_DATA.feeds)) {
+        resolve(window.STATION_DATA);
+        return;
+      }
+      reject(new Error('Local merged_data.js loaded but did not expose STATION_DATA.feeds'));
+    };
+    script.onerror = function() {
+      reject(new Error('Local merged_data.js failed to load'));
+    };
+    document.head.appendChild(script);
+  });
+}
+
+async function recoverStationFromLocalMergedData(reason) {
+  var fallbackData = await loadLocalMergedStationData();
+  handleNewData(fallbackData, 'Local merged_data.js', true);
+  setStationLoadedWindow(getEntriesBounds(state.allEntries));
+  if (!state.summaryEntries || !state.summaryEntries.length) restoreStationSummaryCache();
+  updateStationDiagnostics({
+    source: 'local-fallback',
+    dataAsOf: state.allEntries && state.allEntries.length ? state.allEntries[state.allEntries.length - 1].timestamp : null,
+    entryCount: state.allEntries ? state.allEntries.length : 0,
+    lastRefreshAt: Date.now(),
+    error: reason || '',
+    note: 'Recovered from local merged_data.js because station-detail live fetch failed.'
+  });
+  return fallbackData;
 }
 
 /**
@@ -420,6 +634,9 @@ async function fetchLiveDataEdge(silent) {
     // Apply side data (status, slots, sync)
     applyEdgeSideData(payload);
 
+    if (!state.summaryEntries || !state.summaryEntries.length) restoreStationSummaryCache();
+    ensureStationSummaryHistory(false).catch(function() {});
+
     // Apply time range filter + render
     applyTimeRange();
     renderDashboard();
@@ -468,6 +685,8 @@ async function fetchLiveDataEdge(silent) {
       setStationLoadedWindow(_edgeDetailPayload.time_range || getEntriesBounds(entries));
       state.dataSource = 'Edge cached (' + staleAge + 's ago)';
       applyEdgeSideData(_edgeDetailPayload);
+      if (!state.summaryEntries || !state.summaryEntries.length) restoreStationSummaryCache();
+      ensureStationSummaryHistory(false).catch(function() {});
       applyTimeRange();
       renderDashboard();
       var cachedDs = _edgeDetailPayload.downsampling || {};
@@ -489,15 +708,24 @@ async function fetchLiveDataEdge(silent) {
         note: 'Cached station-detail payload reused after live fetch failure.'
       });
     } else {
-      if (!silent) {
-        console.warn('[Dashboard] Edge Function unavailable, no cached data');
+      var recovered = false;
+      try {
+        await recoverStationFromLocalMergedData(err.message || 'Edge fetch failed');
+        recovered = true;
+      } catch (fallbackErr) {
+        console.warn('[Dashboard] Local merged_data.js fallback failed:', fallbackErr.message || fallbackErr);
       }
-      updateStationDiagnostics({
-        source: 'error',
-        lastRefreshAt: Date.now(),
-        error: err.message || 'Edge fetch failed',
-        note: 'No cached station-detail payload available.'
-      });
+      if (!recovered) {
+        if (!silent) {
+          console.warn('[Dashboard] Edge Function unavailable, no cached data');
+        }
+        updateStationDiagnostics({
+          source: 'error',
+          lastRefreshAt: Date.now(),
+          error: err.message || 'Edge fetch failed',
+          note: 'No cached station-detail payload or local merged_data.js fallback available.'
+        });
+      }
     }
   } finally {
     btn.innerHTML = 'Fetch Live';
@@ -556,6 +784,7 @@ function refreshFromSharedCache(reason) {
     setStationLoadedWindow(getStationCacheWindow(cached) || getEntriesBounds(state.allEntries));
     state.channelInfo = cached.channelInfo || state.channelInfo || null;
     state.dataSource = 'Shared cache sync (' + (reason || 'external refresh') + ')';
+    ensureStationSummaryHistory(false).catch(function() {});
     applyTimeRange();
     renderDashboard();
     console.log('[Dashboard] Synced from shared cache (' + TABLE_ID + '): ' + state.allEntries.length + ' entries');
@@ -686,51 +915,11 @@ function setWeatherTimeRange(r) {
   if (r === 'forecast') { fetchForecastData(); } else { fetchWeatherData(); }
 }
 
-function applyDateRange() {
-  var startVal = document.getElementById('dateStart').value;
-  var endVal   = document.getElementById('dateEnd').value;
-  state.dateStart = startVal ? new Date(startVal + 'T00:00:00') : null;
-  state.dateEnd   = endVal   ? new Date(endVal   + 'T23:59:59') : null;
-  state.timeRange = 'custom';
-
-  var requestedWindow = getEdgeTimeWindow();
-  if (state.dateStart && state.dateEnd && currentDataCanServeRange(requestedWindow, 'custom')) {
-    applyTimeRange();
-    renderDashboard();
-    updateStationDiagnostics({
-      source: 'edge-local-range',
-      rangeLabel: dashboardDiagFormatUtc(requestedWindow.from) + ' → ' + dashboardDiagFormatUtc(requestedWindow.to),
-      entryCount: state.allEntries.length,
-      lastRefreshAt: Date.now(),
-      error: '',
-      note: 'Custom range applied locally using the currently loaded station-detail window.'
-    });
-  } else {
-    // Re-fetch from server for the custom window
-    fetchLiveDataEdge(true);
-  }
-
-  updateTimeButtons();
-  updateChartSubheads();
-  saveViewPrefs();
-}
-
-function clearDateRange() {
-  document.getElementById('dateStart').value = '';
-  document.getElementById('dateEnd').value = '';
-  state.dateStart = null;
-  state.dateEnd = null;
-  setTimeRange('week');
-  saveViewPrefs();
-}
-
 var VIEW_PREFS_KEY = 'seaweed_view_' + TABLE_ID;
 function saveViewPrefs() {
   try {
     var prefs = {
-      timeRange: state.timeRange,
-      dateStart: document.getElementById('dateStart').value || '',
-      dateEnd:   document.getElementById('dateEnd').value   || ''
+      timeRange: state.timeRange
     };
     localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify(prefs));
   } catch (e) { /* ignore */ }
@@ -740,15 +929,7 @@ function restoreViewPrefs() {
     var raw = localStorage.getItem(VIEW_PREFS_KEY);
     if (!raw) return;
     var p = JSON.parse(raw);
-    if (p.dateStart) {
-      document.getElementById('dateStart').value = p.dateStart;
-      state.dateStart = new Date(p.dateStart + 'T00:00:00');
-    }
-    if (p.dateEnd) {
-      document.getElementById('dateEnd').value = p.dateEnd;
-      state.dateEnd = new Date(p.dateEnd + 'T23:59:59');
-    }
-    if (p.timeRange && p.timeRange !== 'custom') {
+    if (p.timeRange) {
       state.timeRange = p.timeRange;
     }
   } catch (e) { /* ignore */ }
@@ -759,18 +940,13 @@ function applyTimeRange() {
   var latest = state.allEntries[state.allEntries.length - 1].timestamp;
   var start, end;
 
-  if (state.timeRange === 'custom') {
-    start = state.dateStart || new Date(0);
-    end   = state.dateEnd   || latest;
-  } else {
-    switch (state.timeRange) {
-      case 'day':   start = new Date(latest.getTime() - 24 * 3600000); break;
-      case 'week':  start = new Date(latest.getTime() - 7 * 24 * 3600000); break;
-      case 'month': start = new Date(latest.getTime() - 30 * 24 * 3600000); break;
-      default:      start = new Date(0);
-    }
-    end = latest;
+  switch (state.timeRange) {
+    case 'day':   start = new Date(latest.getTime() - 24 * 3600000); break;
+    case 'week':  start = new Date(latest.getTime() - 7 * 24 * 3600000); break;
+    case 'month': start = new Date(latest.getTime() - 30 * 24 * 3600000); break;
+    default:      start = new Date(0);
   }
+  end = latest;
   state.filteredEntries = state.allEntries.filter(function (e) {
     return e.timestamp >= start && e.timestamp <= end;
   });
@@ -778,14 +954,6 @@ function applyTimeRange() {
 
 function getTimeAxisConfig() {
   var range = state.timeRange;
-  if (range === 'custom' && state.filteredEntries.length >= 2) {
-    var spanMs = state.filteredEntries[state.filteredEntries.length-1].timestamp - state.filteredEntries[0].timestamp;
-    var spanDays = spanMs / 86400000;
-    if (spanDays <= 1.5)       range = 'day';
-    else if (spanDays <= 10)   range = 'week';
-    else if (spanDays <= 45)   range = 'month';
-    else                       range = 'all';
-  }
   switch (range) {
     case 'day':
       return { unit: 'hour', displayFormats: { hour: 'HH:mm' }, tooltipFormat: 'd LLL HH:mm' };
@@ -807,10 +975,13 @@ function getEntriesBounds(entries) {
 }
 
 function getWindowForRange(bounds, range) {
+  if (window.PlotCore && typeof PlotCore.getWindowForRange === 'function') {
+    return PlotCore.getWindowForRange(bounds, range);
+  }
   if (!bounds || !isFinite(bounds.min) || !isFinite(bounds.max)) {
     return { min: undefined, max: undefined };
   }
-  if (range === 'all' || range === 'custom') {
+  if (range === 'all') {
     return { min: bounds.min, max: bounds.max };
   }
   var days = range === 'day' ? 1 : (range === 'week' ? 7 : 30);
@@ -823,7 +994,6 @@ function getWindowForRange(bounds, range) {
 function updateTimeButtons() {
   document.querySelectorAll('.time-btns .btn-sm').forEach(function (btn) {
     var isActive = btn.dataset.range === state.timeRange;
-    if (state.timeRange === 'custom') isActive = false;
     btn.classList.toggle('active', isActive);
   });
 }

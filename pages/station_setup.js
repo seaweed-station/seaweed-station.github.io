@@ -156,6 +156,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Restore saved date range preference
   restoreViewPrefs();
+  restoreStationSummaryCache();
 
   // Pre-seed cached weather so night/day shading and Open-Meteo overlays are ready on first render.
   if (applyWeatherCache(false)) {
@@ -241,16 +242,27 @@ document.addEventListener('DOMContentLoaded', function () {
       });
     } catch (edgeErr) {
       console.warn('[Dashboard] Edge init failed:', edgeErr.message);
-      updateStationDiagnostics({
-        source: state.allEntries && state.allEntries.length ? 'cache-preseed' : 'error',
-        dataAsOf: state.allEntries && state.allEntries.length ? state.allEntries[state.allEntries.length - 1].timestamp : null,
-        entryCount: state.allEntries ? state.allEntries.length : 0,
-        lastRefreshAt: Date.now(),
-        error: edgeErr.message || 'Station init failed',
-        note: state.allEntries && state.allEntries.length
-          ? 'Continuing with cached data because initial live fetch failed.'
-          : 'Initial station-detail fetch failed before any cache was available.'
-      });
+      var recovered = false;
+      if (!(state.allEntries && state.allEntries.length) && typeof recoverStationFromLocalMergedData === 'function') {
+        try {
+          await recoverStationFromLocalMergedData(edgeErr.message || 'Station init failed');
+          recovered = true;
+        } catch (fallbackErr) {
+          console.warn('[Dashboard] Local merged_data.js init fallback failed:', fallbackErr.message || fallbackErr);
+        }
+      }
+      if (!recovered) {
+        updateStationDiagnostics({
+          source: state.allEntries && state.allEntries.length ? 'cache-preseed' : 'error',
+          dataAsOf: state.allEntries && state.allEntries.length ? state.allEntries[state.allEntries.length - 1].timestamp : null,
+          entryCount: state.allEntries ? state.allEntries.length : 0,
+          lastRefreshAt: Date.now(),
+          error: edgeErr.message || 'Station init failed',
+          note: state.allEntries && state.allEntries.length
+            ? 'Continuing with cached data because initial live fetch failed.'
+            : 'Initial station-detail fetch failed before any cache or local fallback was available.'
+        });
+      }
     }
     setupAutoRefresh();
   })();
