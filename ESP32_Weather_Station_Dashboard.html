@@ -391,27 +391,44 @@ function buildConfiguredTables() {
 
   var configured = [];
   if (typeof getConfiguredDeviceProfiles === 'function') {
-    configured = getConfiguredDeviceProfiles({ includeDisabled: false });
+    configured = getConfiguredDeviceProfiles({ includeDisabled: true });
   }
 
   var tables;
   if (configured && configured.length) {
-    tables = configured.map(function(p) {
+    tables = TABLES_DEFAULT.map(function(t) { return Object.assign({}, t); });
+    configured.forEach(function(p) {
+      if (!p || !p.id) return;
+      var id = String(p.id).trim().toLowerCase();
+      if (!id) return;
+      if (p.enabled === false) {
+        tables = tables.filter(function(existing) { return existing.id !== id; });
+        return;
+      }
       var base = baseMap[p.id] || {
-        id: p.id,
-        name: p.name || p.id,
+        id: id,
+        name: p.name || id,
         location: 'Configured station',
-        page: 'pages/station.html?table=' + encodeURIComponent(p.id),
-        dataFile: 'data/' + (p.dataFolder || ('data_' + p.id)) + '/merged_data.js',
+        page: 'pages/station.html?table=' + encodeURIComponent(id),
+        dataFile: 'data/' + (p.dataFolder || ('data_' + id)) + '/merged_data.js',
         weather: { lat: 0, lon: 0 },
         hasSatellite: true
       };
       var out = Object.assign({}, base);
+      out.id = id;
       if (p.name) out.name = p.name;
       if (p.dataFolder) out.dataFile = 'data/' + p.dataFolder + '/merged_data.js';
-      out.page = 'pages/station.html?table=' + encodeURIComponent(p.id);
+      out.page = 'pages/station.html?table=' + encodeURIComponent(id);
       if (typeof p.hasSatellite === 'boolean') out.hasSatellite = p.hasSatellite;
-      return out;
+      var replaced = false;
+      for (var idx = 0; idx < tables.length; idx++) {
+        if (tables[idx].id === id) {
+          tables[idx] = out;
+          replaced = true;
+          break;
+        }
+      }
+      if (!replaced) tables.push(out);
     });
   } else {
     tables = TABLES_DEFAULT.map(function(t) { return Object.assign({}, t); });
@@ -443,17 +460,6 @@ if (typeof filterStationsForRole === 'function') {
   TABLES = filterStationsForRole(TABLES);
 }
 if (typeof applyNavVisibility === 'function') applyNavVisibility();
-
-if (!TABLES.length) {
-  TABLES = TABLES_DEFAULT.map(function(t) {
-    var c = Object.assign({}, t);
-    var dp = getDeviceProfileConfig(c.id);
-    if (dp) {
-      if (dp.dataFolder) c.dataFile = 'data/' + dp.dataFolder + '/merged_data.js';
-    }
-    return c;
-  });
-}
 
 TABLES.forEach(function(t) {
   if (!t.page) {
@@ -1455,18 +1461,25 @@ function renderEdgeCards(payload) {
   var grid = document.getElementById('tableGrid');
   grid.innerHTML = '';
 
-  if (!payload || !payload.stations || !payload.stations.length) {
+  if (!TABLES.length) {
     grid.innerHTML = '<div class="loading-text">No station data available.</div>';
     return;
   }
 
-  var stations = payload.stations;
-  for (var i = 0; i < stations.length; i++) {
-    var st = stations[i];
-    var table = findTableForStation(st.station_id);
-    if (!table) continue; // skip stations not in TABLES (disabled by user)
-    var summary = edgeStationToSummary(st);
-    _dataSource[st.station_id] = 'edge';
+  var stationsById = {};
+  if (payload && Array.isArray(payload.stations)) {
+    for (var stationIdx = 0; stationIdx < payload.stations.length; stationIdx++) {
+      var stationRow = payload.stations[stationIdx];
+      if (!stationRow || !stationRow.station_id) continue;
+      stationsById[stationRow.station_id] = stationRow;
+    }
+  }
+
+  for (var i = 0; i < TABLES.length; i++) {
+    var table = TABLES[i];
+    var st = stationsById[table.id] || null;
+    var summary = st ? edgeStationToSummary(st) : null;
+    _dataSource[table.id] = st ? 'edge' : 'edge-missing';
     var card = renderTableCard(table, summary);
     grid.appendChild(card);
   }

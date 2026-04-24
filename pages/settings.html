@@ -103,7 +103,7 @@ body {
 
 /* ── Layout ──────────────────────────────────────────────────────── */
 .main {
-  max-width: 900px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 28px 20px;
   display: flex;
@@ -317,7 +317,7 @@ input.wide { max-width: none; }
 }
 .device-profile-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 0.9fr) minmax(260px, 1.7fr) minmax(220px, 1.2fr);
+  grid-template-columns: minmax(170px, 1fr) minmax(145px, 0.8fr) minmax(280px, 1.5fr) minmax(230px, 1fr);
   gap: 10px;
   align-items: center;
   border: 1px solid var(--border);
@@ -418,9 +418,9 @@ input.wide { max-width: none; }
       <h1>Dashboard Settings</h1>
       <div class="sub">Seaweed Station Network -- All Tables</div>
     </div>
-
-  alert('Settings access requires a role-based login.');
-  location.replace('../login.html?r=' + encodeURIComponent(location.href));
+  </div>
+  <a class="btn" href="../ESP32_Weather_Station_Dashboard.html">Back to Overview</a>
+</header>
 <main class="main">
 
   <!-- ─────────────────────────────────────── Save / Apply (Top) ───── -->
@@ -477,8 +477,8 @@ input.wide { max-width: none; }
       </div>
 
       <div class="field">
-        <label>Active Devices &amp; Install Date</label>
-        <div class="field-hint">Choose which devices appear in Overview/Station/Health. Data before install date is ignored. Dataset pause metadata is shared across web and local views.</div>
+        <label>Station Visibility &amp; Metadata</label>
+        <div class="field-hint">Choose which stations appear in Overview, Station, and Station Health. Access roles below use this same enabled station list.</div>
         <div class="info-box info" style="margin-top:8px;">
           <div class="info-title">Global station metadata</div>
           Install date, dataset pause status, end date, note, and coordinates are written to <strong>dashboard_config.device_profiles</strong> only when you click <strong>Push Config to Supabase</strong>.
@@ -822,7 +822,10 @@ function renderDeviceProfiles(profiles) {
     var datasetNoteEl = row.querySelector('input[data-role="datasetEndNote"]');
     var latEl = row.querySelector('input[data-role="mapLat"]');
     var lonEl = row.querySelector('input[data-role="mapLon"]');
-    if (enabledEl) enabledEl.addEventListener('change', updatePreviews);
+    if (enabledEl) enabledEl.addEventListener('change', function() {
+      updatePreviews();
+      refreshAccessRoleStationOptions();
+    });
     if (dateEl) dateEl.addEventListener('change', updatePreviews);
     if (datasetStatusEl) datasetStatusEl.addEventListener('change', updatePreviews);
     if (datasetEndEl) datasetEndEl.addEventListener('change', updatePreviews);
@@ -841,7 +844,7 @@ function mergeProfilesForRender(baseProfiles, discoveredIds) {
     var id = String(idRaw || '').trim().toLowerCase();
     if (!id) return;
     if (!map[id]) {
-      map[id] = { id: id, name: titleCaseDeviceId(id), enabled: true, dataFolder: 'data_' + id, channelId: '', apiKey: '', mapLat: null, mapLon: null };
+      map[id] = { id: id, name: titleCaseDeviceId(id), enabled: false, dataFolder: 'data_' + id, channelId: '', apiKey: '', mapLat: null, mapLon: null };
     }
   });
 
@@ -905,7 +908,10 @@ async function refreshDeviceProfilesFromSupabase() {
     }
     renderDeviceProfiles(mergeProfilesForRender(existing, ids));
     updatePreviews();
-    if (status) status.textContent = ids.length ? ('Found ' + ids.length + ' devices.') : 'No devices returned from device_status.';
+    refreshAccessRoleStationOptions();
+    if (status) status.textContent = ids.length
+      ? ('Found ' + ids.length + ' devices. New Supabase-only devices stay off until selected.')
+      : 'No devices returned from device_status.';
   } catch (err) {
     if (status) status.textContent = 'Refresh failed: ' + (err && err.message ? err.message : 'Unknown error');
   }
@@ -1078,11 +1084,23 @@ function loadSavedConfig() {
 // ══════════════════════════════════════════════════════════════════
 
 function getAllKnownStationIds() {
-  // Combine device profile defaults + rendered device profiles to get station IDs
+  // Access roles should follow the same station set used by Overview/Station/Health:
+  // enabled device profiles from the station visibility editor.
   var ids = {};
-  DEVICE_PROFILE_DEFAULTS.forEach(function(p) { ids[p.id] = p.name || titleCaseDeviceId(p.id); });
-  getRenderedDeviceProfiles().forEach(function(p) { ids[p.id] = p.name || titleCaseDeviceId(p.id); });
+  getRenderedDeviceProfiles().forEach(function(p) {
+    if (!p || p.enabled === false || !p.id) return;
+    ids[p.id] = p.name || titleCaseDeviceId(p.id);
+  });
+  if (!Object.keys(ids).length) {
+    DEVICE_PROFILE_DEFAULTS.forEach(function(p) { ids[p.id] = p.name || titleCaseDeviceId(p.id); });
+  }
   return ids;
+}
+
+function refreshAccessRoleStationOptions() {
+  var root = document.getElementById('accessRolesList');
+  if (!root || !root.querySelector('.access-role-card')) return;
+  renderAccessRoles(getRenderedAccessRoles());
 }
 
 var FEATURE_OPTIONS = [

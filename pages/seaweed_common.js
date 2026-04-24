@@ -125,7 +125,8 @@ var STATION_REGISTRY = [
   { id: 'shangani', name: 'Shangani Aramani', location: 'Kwale County, Kenya', enabled: true, dataFolder: 'data_Shangani', lat: -4.55, lon: 39.50, weatherName: 'Shangani Aramani, Kenya', tideStation: 'kenya', sensorMap: 'shangani', hasSatellite: true },
   { id: 'funzi', name: 'Funzi Island', location: 'Funzi Island, Kenya', enabled: true, dataFolder: 'data_Funzi', lat: -4.581429, lon: 39.437527, weatherName: 'Funzi Island, Kenya', tideStation: 'kenya', sensorMap: 'funzi', hasSatellite: true },
   { id: 'spare', name: 'Spare', location: 'Spare Station', enabled: true, dataFolder: 'data_spare', lat: null, lon: null, weatherName: null, tideStation: 'kenya', sensorMap: 'funzi', hasSatellite: true },
-  { id: 'perth', name: 'Perth Test', location: 'Noranda, WA', enabled: true, dataFolder: 'data_3262071_TT', lat: -31.87, lon: 115.90, weatherName: 'Perth / Noranda', tideStation: 'perth', sensorMap: 'perth', hasSatellite: true }
+  { id: 'perth', name: 'Perth Test', location: 'Noranda, WA', enabled: true, dataFolder: 'data_3262071_TT', lat: -31.87, lon: 115.90, weatherName: 'Perth / Noranda', tideStation: 'perth', sensorMap: 'perth', hasSatellite: true },
+  { id: 'perth_table', name: 'Perth Table', location: 'Noranda, WA', enabled: true, dataFolder: 'data_perth_table', lat: -31.87, lon: 115.90, weatherName: 'Perth Table / Noranda', tideStation: 'perth', sensorMap: 'perth', hasSatellite: true }
 ];
 
 function getStationRegistryEntry(stationId) {
@@ -201,7 +202,6 @@ function buildDeviceProfilesFromConfig(cfg, opts) {
 
   var explicitProfiles = Array.isArray(cfg.deviceProfiles) && cfg.deviceProfiles.length;
   if (explicitProfiles) {
-    byId = {};
     cfg.deviceProfiles.forEach(function(profile, idx) {
       if (!profile || !profile.id) return;
       var id = String(profile.id).trim().toLowerCase();
@@ -254,8 +254,6 @@ function buildDeviceProfilesFromConfig(cfg, opts) {
     if (oa !== ob) return oa - ob;
     return a.id.localeCompare(b.id);
   });
-  // Only return profiles that exist in STATION_REGISTRY
-  out = out.filter(function(p) { return getStationRegistryEntry(p.id) !== null; });
   return out;
 }
 
@@ -1199,12 +1197,27 @@ function normalizeAccessRoleFeatures(role) {
   };
 }
 
+function normalizeAccessRoleStations(stations) {
+  if (!Array.isArray(stations)) return ['*'];
+  if (!stations.length) return [];
+  if (stations.indexOf('*') !== -1) return ['*'];
+  var seen = {};
+  var out = [];
+  for (var i = 0; i < stations.length; i++) {
+    var sid = String(stations[i] || '').trim().toLowerCase();
+    if (!sid || seen[sid]) continue;
+    seen[sid] = true;
+    out.push(sid);
+  }
+  return out;
+}
+
 function sanitizeAccessRoleForBrowser(role) {
   if (!role || typeof role !== 'object') return null;
   return {
     roleId: String(role.roleId || '').trim(),
     password: '',
-    allowedStations: Array.isArray(role.allowedStations) && role.allowedStations.length ? role.allowedStations.slice() : ['*'],
+    allowedStations: normalizeAccessRoleStations(role.allowedStations),
     features: normalizeAccessRoleFeatures(role)
   };
 }
@@ -1307,6 +1320,16 @@ async function fetchAccessControl() {
 
 function getCachedAccessControlRoles() {
   return getCachedAccessRoleDefinitions();
+}
+
+function getCachedAccessRoleById(roleId) {
+  var wanted = String(roleId || '').trim();
+  if (!wanted) return null;
+  var roles = getCachedAccessRoleDefinitions();
+  for (var i = 0; i < roles.length; i++) {
+    if (roles[i] && roles[i].roleId === wanted) return roles[i];
+  }
+  return null;
 }
 
 /**
@@ -1417,8 +1440,21 @@ function getCurrentRole() {
   try {
     var roleId = sessionStorage.getItem('sw_role');
     if (roleId) {
-      var stations = JSON.parse(sessionStorage.getItem('sw_allowed_stations') || '["*"]');
-      var features = JSON.parse(sessionStorage.getItem('sw_features') || '{}');
+      var cachedRole = getCachedAccessRoleById(roleId);
+      var stations = cachedRole
+        ? normalizeAccessRoleStations(cachedRole.allowedStations)
+        : normalizeAccessRoleStations(JSON.parse(sessionStorage.getItem('sw_allowed_stations') || '["*"]'));
+      var features = cachedRole && cachedRole.features
+        ? cachedRole.features
+        : JSON.parse(sessionStorage.getItem('sw_features') || '{}');
+      try {
+        sessionStorage.setItem('sw_allowed_stations', JSON.stringify(stations));
+        sessionStorage.setItem('sw_features', JSON.stringify({
+          settings: features.settings !== false,
+          battery: features.battery !== false,
+          stationHealth: features.stationHealth !== false
+        }));
+      } catch (_) {}
       return {
         roleId: roleId,
         allowedStations: stations,
@@ -1443,7 +1479,8 @@ function getCurrentRole() {
  */
 function isStationVisibleForRole(stationId) {
   var role = getCurrentRole();
-  if (!role.allowedStations || !role.allowedStations.length) return true;
+  if (!role.allowedStations) return true;
+  if (!role.allowedStations.length) return false;
   if (role.allowedStations.indexOf('*') !== -1) return true;
   return role.allowedStations.indexOf(String(stationId).toLowerCase()) !== -1;
 }

@@ -373,6 +373,7 @@ function applyEdgeHealthPayload(payload) {
   if (!payload || !Array.isArray(payload.stations)) return;
 
   mergeHealthLoadedWindow(payload.time_range);
+  var payloadStationIds = {};
 
   var newDeviceStatus = {};
   var newDeviceConfig = {};
@@ -383,6 +384,7 @@ function applyEdgeHealthPayload(payload) {
     var st = payload.stations[i];
     var sid = st.station_id;
     if (!sid) continue;
+    payloadStationIds[sid] = true;
 
     // ── Slot map ──────────────────────────────────────────
     if (st.slot_map && typeof st.slot_map === 'object') {
@@ -498,6 +500,21 @@ function applyEdgeHealthPayload(payload) {
     // ── Device config ────────────────────────────────────
     if (st.device_config) {
       newDeviceConfig[sid] = st.device_config;
+    }
+  }
+
+  if (Array.isArray(STATIONS)) {
+    for (var si = 0; si < STATIONS.length; si++) {
+      var stationId = STATIONS[si] && STATIONS[si].id;
+      if (!stationId || payloadStationIds[stationId]) continue;
+      if (!stationData[stationId]) {
+        stationData[stationId] = { entries: [], raw: null };
+        _stationDataSource[stationId] = { source: 'edge-missing', savedAt: Date.now() };
+      }
+      if (!newDeviceStatus[stationId] && _deviceStatusById[stationId]) newDeviceStatus[stationId] = _deviceStatusById[stationId];
+      if (!newDeviceConfig[stationId] && _deviceConfigById[stationId]) newDeviceConfig[stationId] = _deviceConfigById[stationId];
+      if (!newDeviceSlots[stationId] && _deviceSlotsById[stationId]) newDeviceSlots[stationId] = _deviceSlotsById[stationId];
+      if (!newDeviceSlotHistory[stationId] && _deviceSlotHistoryById[stationId]) newDeviceSlotHistory[stationId] = _deviceSlotHistoryById[stationId];
     }
   }
 

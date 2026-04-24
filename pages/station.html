@@ -1000,11 +1000,19 @@ body {
       configured = Array.isArray(s.deviceProfiles) ? s.deviceProfiles : null;
     } catch(e) {}
 
+    Object.keys(STATIONS_DEFAULT).forEach(function(id) {
+      out[id] = Object.assign({}, STATIONS_DEFAULT[id]);
+    });
+
     if (configured && configured.length) {
       configured.forEach(function(p) {
-        if (!p || !p.id || p.enabled === false) return;
+        if (!p || !p.id) return;
         var id = String(p.id).trim().toLowerCase();
-        if (!id || p.enabled === false) return;
+        if (!id) return;
+        if (p.enabled === false) {
+          delete out[id];
+          return;
+        }
         var base = STATIONS_DEFAULT[id] || {
           id: id,
           title: titleCaseDeviceId(id),
@@ -1038,12 +1046,6 @@ body {
         var weatherLabel = (base.weather && base.weather.name) ? base.weather.name : merged.title;
         merged.weather = buildWeatherLocation(weatherLabel, merged.mapLat, merged.mapLon);
         out[id] = merged;
-      });
-    }
-
-    if (!Object.keys(out).length) {
-      Object.keys(STATIONS_DEFAULT).forEach(function(id) {
-        out[id] = Object.assign({}, STATIONS_DEFAULT[id]);
       });
     }
 

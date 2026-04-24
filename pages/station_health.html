@@ -213,10 +213,7 @@ if (!sessionStorage.getItem('sw_auth')) { window.location.href = '../login.html'
     <h1>&#128267; Station Health <span>Battery &bull; Sync &bull; Data Quality</span></h1>
     <div class="nav-links">
       <a class="btn" href="../ESP32_Weather_Station_Dashboard.html">&#9664; Overview</a>
-      <a class="btn" data-station-link="perth" href="station.html?table=perth">Perth TT</a>
-      <a class="btn" data-station-link="shangani" href="station.html?table=shangani">Shangani</a>
-      <a class="btn" data-station-link="funzi" href="station.html?table=funzi">Funzi</a>
-      <a class="btn" data-station-link="spare" href="station.html?table=spare">Spare</a>
+      <span id="stationNavLinks" class="nav-links"></span>
       <button class="btn-fetch" id="btnFetchAll" onclick="fetchLiveAll()" title="Pull latest data from Supabase for all stations">&#128752; Fetch Live</button>
       <a class="btn" id="btnTriggerDL" href="https://github.com/seaweed-station/seaweed-station.github.io/actions/workflows/download-data.yml" target="_blank" title="Open GitHub Actions workflow page for a manual run">&#9889; Actions</a>
       <span class="fetch-status" id="fetchStatus"></span>
@@ -300,7 +297,7 @@ if (!sessionStorage.getItem('sw_auth')) { window.location.href = '../login.html'
 if (typeof requireFeature === 'function') requireFeature('stationHealth', '../ESP32_Weather_Station_Dashboard.html');
 
 // Station configurations — derived from STATION_REGISTRY (seaweed_common.js)
-var _HEALTH_TZ = { perth: 'Australia/Perth', shangani: 'Africa/Nairobi', funzi: 'Africa/Nairobi', spare: 'UTC' };
+var _HEALTH_TZ = { perth: 'Australia/Perth', perth_table: 'Australia/Perth', shangani: 'Africa/Nairobi', funzi: 'Africa/Nairobi', spare: 'UTC' };
 var STATIONS_DEFAULT = STATION_REGISTRY.map(function(s) {
   return { id: s.id, name: s.name, defaultFolder: s.dataFolder, configKey: s.id, type: 'gateway', tz: _HEALTH_TZ[s.id] || 'UTC' };
 });
@@ -358,6 +355,19 @@ function syncConfiguredStationUI() {
 
   var enabledIds = {};
   STATIONS.forEach(function(st) { enabledIds[st.id] = true; });
+
+  var nav = document.getElementById('stationNavLinks');
+  if (nav) {
+    nav.innerHTML = '';
+    STATIONS.forEach(function(st) {
+      var a = document.createElement('a');
+      a.className = 'btn';
+      a.setAttribute('data-station-link', st.id);
+      a.href = 'station.html?table=' + encodeURIComponent(st.id);
+      a.textContent = st.name || st.id;
+      nav.appendChild(a);
+    });
+  }
 
   var links = document.querySelectorAll('[data-station-link]');
   for (var i = 0; i < links.length; i++) {
@@ -635,8 +645,7 @@ function rebuildHealthStations(openStationIds) {
 
   STATIONS.forEach(function(station) {
     var data = stationData[station.id];
-    if (!data) return;
-    container.appendChild(renderStationSection(station, data));
+    container.appendChild(renderStationSection(station, data || { entries: [], raw: null }));
   });
 
   bindForecastPanelToggle();
