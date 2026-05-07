@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seaweed V4 Settings</title>
+<link rel="stylesheet" href="css/v4.css?v=20260506stationmeta2">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">V4</div>
+    <div>
+      <h1>Seaweed V4 Settings</h1>
+      <div class="sub">Station visibility, metadata, and access roles</div>
+    </div>
+  </div>
+  <nav class="nav" data-v4-nav></nav>
+</header>
+<main class="main">
+  <section class="band">
+    <div class="band-head"><h2>Save Shared View / Refresh Catalog</h2><span class="status-line" id="settingsStatus"></span></div>
+    <div class="band-body">
+      <div class="notice">
+        V4 settings use the V4 Supabase shared station metadata record for the standard dashboard view. This browser keeps a local copy as fallback when shared settings are unavailable.
+      </div>
+      <div class="form-grid" style="margin-top:12px">
+        <div class="field">
+          <label for="otaBaseUrl">OTA Dashboard Base URL</label>
+          <input id="otaBaseUrl" type="text" placeholder="http://localhost:8088">
+        </div>
+      </div>
+      <div class="toolbar" style="margin-top:12px">
+        <button class="btn btn-primary" id="saveBtn" type="button">Save + Push Shared View</button>
+        <button class="btn" id="refreshBtn" type="button">Refresh Catalog</button>
+        <span class="status-line" id="saveStatus"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-head"><h2>Project Profiles</h2><span class="status-line">Anon key presence only; service-role keys are not exposed here.</span></div>
+    <div class="table-wrap"><table class="data-table"><thead><tr><th>Profile</th><th>Label</th><th>Schema</th><th>URL</th><th>Anon Key</th><th>Status</th></tr></thead><tbody id="profileRows"></tbody></table></div>
+  </section>
+
+  <section class="band">
+    <div class="band-head"><h2>Station Visibility &amp; Metadata</h2><span class="status-line">Access roles use this same enabled V4 station list.</span></div>
+    <div class="band-body">
+      <div class="notice">
+        Display order, install date, dataset pause status, end date, note, and coordinates are pulled from V4 Supabase when available, with this browser's local copy used as fallback.
+      </div>
+      <div class="toolbar" style="margin-top:12px">
+        <button class="btn" id="refreshStationsBtn" type="button">Refresh from V4 Catalog</button>
+        <button class="btn btn-primary" id="pushStationsBtn" type="button">Push to V4 Supabase</button>
+        <span class="status-line" id="stationMetaStatus"></span>
+      </div>
+    </div>
+    <div class="table-wrap"><table class="data-table station-meta-table"><thead><tr><th>Order</th><th>Enabled</th><th>Station</th><th>Install Date</th><th>Dataset</th><th>End Date</th><th>Note</th><th>Lat</th><th>Lon</th></tr></thead><tbody id="stationRows"></tbody></table></div>
+  </section>
+
+  <section class="band" id="accessRolesSection">
+    <div class="band-head"><h2>Access Roles</h2><span class="status-line">V4 login uses these roles only.</span></div>
+    <div class="band-body">
+      <div class="notice">
+        Each role has a password and a set of allowed V4 stations/features. Stored passwords are not shown in the browser. Enter a password only when creating or rotating a role; blank keeps the current stored password.
+      </div>
+      <div id="accessRolesList" class="access-roles-list"></div>
+      <div class="toolbar" style="margin-top:12px">
+        <button class="btn" id="addRoleBtn" type="button">Add Role</button>
+        <button class="btn btn-primary" id="pushRolesBtn" type="button">Push Roles to V4 Supabase</button>
+        <button class="btn" id="reloadRolesBtn" type="button">Reload Roles</button>
+        <span class="status-line" id="rolesPushStatus"></span>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="js/catalog_provider_v4.js?v=20260506stationmeta2"></script>
+<script src="js/nav_v4.js?v=20260504roles"></script>
+<script src="js/page_bootstrap_v4.js?v=20260504b"></script>
+<script>
+"use strict";
+(function() {
+  var statusEl = document.getElementById('settingsStatus');
+  var profileRows = document.getElementById('profileRows');
+  var stationRows = document.getElementById('stationRows');
+  var otaInput = document.getElementById('otaBaseUrl');
+  var saveStatus = document.getElementById('saveStatus');
+  var stationMetaStatus = document.getElementById('stationMetaStatus');
+  var rolesStatus = document.getElementById('rolesPushStatus');
+
+  var FEATURE_OPTIONS = [
+    { key: 'settings', label: 'Settings Page' },
+    { key: 'battery', label: 'Battery Estimator' },
+    { key: 'stationHealth', label: 'Station Health' },
+    { key: 'tableConfigurationView', label: 'Table Configuration (view)' },
+    { key: 'tableConfigurationEdit', label: 'Table Configuration (edit)' }
+  ];
+
+  function emptyRow(cols, message) { return '<tr><td colspan="' + cols + '" class="muted">' + SeaweedV4.escapeHtml(message) + '</td></tr>'; }
+
+  function normalizeDateInput(value) {
+    if (!value) return '';
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return /^\d{4}-\d{2}-\d{2}$/.test(String(value)) ? String(value) : '';
+    return d.toISOString().slice(0, 10);
+  }
+
+  function dateInputToUtc(value, endOfDay) {
+    if (!value) return '';
+    return value + (endOfDay ? 'T23:59:59.999Z' : 'T00:00:00Z');
+  }
+
+  function stationOptionId(station) {
+    return SeaweedV4.text(station.station_key || station.station_uid).toLowerCase();
+  }
+
+  function renderProfiles(catalog) {
+    var rows = catalog.project_profiles || [];
+    profileRows.innerHTML = rows.length ? rows.map(function(row) {
+      return '<tr>' +
+        '<td><div class="mono">' + SeaweedV4.escapeHtml(row.profile_id || '--') + '</div></td>' +
+        '<td>' + SeaweedV4.escapeHtml(row.label || '--') + '</td>' +
+        '<td><span class="pill ' + (row.schema_family === 'v4' ? 'pill-good' : 'pill-warn') + '">' + SeaweedV4.escapeHtml(row.schema_family || '--') + '</span></td>' +
+        '<td class="mono">' + SeaweedV4.escapeHtml(row.supabase_url || '--') + '</td>' +
+        '<td>' + SeaweedV4.escapeHtml(row.anon_key_present ? 'set' : 'set via station catalog') + '</td>' +
+        '<td>' + SeaweedV4.escapeHtml(row.active === false ? 'inactive' : 'active') + '</td>' +
+      '</tr>';
+    }).join('') : emptyRow(6, 'No project profiles returned. V4 falls back to the embedded clean-bench project.');
+  }
+
+  function renderStations(catalog) {
+    var rows = (catalog.stations || []).filter(SeaweedV4.supportsV4ReadModels).map(function(row, idx) {
+      return Object.assign({}, row, { _fallbackOrder: idx });
+    }).sort(function(a, b) {
+      var ao = Number(a.displayOrder);
+      var bo = Number(b.displayOrder);
+      if (isFinite(ao) && isFinite(bo) && ao !== bo) return ao - bo;
+      if (isFinite(ao) && !isFinite(bo)) return -1;
+      if (!isFinite(ao) && isFinite(bo)) return 1;
+      return a._fallbackOrder - b._fallbackOrder;
+    });
+    stationRows.innerHTML = rows.length ? rows.map(function(row) {
+      var safeUid = SeaweedV4.escapeHtml(row.station_uid || row.station_key || '');
+      return '<tr data-station-uid="' + safeUid + '" data-station-key="' + SeaweedV4.escapeHtml(row.station_key || '') + '">' +
+        '<td><div class="order-cell"><span class="order-rank"></span><button class="btn btn-small icon-btn" type="button" data-order-move="up" title="Move up">&uarr;</button><button class="btn btn-small icon-btn" type="button" data-order-move="down" title="Move down">&darr;</button></div></td>' +
+        '<td><label class="inline-check"><input type="checkbox" data-role="enabled" ' + (row.active !== false ? 'checked' : '') + '> Show</label></td>' +
+        '<td><div class="cell-main">' + SeaweedV4.escapeHtml(row.station_name || '--') + '</div><div class="cell-sub">' + SeaweedV4.escapeHtml((row.station_uid || '--') + ' / ' + (row.station_key || '--')) + '</div></td>' +
+        '<td><input type="date" data-role="installDate" value="' + normalizeDateInput(row.installDateUtc) + '"></td>' +
+        '<td><select data-role="datasetStatus"><option value="active"' + (row.datasetStatus === 'active' ? ' selected' : '') + '>Active</option><option value="paused"' + (row.datasetStatus === 'paused' ? ' selected' : '') + '>Paused</option><option value="finished"' + (row.datasetStatus === 'finished' ? ' selected' : '') + '>Finished</option></select></td>' +
+        '<td><input type="date" data-role="datasetEnd" value="' + normalizeDateInput(row.datasetEndUtc) + '"></td>' +
+        '<td><input type="text" data-role="datasetNote" placeholder="Units shipped, paused" value="' + SeaweedV4.escapeHtml(row.datasetEndNote || '') + '"></td>' +
+        '<td><input type="text" data-role="lat" value="' + SeaweedV4.escapeHtml(row.lat == null ? '' : row.lat) + '"></td>' +
+        '<td><input type="text" data-role="lon" value="' + SeaweedV4.escapeHtml(row.lon == null ? '' : row.lon) + '"></td>' +
+      '</tr>';
+    }).join('') : emptyRow(9, 'No V4 stations returned.');
+    updateStationOrderControls();
+    stationRows.querySelectorAll('[data-order-move]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        moveStationRow(btn.closest('tr'), btn.getAttribute('data-order-move'));
+      });
+    });
+    stationRows.querySelectorAll('input[data-role="enabled"]').forEach(function(cb) {
+      cb.addEventListener('change', function() { renderAccessRoles(getRenderedAccessRoles()); });
+    });
+  }
+
+  function updateStationOrderControls() {
+    var rows = Array.prototype.slice.call(stationRows.querySelectorAll('tr[data-station-uid]'));
+    rows.forEach(function(tr, idx) {
+      var rank = tr.querySelector('.order-rank');
+      var up = tr.querySelector('[data-order-move="up"]');
+      var down = tr.querySelector('[data-order-move="down"]');
+      if (rank) rank.textContent = String(idx + 1);
+      if (up) up.disabled = idx === 0;
+      if (down) down.disabled = idx === rows.length - 1;
+    });
+  }
+
+  function moveStationRow(tr, direction) {
+    if (!tr) return;
+    if (direction === 'up' && tr.previousElementSibling) {
+      stationRows.insertBefore(tr, tr.previousElementSibling);
+    } else if (direction === 'down' && tr.nextElementSibling) {
+      stationRows.insertBefore(tr.nextElementSibling, tr);
+    }
+    updateStationOrderControls();
+    saveStationMetadata(false);
+    renderAccessRoles(getRenderedAccessRoles());
+    saveStatus.textContent = 'Display order saved locally. Push shared view when ready.';
+  }
+
+  function renderedStationMetadata() {
+    var rows = [];
+    stationRows.querySelectorAll('tr[data-station-uid]').forEach(function(tr, idx) {
+      var get = function(role) { var el = tr.querySelector('[data-role="' + role + '"]'); return el ? el.value : ''; };
+      rows.push({
+        station_uid: tr.getAttribute('data-station-uid'),
+        station_key: tr.getAttribute('data-station-key'),
+        enabled: !!(tr.querySelector('[data-role="enabled"]') || {}).checked,
+        displayOrder: idx,
+        installDateUtc: dateInputToUtc(get('installDate'), false),
+        datasetStatus: get('datasetStatus') || 'active',
+        datasetEndUtc: dateInputToUtc(get('datasetEnd'), true),
+        datasetEndNote: get('datasetNote'),
+        lat: get('lat'),
+        lon: get('lon')
+      });
+    });
+    return rows;
+  }
+
+  function visibleStations() {
+    return renderedStationMetadata().filter(function(row) { return row.enabled !== false; });
+  }
+
+  function defaultRoleTemplate() {
+    return [{ roleId: 'admin', password: '', allowedStations: ['*'], features: { settings: true, battery: true, stationHealth: true, tableConfigurationView: true, tableConfigurationEdit: true } }];
+  }
+
+  function renderAccessRoles(roles) {
+    var root = document.getElementById('accessRolesList');
+    roles = Array.isArray(roles) && roles.length ? roles : defaultRoleTemplate();
+    var stations = visibleStations();
+    root.innerHTML = roles.map(function(role, idx) {
+      var allowAll = Array.isArray(role.allowedStations) && role.allowedStations.indexOf('*') !== -1;
+      var allowSet = {};
+      (role.allowedStations || []).forEach(function(item) { allowSet[String(item).toLowerCase()] = true; });
+      var features = role.features || {};
+      var stationChecks = '<label><input type="checkbox" data-role-field="allStations" ' + (allowAll ? 'checked' : '') + '> All stations (*)</label>';
+      stationChecks += stations.map(function(station) {
+        var id = stationOptionId(station);
+        var label = station.station_key || station.station_uid;
+        return '<label><input type="checkbox" data-role-field="station" data-station-id="' + SeaweedV4.escapeHtml(id) + '" ' + (allowAll || allowSet[id] ? 'checked' : '') + (allowAll ? ' disabled' : '') + '> ' + SeaweedV4.escapeHtml(label) + '</label>';
+      }).join('');
+      var featureChecks = FEATURE_OPTIONS.map(function(feature) {
+        return '<label><input type="checkbox" data-role-field="feature" data-feature-key="' + feature.key + '" ' + (features[feature.key] !== false ? 'checked' : '') + '> ' + SeaweedV4.escapeHtml(feature.label) + '</label>';
+      }).join('');
+      return '<div class="access-role-card" data-role-index="' + idx + '">' +
+        '<div class="role-header"><div class="field"><label>Role Name</label><input type="text" data-role-field="roleId" value="' + SeaweedV4.escapeHtml(role.roleId || '') + '"></div>' +
+        '<div class="field"><label>Password</label><input type="password" data-role-field="password" value="" placeholder="Leave blank to keep current" autocomplete="new-password"></div>' +
+        '<button class="btn btn-small btn-danger" type="button" data-remove-role="' + idx + '">Remove</button></div>' +
+        '<div class="role-label">Allowed Stations:</div><div class="role-stations">' + stationChecks + '</div>' +
+        '<div class="role-label">Features:</div><div class="role-features">' + featureChecks + '</div>' +
+      '</div>';
+    }).join('');
+
+    root.querySelectorAll('input[data-role-field="allStations"]').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var card = cb.closest('.access-role-card');
+        card.querySelectorAll('input[data-role-field="station"]').forEach(function(stationCb) {
+          stationCb.checked = cb.checked;
+          stationCb.disabled = cb.checked;
+        });
+      });
+    });
+    root.querySelectorAll('[data-remove-role]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var rolesNow = getRenderedAccessRoles();
+        rolesNow.splice(Number(btn.getAttribute('data-remove-role')), 1);
+        renderAccessRoles(rolesNow);
+      });
+    });
+  }
+
+  function getRenderedAccessRoles() {
+    var out = [];
+    document.querySelectorAll('.access-role-card').forEach(function(card) {
+      var roleIdEl = card.querySelector('input[data-role-field="roleId"]');
+      var passwordEl = card.querySelector('input[data-role-field="password"]');
+      var allCb = card.querySelector('input[data-role-field="allStations"]');
+      var allowedStations = [];
+      if (allCb && allCb.checked) allowedStations = ['*'];
+      else card.querySelectorAll('input[data-role-field="station"]').forEach(function(cb) { if (cb.checked) allowedStations.push(cb.getAttribute('data-station-id')); });
+      var features = {};
+      card.querySelectorAll('input[data-role-field="feature"]').forEach(function(cb) { features[cb.getAttribute('data-feature-key')] = cb.checked; });
+      out.push({ roleId: (roleIdEl ? roleIdEl.value : '').trim(), password: passwordEl ? passwordEl.value : '', allowedStations: allowedStations, features: features });
+    });
+    return out.filter(function(role) { return role.roleId; });
+  }
+
+  function saveStationMetadata(showMessage) {
+    SeaweedV4.setStationMetadata(renderedStationMetadata());
+    if (showMessage) {
+      saveStatus.textContent = 'Browser copy saved.';
+      setTimeout(function() { if (saveStatus.textContent === 'Browser copy saved.') saveStatus.textContent = ''; }, 3000);
+    }
+  }
+
+  async function pushSharedStationMetadata() {
+    var rows = renderedStationMetadata();
+    SeaweedV4.setStationMetadata(rows);
+    if (!SeaweedV4.pushStationMetadataToSupabase) {
+      saveStatus.textContent = 'Shared metadata helper is not available.';
+      return;
+    }
+    var adminPassword = window.prompt('Enter the current V4 admin password to push station order/metadata:');
+    if (adminPassword === null) {
+      saveStatus.textContent = 'Shared station metadata push cancelled.';
+      return;
+    }
+    saveStatus.textContent = 'Pushing station order/metadata to V4 Supabase...';
+    try {
+      await SeaweedV4.pushStationMetadataToSupabase(rows, adminPassword);
+      saveStatus.textContent = 'Shared station view pushed to V4 Supabase.';
+      await load(true);
+    } catch (err) {
+      saveStatus.textContent = 'Shared push failed: ' + (err && err.message ? err.message : 'Unknown error');
+    }
+  }
+
+  async function loadRoles() {
+    try {
+      rolesStatus.textContent = 'Loading roles from V4 Supabase...';
+      renderAccessRoles(await SeaweedV4.fetchAccessRoleDefinitions());
+      if (sessionStorage.getItem(SeaweedV4.BOOTSTRAP_AUTH_KEY) === 'ok') {
+        rolesStatus.textContent = 'Temporary changeme bootstrap active. Apply the V4 access-control SQL amendment before pushing roles.';
+        return;
+      }
+      rolesStatus.textContent = 'Roles loaded.';
+      setTimeout(function() { if (rolesStatus.textContent === 'Roles loaded.') rolesStatus.textContent = ''; }, 3000);
+    } catch (err) {
+      renderAccessRoles(defaultRoleTemplate());
+      rolesStatus.textContent = 'V4 roles RPC not installed yet. Temporary admin login is changeme; apply the V4 access-control SQL amendment, then reload roles.';
+    }
+  }
+
+  async function pushRoles() {
+    saveStationMetadata(false);
+    var adminPassword = window.prompt('Enter the current V4 admin password to authorize role changes:');
+    if (adminPassword === null) {
+      rolesStatus.textContent = 'Role update cancelled.';
+      return;
+    }
+    rolesStatus.textContent = 'Pushing roles to V4 Supabase...';
+    try {
+      var saved = await SeaweedV4.pushAccessControlToSupabase(getRenderedAccessRoles(), adminPassword);
+      renderAccessRoles(saved);
+      rolesStatus.textContent = 'Roles pushed to V4 Supabase.';
+    } catch (err) {
+      rolesStatus.textContent = 'Push failed: ' + (err && err.message ? err.message : 'Unknown error');
+    }
+  }
+
+  async function load(force) {
+    statusEl.textContent = 'Loading catalog...';
+    try {
+      var catalog = await SeaweedV4.loadCatalog({ force: force });
+      renderProfiles(catalog);
+      renderStations(catalog);
+      renderAccessRoles(getRenderedAccessRoles().length ? getRenderedAccessRoles() : defaultRoleTemplate());
+      statusEl.textContent = 'Catalog loaded from ' + SeaweedV4.getOtaBaseUrl() + ' at ' + SeaweedV4.formatTime(catalog.fetched_at || catalog.generated_at);
+      stationMetaStatus.textContent = (catalog.stations || []).filter(SeaweedV4.supportsV4ReadModels).length + ' V4 station(s).' +
+        (catalog.shared_station_metadata_error ? ' Shared metadata fallback: ' + catalog.shared_station_metadata_error : ' Shared metadata loaded when available.');
+    } catch (err) {
+      profileRows.innerHTML = emptyRow(6, 'Catalog failed.');
+      stationRows.innerHTML = emptyRow(9, 'Catalog failed.');
+      statusEl.textContent = 'Catalog failed: ' + (err.message || 'unknown error');
+    }
+  }
+
+  SeaweedV4Page.ready(function() {
+    SeaweedV4Page.boot();
+    otaInput.value = SeaweedV4.getOtaBaseUrl();
+    document.getElementById('saveBtn').addEventListener('click', pushSharedStationMetadata);
+    document.getElementById('refreshBtn').addEventListener('click', function() { load(true); });
+    document.getElementById('refreshStationsBtn').addEventListener('click', function() { load(true); });
+    document.getElementById('pushStationsBtn').addEventListener('click', pushSharedStationMetadata);
+    document.getElementById('addRoleBtn').addEventListener('click', function() {
+      var roles = getRenderedAccessRoles();
+      roles.push({ roleId: '', password: '', allowedStations: ['*'], features: { settings: true, battery: true, stationHealth: true, tableConfigurationView: true, tableConfigurationEdit: false } });
+      renderAccessRoles(roles);
+    });
+    document.getElementById('pushRolesBtn').addEventListener('click', pushRoles);
+    document.getElementById('reloadRolesBtn').addEventListener('click', loadRoles);
+    otaInput.addEventListener('change', function() { SeaweedV4.setOtaBaseUrl(otaInput.value); load(true); });
+    load(false).then(loadRoles);
+  });
+})();
+</script>
+</body>
+</html>

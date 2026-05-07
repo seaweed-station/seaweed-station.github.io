@@ -1,11 +1,8 @@
 name: Download Station Data
 
 on:
-  schedule:
-    # Runs daily at 06:00 UTC (CI backup; dashboards now fetch live from Supabase)
-    - cron: '0 6 * * *'
   workflow_dispatch:
-    # Allows manual trigger from GitHub Actions tab
+    # Manual only; scheduled CI runs disabled to stop recurring failure notifications
 
 jobs:
   download:

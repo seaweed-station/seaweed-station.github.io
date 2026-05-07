@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Seaweed V4 Alerts</title>
+<link rel="stylesheet" href="css/v4.css?v=20260506alerts">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">V4</div>
+    <div>
+      <h1>Seaweed V4 Alerts</h1>
+      <div class="sub">Slack alert settings, suppression, and thresholds</div>
+    </div>
+  </div>
+  <nav class="nav" data-v4-nav></nav>
+</header>
+<main class="main">
+  <section class="band">
+    <div class="band-head"><h2>Alert Controls</h2><span class="status-line" id="alertStatus">Loading...</span></div>
+    <div class="band-body">
+      <div class="notice">
+        Alerts are configured for Slack delivery. Fleet default rows apply to every station unless a station-specific override exists.
+      </div>
+      <div class="toolbar" style="margin-top:12px">
+        <button class="btn" id="reloadBtn" type="button">Reload</button>
+        <button class="btn" id="addOverrideBtn" type="button">Add Station Override</button>
+        <button class="btn" id="testSlackBtn" type="button">Send Test Alert</button>
+        <button class="btn btn-primary" id="pushBtn" type="button">Push Alert Settings</button>
+        <span class="status-line" id="pushStatus"></span>
+        <span class="status-line" id="testStatus"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-head"><h2>Summary</h2><span class="status-line">Local editor state</span></div>
+    <div class="band-body">
+      <div class="summary-grid">
+        <div class="summary-item"><div class="summary-label">Rows</div><div class="summary-value" id="summaryRows">--</div><div class="summary-sub">Fleet defaults + overrides</div></div>
+        <div class="summary-item"><div class="summary-label">Enabled</div><div class="summary-value" id="summaryEnabled">--</div><div class="summary-sub">Rows that can notify</div></div>
+        <div class="summary-item"><div class="summary-label">Current Alerts</div><div class="summary-value" id="summaryCurrentAlerts">--</div><div class="summary-sub">Computed from v4 telemetry</div></div>
+        <div class="summary-item"><div class="summary-label">Suppressed</div><div class="summary-value" id="summarySuppressed">--</div><div class="summary-sub">Temporary holds active</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-head"><h2>Current Alerts</h2><span class="status-line" id="currentAlertStatus">Computed read-only view</span></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th><button class="table-sort" type="button" data-current-sort="severity">Severity</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="station">Station</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="alert">Alert</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="slot">Slot</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="value">Current Value</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="threshold">Threshold</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="silenced">Notify</button></th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="currentAlertRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-head"><h2>Alert Settings</h2><span class="status-line">Silence a row to permanently mute that alert family for the selected scope; unsilence to resume Slack notifications.</span></div>
+    <div class="table-wrap">
+      <table class="data-table" id="alertTable">
+        <thead>
+          <tr>
+            <th>Scope</th>
+            <th>Alert</th>
+            <th>Enabled</th>
+            <th>Warnings</th>
+            <th>Critical</th>
+            <th>Suppress Until</th>
+            <th>Thresholds JSON</th>
+            <th>Notes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="alertRows"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script src="js/catalog_provider_v4.js?v=20260507alerts"></script>
+<script src="js/nav_v4.js?v=20260507alerts"></script>
+<script src="js/page_bootstrap_v4.js?v=20260504b"></script>
+<script>
+"use strict";
+(function() {
+  var ALERT_LABELS = {
+    upload_freshness: "Upload freshness",
+    gateway_battery: "Gateway battery",
+    battery_voltage: "Battery voltage",
+    satellite_sync: "Satellite sync",
+    solar_missing: "Solar missing",
+    temperature: "Temperature",
+    sensor_missing: "Sensor disconnected"
+  };
+  var ALERT_KEYS = Object.keys(ALERT_LABELS);
+  var DEFAULT_THRESHOLDS = {
+    upload_freshness: { grace_fraction: 0.5, warning_missed_windows: 1, critical_missed_windows: 2 },
+    gateway_battery: { warning_pct: 30, critical_pct: 10, clear_warning_pct: 33, clear_critical_pct: 12 },
+    battery_voltage: { warning_v: 3.55, critical_v: 3.4, clear_warning_v: 3.6, clear_critical_v: 3.55 },
+    satellite_sync: { warning_missed_windows: 1, critical_missed_windows: 2 },
+    solar_missing: { daylight_min_v: 1.0, warning_days: 1, critical_days: 2 },
+    temperature: { warning_c: 55, critical_c: 60 },
+    sensor_missing: { expected_hub_sensors: [1, 2, 3], severity: "warning" }
+  };
+  var stations = [];
+  var currentAlerts = [];
+  var currentAlertSort = { key: "severity", dir: "desc" };
+  var locallySilencedCurrentAlerts = {};
+  var alertRowsEl = document.getElementById("alertRows");
+  var currentAlertRowsEl = document.getElementById("currentAlertRows");
+  var alertStatus = document.getElementById("alertStatus");
+  var currentAlertStatus = document.getElementById("currentAlertStatus");
+  var pushStatus = document.getElementById("pushStatus");
+  var testStatus = document.getElementById("testStatus");
+  var TEST_SECRET_KEY = "sw_v4_alert_dispatch_secret_session";
+
+  function html(value) { return SeaweedV4.escapeHtml(value == null ? "" : String(value)); }
+
+  function emptyRow(message) {
+    alertRowsEl.innerHTML = '<tr><td colspan="9" class="muted">' + html(message) + '</td></tr>';
+  }
+
+  function emptyCurrentAlertRow(message) {
+    currentAlertRowsEl.innerHTML = '<tr><td colspan="8" class="muted">' + html(message) + '</td></tr>';
+  }
+
+  function stationName(uid) {
+    if (uid === "*") return "Fleet default";
+    for (var i = 0; i < stations.length; i++) {
+      if (stations[i].station_uid === uid) return stations[i].station_name || uid;
+    }
+    return uid || "--";
+  }
+
+  function toDateTimeLocal(value) {
+    if (!value) return "";
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return "";
+    var pad = function(n) { return String(n).padStart(2, "0"); };
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+
+  function fromDateTimeLocal(value) {
+    if (!value) return "";
+    var d = new Date(value);
+    return isNaN(d.getTime()) ? "" : d.toISOString();
+  }
+
+  function thresholdText(row) {
+    try {
+      return JSON.stringify(row.thresholds || DEFAULT_THRESHOLDS[row.alert_key] || {}, null, 2);
+    } catch (_) {
+      return "{}";
+    }
+  }
+
+  function scopeOptions(selected) {
+    var out = '<option value="*"' + (selected === "*" ? " selected" : "") + '>Fleet default</option>';
+    out += stations.map(function(station) {
+      var uid = station.station_uid || "";
+      return '<option value="' + html(uid) + '"' + (uid === selected ? " selected" : "") + '>' + html(station.station_name || uid) + '</option>';
+    }).join("");
+    return out;
+  }
+
+  function alertOptions(selected) {
+    return ALERT_KEYS.map(function(key) {
+      return '<option value="' + key + '"' + (key === selected ? " selected" : "") + '>' + html(ALERT_LABELS[key]) + '</option>';
+    }).join("");
+  }
+
+  function renderRows(rows) {
+    rows = normalizeSettingsRows(rows);
+    if (!rows.length) {
+      emptyRow("No alert settings returned. Apply the V4 alert-settings SQL amendment.");
+      updateSummary();
+      return;
+    }
+    rows.sort(function(a, b) {
+      if (a.station_uid === "*" && b.station_uid !== "*") return -1;
+      if (a.station_uid !== "*" && b.station_uid === "*") return 1;
+      return String(a.station_uid || "").localeCompare(String(b.station_uid || "")) || String(a.alert_key || "").localeCompare(String(b.alert_key || ""));
+    });
+    alertRowsEl.innerHTML = rows.map(function(row) {
+      var stationUid = row.station_uid || "*";
+      var alertKey = row.alert_key || "upload_freshness";
+      return '<tr data-alert-row>' +
+        '<td><select data-field="station_uid">' + scopeOptions(stationUid) + '</select><div class="cell-sub">' + html(stationName(stationUid)) + '</div></td>' +
+        '<td><select data-field="alert_key">' + alertOptions(alertKey) + '</select></td>' +
+        '<td><label class="inline-check"><input type="checkbox" data-field="enabled" ' + (row.enabled !== false ? "checked" : "") + '> Active</label></td>' +
+        '<td><label class="inline-check"><input type="checkbox" data-field="warning_enabled" ' + (row.warning_enabled !== false ? "checked" : "") + '> Warnings</label></td>' +
+        '<td><label class="inline-check"><input type="checkbox" data-field="critical_enabled" ' + (row.critical_enabled !== false ? "checked" : "") + '> Critical</label></td>' +
+        '<td><input type="datetime-local" data-field="suppress_until" value="' + html(toDateTimeLocal(row.suppress_until)) + '"></td>' +
+        '<td><textarea data-field="thresholds" spellcheck="false">' + html(thresholdText(row)) + '</textarea></td>' +
+        '<td><input type="text" data-field="notes" value="' + html(row.notes || "") + '" placeholder="Reason, owner, context"></td>' +
+        '<td><button class="btn btn-small" type="button" data-setting-action="toggleSilence">' + (row.enabled === false ? "\uD83D\uDD14 Unsilence" : "\uD83D\uDD15 Silence") + '</button></td>' +
+      '</tr>';
+    }).join("");
+    alertRowsEl.querySelectorAll('[data-field="alert_key"]').forEach(function(sel) {
+      sel.addEventListener("change", function() {
+        var tr = sel.closest("tr");
+        var text = tr.querySelector('[data-field="thresholds"]');
+        if (text && (!text.value.trim() || text.value.trim() === "{}")) {
+          text.value = JSON.stringify(DEFAULT_THRESHOLDS[sel.value] || {}, null, 2);
+        }
+      });
+    });
+    alertRowsEl.querySelectorAll("input,select,textarea").forEach(function(el) {
+      el.addEventListener("change", updateSummary);
+      el.addEventListener("input", updateSummary);
+    });
+    alertRowsEl.querySelectorAll("[data-setting-action]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        handleSettingRowAction(btn.getAttribute("data-setting-action"), btn.closest("tr"));
+      });
+    });
+    updateSummary();
+  }
+
+  function normalizeSettingsRows(rows) {
+    var out = Array.isArray(rows) ? rows.slice() : [];
+    var existing = {};
+    out.forEach(function(row) {
+      existing[(row.station_uid || "*") + "|" + (row.alert_key || "")] = true;
+    });
+    ALERT_KEYS.forEach(function(alertKey) {
+      var key = "*|" + alertKey;
+      if (existing[key]) return;
+      out.push({
+        station_uid: "*",
+        station_name: "Fleet default",
+        alert_key: alertKey,
+        enabled: true,
+        warning_enabled: true,
+        critical_enabled: true,
+        delivery_channel: "slack",
+        suppress_until: "",
+        thresholds: DEFAULT_THRESHOLDS[alertKey] || {},
+        notes: "Fleet default"
+      });
+    });
+    return out;
+  }
+
+  function isCurrentAlertSilenced(row) {
+    return row && (row.silenced === true || row.muted === true || row.delivery_channel === "disabled" || row.enabled === false);
+  }
+
+  function currentAlertIdentity(row) {
+    row = row || {};
+    var details = row.details_json || {};
+    return [
+      row.station_uid || "",
+      row.alert_key || "",
+      row.slot_number == null ? "_" : String(row.slot_number),
+      details.alert_detail_key || details.sensor_key || ""
+    ].join("|");
+  }
+
+  function currentAlertNotifyLabel(row) {
+    return isCurrentAlertSilenced(row) ? "\uD83D\uDD15 Silenced" : "\uD83D\uDD14 Notify";
+  }
+
+  function currentAlertNotifyAction(row) {
+    return isCurrentAlertSilenced(row) ? "unsilence" : "silence";
+  }
+
+  function mergeLocalCurrentAlertState(rows) {
+    var out = Array.isArray(rows) ? rows.slice() : [];
+    var seen = {};
+    out = out.map(function(row) {
+      var key = currentAlertIdentity(row);
+      seen[key] = true;
+      if (locallySilencedCurrentAlerts[key]) {
+        return Object.assign({}, row, { silenced: true, silence_reason: "silenced" });
+      }
+      return row;
+    });
+    Object.keys(locallySilencedCurrentAlerts).forEach(function(key) {
+      if (!seen[key]) out.push(locallySilencedCurrentAlerts[key]);
+    });
+    return out;
+  }
+
+  function currentAlertSortValue(row, key) {
+    if (key === "severity") return row.severity === "critical" ? 2 : row.severity === "warning" ? 1 : 0;
+    if (key === "station") return String(row.station_name || row.station_uid || "").toLowerCase();
+    if (key === "alert") return String(ALERT_LABELS[row.alert_key] || row.alert_key || "").toLowerCase();
+    if (key === "slot") return row.slot_number == null ? -1 : Number(row.slot_number);
+    if (key === "value") return String(row.value_text || "").toLowerCase();
+    if (key === "threshold") return String(row.threshold_text || "").toLowerCase();
+    if (key === "silenced") return isCurrentAlertSilenced(row) ? 1 : 0;
+    return "";
+  }
+
+  function sortedCurrentAlerts(rows) {
+    var out = Array.isArray(rows) ? rows.slice() : [];
+    var key = currentAlertSort.key;
+    var dir = currentAlertSort.dir === "asc" ? 1 : -1;
+    out.sort(function(a, b) {
+      var av = currentAlertSortValue(a, key);
+      var bv = currentAlertSortValue(b, key);
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+    return out;
+  }
+
+  function renderCurrentAlerts(rows) {
+    currentAlerts = Array.isArray(rows) ? rows : [];
+    if (!currentAlerts.length) {
+      emptyCurrentAlertRow("No current alert conditions.");
+      currentAlertStatus.textContent = "No active computed alerts.";
+      updateSummary();
+      return;
+    }
+    var displayRows = sortedCurrentAlerts(currentAlerts);
+    currentAlertRowsEl.innerHTML = displayRows.map(function(row, idx) {
+      var severity = row.severity || "warning";
+      var pillClass = severity === "critical" ? "pill-bad" : "pill-warn";
+      var slot = row.slot_number == null ? "--" : String(row.slot_number);
+      var silenced = isCurrentAlertSilenced(row);
+      return '<tr>' +
+        '<td><span class="pill ' + pillClass + '">' + html(severity) + '</span></td>' +
+        '<td><div class="cell-main">' + html(row.station_name || row.station_uid || "--") + '</div><div class="cell-sub">' + html(row.station_uid || "") + '</div></td>' +
+        '<td>' + html(ALERT_LABELS[row.alert_key] || row.alert_key || "--") + '</td>' +
+        '<td>' + html(slot) + '</td>' +
+        '<td>' + html(row.value_text || "--") + '</td>' +
+        '<td>' + html(row.threshold_text || "--") + '</td>' +
+        '<td><button class="btn btn-small ' + (silenced ? "" : "btn-danger") + '" type="button" data-alert-action="' + currentAlertNotifyAction(row) + '" data-alert-index="' + idx + '">' + currentAlertNotifyLabel(row) + '</button></td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-small" type="button" data-alert-action="suppress24" data-alert-index="' + idx + '">Suppress 24h</button>' +
+          '<button class="btn btn-small" type="button" data-alert-action="suppressUntil" data-alert-index="' + idx + '">Until...</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join("");
+    currentAlertRowsEl.querySelectorAll("[data-alert-action]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        handleCurrentAlertAction(btn.getAttribute("data-alert-action"), displayRows[Number(btn.getAttribute("data-alert-index"))]);
+      });
+    });
+    var critical = currentAlerts.filter(function(row) { return row.severity === "critical"; }).length;
+    var warning = currentAlerts.filter(function(row) { return row.severity === "warning"; }).length;
+    currentAlertStatus.textContent = critical + " critical, " + warning + " warning.";
+    updateSummary();
+  }
+
+  function findExistingSetting(rows, stationUid, alertKey) {
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].station_uid === stationUid && rows[i].alert_key === alertKey) return rows[i];
+    }
+    return null;
+  }
+
+  function mergeAlertOverride(alert, patch) {
+    var rows = collectRows();
+    var stationUid = alert && alert.station_uid;
+    var alertKey = alert && alert.alert_key;
+    if (!stationUid || !alertKey) throw new Error("Current alert is missing station or alert key");
+    var existing = findExistingSetting(rows, stationUid, alertKey);
+    var baseThresholds = (alert.details_json && alert.details_json.thresholds) || DEFAULT_THRESHOLDS[alertKey] || {};
+    if (!existing) {
+      existing = {
+        station_uid: stationUid,
+        alert_key: alertKey,
+        enabled: true,
+        warning_enabled: true,
+        critical_enabled: true,
+        delivery_channel: "slack",
+        suppress_until: "",
+        thresholds: baseThresholds,
+        notes: ""
+      };
+      rows.push(existing);
+    }
+    Object.keys(patch).forEach(function(key) { existing[key] = patch[key]; });
+    return rows;
+  }
+
+  async function pushActionRows(rows, successText, afterSuccess) {
+    var password = SeaweedV4.sessionAdminPassword();
+    if (!password) {
+      password = prompt("Admin session password not available. Enter it once, or sign out and back in.");
+      if (!password) return;
+      SeaweedV4.rememberSessionAdminPassword(password);
+    }
+    pushStatus.textContent = "Pushing alert action...";
+    try {
+      await SeaweedV4.pushV4AlertSettings(rows, password);
+      if (typeof afterSuccess === "function") afterSuccess();
+      pushStatus.textContent = successText;
+      await loadAlerts();
+    } catch (err) {
+      pushStatus.textContent = err.message || String(err);
+    }
+  }
+
+  function localDateTimeToIso(value) {
+    if (!value) return "";
+    var d = new Date(value);
+    return isNaN(d.getTime()) ? "" : d.toISOString();
+  }
+
+  function handleCurrentAlertAction(action, alert) {
+    if (!alert) return;
+    var label = (alert.station_name || alert.station_uid || "station") + " / " + (ALERT_LABELS[alert.alert_key] || alert.alert_key);
+    if (action === "suppress24") {
+      var until = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      return pushActionRows(mergeAlertOverride(alert, {
+        enabled: true,
+        delivery_channel: "slack",
+        suppress_until: until,
+        notes: "Suppressed for 24 hours from Current Alerts"
+      }), "Suppressed " + label + " for 24 hours.");
+    }
+    if (action === "suppressUntil") {
+      var raw = prompt("Suppress until local time (YYYY-MM-DDTHH:mm)", "");
+      var iso = localDateTimeToIso(raw);
+      if (!iso) {
+        pushStatus.textContent = raw ? "Suppress time was not valid." : "";
+        return;
+      }
+      return pushActionRows(mergeAlertOverride(alert, {
+        enabled: true,
+        delivery_channel: "slack",
+        suppress_until: iso,
+        notes: "Suppressed until " + iso + " from Current Alerts"
+      }), "Suppressed " + label + " until " + iso + ".");
+    }
+    if (action === "silence") {
+      if (!confirm("Silence " + label + " until you manually unsilence it in Alert Settings?")) return;
+      var silenceKey = currentAlertIdentity(alert);
+      return pushActionRows(mergeAlertOverride(alert, {
+        enabled: false,
+        warning_enabled: false,
+        critical_enabled: false,
+        delivery_channel: "disabled",
+        suppress_until: "",
+        notes: "Silenced from Current Alerts"
+      }), "Silenced " + label + " until manually unsilenced.", function() {
+        locallySilencedCurrentAlerts[silenceKey] = Object.assign({}, alert, {
+          silenced: true,
+          silence_reason: "silenced"
+        });
+      });
+    }
+    if (action === "unsilence") {
+      var unsilenceKey = currentAlertIdentity(alert);
+      return pushActionRows(mergeAlertOverride(alert, {
+        enabled: true,
+        warning_enabled: true,
+        critical_enabled: true,
+        delivery_channel: "slack",
+        suppress_until: "",
+        notes: "Unsilenced from Current Alerts"
+      }), "Unsilenced " + label + ".", function() {
+        delete locallySilencedCurrentAlerts[unsilenceKey];
+      });
+    }
+  }
+
+  function handleSettingRowAction(action, tr) {
+    if (!tr || action !== "toggleSilence") return;
+    var enabled = tr.querySelector('[data-field="enabled"]');
+    var warning = tr.querySelector('[data-field="warning_enabled"]');
+    var critical = tr.querySelector('[data-field="critical_enabled"]');
+    var suppressUntil = tr.querySelector('[data-field="suppress_until"]');
+    var notes = tr.querySelector('[data-field="notes"]');
+    var shouldUnsilence = enabled && !enabled.checked;
+    if (enabled) enabled.checked = shouldUnsilence;
+    if (warning) warning.checked = shouldUnsilence;
+    if (critical) critical.checked = shouldUnsilence;
+    if (suppressUntil && shouldUnsilence) suppressUntil.value = "";
+    if (notes && !notes.value) notes.value = shouldUnsilence ? "Unsilenced in Alert Settings" : "Silenced in Alert Settings";
+    renderRows(collectRows());
+  }
+
+  function collectRows() {
+    var seen = {};
+    var rows = [];
+    alertRowsEl.querySelectorAll("tr[data-alert-row]").forEach(function(tr) {
+      var get = function(name) { return tr.querySelector('[data-field="' + name + '"]'); };
+      var stationUid = get("station_uid").value || "*";
+      var alertKey = get("alert_key").value || "upload_freshness";
+      var key = stationUid + "|" + alertKey;
+      if (seen[key]) return;
+      seen[key] = true;
+      var thresholds = {};
+      try {
+        thresholds = JSON.parse(get("thresholds").value || "{}");
+      } catch (err) {
+        throw new Error(ALERT_LABELS[alertKey] + " thresholds are not valid JSON");
+      }
+      rows.push({
+        station_uid: stationUid,
+        alert_key: alertKey,
+        enabled: get("enabled").checked,
+        warning_enabled: get("warning_enabled").checked,
+        critical_enabled: get("critical_enabled").checked,
+        delivery_channel: get("enabled").checked ? "slack" : "disabled",
+        suppress_until: fromDateTimeLocal(get("suppress_until").value),
+        thresholds: thresholds,
+        notes: get("notes").value || ""
+      });
+    });
+    return rows;
+  }
+
+  function updateSummary() {
+    var rows = [];
+    try { rows = collectRows(); } catch (_) {}
+    var now = Date.now();
+    document.getElementById("summaryRows").textContent = String(rows.length || 0);
+    document.getElementById("summaryEnabled").textContent = String(rows.filter(function(row) { return row.enabled; }).length);
+    document.getElementById("summaryCurrentAlerts").textContent = String(currentAlerts.length || 0);
+    document.getElementById("summarySuppressed").textContent = String(rows.filter(function(row) {
+      return row.suppress_until && new Date(row.suppress_until).getTime() > now;
+    }).length);
+  }
+
+  function addOverride() {
+    var stationUid = stations.length ? stations[0].station_uid : "*";
+    var rows = collectRows();
+    rows.push({
+      station_uid: stationUid,
+      alert_key: "upload_freshness",
+      enabled: true,
+      warning_enabled: true,
+      critical_enabled: true,
+      delivery_channel: "slack",
+      suppress_until: "",
+      thresholds: DEFAULT_THRESHOLDS.upload_freshness,
+      notes: "Station override"
+    });
+    renderRows(rows);
+  }
+
+  async function loadAlerts() {
+    alertStatus.textContent = "Loading alert settings...";
+    currentAlertStatus.textContent = "Computing current alerts...";
+    pushStatus.textContent = "";
+    try {
+      var payload = await SeaweedV4.fetchV4AlertOverview();
+      var settings = payload && payload.settings ? payload.settings : payload;
+      stations = Array.isArray(settings && settings.stations) ? settings.stations.filter(function(row) { return row.active !== false; }) : [];
+      renderRows(settings && settings.rows);
+      renderCurrentAlerts(mergeLocalCurrentAlertState(payload && (payload.current_alerts || payload.alerts)));
+      alertStatus.textContent = "Loaded " + (settings && settings.rows ? settings.rows.length : 0) + " rows.";
+    } catch (err) {
+      emptyRow(err.message || String(err));
+      emptyCurrentAlertRow("Current alerts unavailable.");
+      alertStatus.textContent = "Alert settings unavailable.";
+      currentAlertStatus.textContent = "Current alerts unavailable.";
+    }
+  }
+
+  async function pushAlerts() {
+    if (!confirm("Push alert setting changes?")) return;
+    var password = SeaweedV4.sessionAdminPassword();
+    if (!password) {
+      password = prompt("Admin session password not available. Enter it once, or sign out and back in.");
+      if (!password) return;
+      SeaweedV4.rememberSessionAdminPassword(password);
+    }
+    pushStatus.textContent = "Pushing alert settings...";
+    try {
+      var payload = await SeaweedV4.pushV4AlertSettings(collectRows(), password);
+      stations = Array.isArray(payload && payload.stations) ? payload.stations.filter(function(row) { return row.active !== false; }) : stations;
+      renderRows(payload && payload.rows);
+      pushStatus.textContent = "Alert settings pushed.";
+      alertStatus.textContent = "Loaded " + (payload && payload.rows ? payload.rows.length : 0) + " rows.";
+      await loadAlerts();
+    } catch (err) {
+      pushStatus.textContent = err.message || String(err);
+    }
+  }
+
+  async function sendTestAlert() {
+    var secret = sessionStorage.getItem(TEST_SECRET_KEY) || "";
+    if (!secret) {
+      secret = prompt("Alert dispatch secret for Slack test");
+      if (!secret) return;
+      sessionStorage.setItem(TEST_SECRET_KEY, secret.trim());
+    }
+    testStatus.textContent = "Sending Slack test...";
+    try {
+      var result = await SeaweedV4.sendV4AlertTest(secret);
+      testStatus.textContent = result && result.test_sent ? "Slack test sent." : "Slack test response received.";
+    } catch (err) {
+      if ((err.message || "").toLowerCase().indexOf("unauthorized") !== -1) {
+        sessionStorage.removeItem(TEST_SECRET_KEY);
+        testStatus.textContent = "Test secret rejected. Click again and re-enter it.";
+      } else {
+        testStatus.textContent = err.message || String(err);
+      }
+    }
+  }
+
+  SeaweedV4Page.ready(function() {
+    SeaweedV4Page.boot().then(loadAlerts);
+    document.querySelectorAll("[data-current-sort]").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var key = btn.getAttribute("data-current-sort");
+        if (currentAlertSort.key === key) {
+          currentAlertSort.dir = currentAlertSort.dir === "asc" ? "desc" : "asc";
+        } else {
+          currentAlertSort.key = key;
+          currentAlertSort.dir = key === "severity" ? "desc" : "asc";
+        }
+        renderCurrentAlerts(currentAlerts);
+      });
+    });
+    document.getElementById("reloadBtn").addEventListener("click", loadAlerts);
+    document.getElementById("addOverrideBtn").addEventListener("click", addOverride);
+    document.getElementById("testSlackBtn").addEventListener("click", sendTestAlert);
+    document.getElementById("pushBtn").addEventListener("click", pushAlerts);
+  });
+})();
+</script>
+</body>
+</html>

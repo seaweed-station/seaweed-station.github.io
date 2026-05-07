@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">Seaweed T/H Monitoring</title>
+
+<!-- Chart.js + Luxon date adapter (required for time-series axes) -->
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2/dist/chartjs-plugin-zoom.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="../pages/plot_core.js"></script>
+<script src="../pages/plot_overlays.js"></script>
+<script src="../pages/chart_manager.js"></script>
+
+<style>
+/* ===================================================================
+   CSS -- Dark monitoring dashboard theme  (unified template)
+   =================================================================== */
+:root {
+  --bg:          #eef8f5;
+  --bg-card:     #ffffff;
+  --bg-card-alt: #f2f8f6;
+  --bg-hover:    #e5f2ee;
+  --text:        #12362f;
+  --text-sec:    #457c72;
+  --text-muted:  #6d8f88;
+  --accent:      #2f89b7;
+  --accent-dim:  #2a7ea7;
+  --success:     #1f9d6c;
+  --success-dim: #dff5eb;
+  --warning:     #d0892d;
+  --warning-dim: #fff1dd;
+  --danger:      #d04f5f;
+  --danger-dim:  #ffe4e8;
+  --border:      #bfded6;
+  --radius:      10px;
+  --shadow:      0 4px 14px rgba(25, 81, 77, 0.10);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  background: linear-gradient(180deg, #e8f5f1 0%, #f5fbf9 100%);
+  color: var(--text);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* -- Header --------------------------------------------------------- */
+.header {
+  background: linear-gradient(135deg, #d9f0e9 0%, #dbeef8 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 240px;
+}
+.header-left h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: -0.02em; }
+.header-left .sub { font-size: 0.75rem; color: var(--text-sec); margin-top: -2px; }
+.header-left .wave { font-size: 1.5rem; }
+.header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.header-meta {
+  font-size: 0.78rem;
+  color: var(--text-sec);
+  width: 100%;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+.header-meta .label { color: var(--text-muted); }
+
+/* -- Buttons -------------------------------------------------------- */
+.btn {
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+.btn-primary { background: var(--accent-dim); border-color: var(--accent); }
+.btn-primary:hover { background: var(--accent); }
+.btn-sm { padding: 4px 12px; font-size: 0.75rem; }
+.btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* -- Main container ------------------------------------------------- */
+.main {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* -- Network At-A-Glance Bar --------------------------------------- */
+.network-bar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+.net-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  flex: 1;
+  min-width: 180px;
+}
+.net-chip .chip-dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.net-chip .chip-label { font-size: 0.78rem; color: var(--text-sec); }
+.net-chip .chip-value { font-size: 0.95rem; font-weight: 600; }
+.net-chip .chip-detail { font-size: 0.7rem; color: var(--text-muted); }
+
+/* -- Freshness banner ---------------------------------------------- */
+.freshness-banner {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+.freshness-banner.show { display: flex; }
+.freshness-banner.fresh { background: var(--success-dim); border: 1px solid var(--success); }
+.freshness-banner.stale { background: var(--warning-dim); border: 1px solid var(--warning); }
+.freshness-banner.old   { background: var(--danger-dim);  border: 1px solid var(--danger); }
+.freshness-banner.paused { background: #edf2f0; border: 1px solid #9fb6af; }
+.next-check-pill {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  margin-left: 6px;
+}
+.next-check-pill.good { background: var(--success-dim); color: var(--success); border-color: var(--success); }
+.next-check-pill.warn { background: var(--warning-dim); color: var(--warning); border-color: var(--warning); }
+.next-check-pill.late { background: var(--danger-dim); color: var(--danger); border-color: var(--danger); }
+.next-check-pill.unknown { background: var(--bg); color: var(--text-muted); border-color: var(--border); }
+.next-check-pill.paused { background: #f2f5f4; color: var(--text-sec); border-color: #9fb6af; }
+
+/* -- Sensor placement map ------------------------------------------ */
+.sensor-map-panel { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.sensor-map-toggle {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; background: none; border: none; color: var(--text-muted);
+  font-size: 0.82rem; font-weight: 600; cursor: pointer; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sensor-map-toggle:hover { color: var(--text); }
+.sensor-map-chevron { font-size: 0.75rem; transition: transform 0.2s; color: var(--text-muted); }
+.sensor-map-chevron.open { transform: rotate(180deg); }
+.sensor-map-body { border-top: 1px solid var(--border); }
+.sensor-map-inner { padding: 14px 20px 18px; }
+.sensor-map-layout { display: grid; grid-template-columns: minmax(420px, 1fr) 320px; gap: 14px; align-items: start; }
+.sensor-map-figure { min-width: 0; }
+.rack-svg { width: 100%; max-width: 760px; display: block; margin: 0 auto 14px; }
+.sensor-map-legend { display: flex; flex-wrap: wrap; gap: 10px 22px; justify-content: center; }
+.sml-item { display: flex; align-items: center; gap: 7px; font-size: 0.8rem; font-weight: 600; }
+.sml-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.sensor-mini-map-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card-alt);
+  padding: 8px;
+}
+.sensor-mini-map-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.sensor-mini-map-title { font-size: 0.76rem; color: var(--text-sec); font-weight: 600; }
+.sensor-mini-map-expand {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  width: 24px;
+  height: 24px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.sensor-mini-map-expand:hover { color: var(--accent); border-color: var(--accent); }
+.sensor-mini-map { height: 220px; border-radius: 7px; overflow: hidden; border: 1px solid var(--border); }
+.sensor-mini-map-note { font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; }
+
+.sensor-map-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 9200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.sensor-map-modal {
+  width: min(1000px, calc(100vw - 40px));
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+.sensor-map-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.sensor-map-modal-title { font-size: 0.95rem; color: var(--text); font-weight: 600; }
+.sensor-map-modal-close {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.sensor-map-modal-close:hover { background: var(--bg-hover); color: var(--text); }
+.sensor-map-modal-canvas { height: min(70vh, 560px); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+
+/* -- Status cards grid --------------------------------------------- */
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.status-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.status-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--border);
+}
+.status-card.ok::before    { background: var(--success); }
+.status-card.warn::before  { background: var(--warning); }
+.status-card.error::before { background: var(--danger); }
+.status-card.nc::before    { background: var(--text-muted); }
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.card-header h3 {
+  font-size: 0.85rem; color: var(--text-sec);
+  text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500;
+}
+.card-badge {
+  font-size: 0.65rem; padding: 2px 8px; border-radius: 10px;
+  text-transform: uppercase; font-weight: 600; letter-spacing: 0.04em;
+}
+.badge-ok    { background: var(--success-dim); color: var(--success); }
+.badge-warn  { background: var(--warning-dim); color: var(--warning); }
+.badge-error { background: var(--danger-dim);  color: var(--danger); }
+.badge-nc    { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+
+.big-number { font-size: 2.2rem; font-weight: 700; line-height: 1.1; margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+.big-label  { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 14px; }
+
+.sensor-readings { display: flex; gap: 18px; margin-bottom: 10px; }
+.reading-block { flex: 1; }
+
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.detail-label { font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.detail-value { font-size: 0.9rem; font-weight: 500; font-variant-numeric: tabular-nums; }
+.detail-value.warn-text  { color: var(--warning); }
+.detail-value.error-text { color: var(--danger); }
+.detail-value.ok-text    { color: var(--success); }
+.detail-value.nc-text    { color: var(--text-muted); }
+
+.card-footer {
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border);
+  font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dot-green { background: var(--success); }
+.dot-amber { background: var(--warning); }
+.dot-red   { background: var(--danger); }
+.dot-grey  { background: var(--text-muted); }
+
+/* -- Chart panels -------------------------------------------------- */
+.chart-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+.chart-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 4px; flex-wrap: wrap; gap: 8px;
+}
+.chart-header h3 { font-size: 1rem; font-weight: 600; }
+.chart-subhead { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
+.time-btns { display: flex; gap: 4px; }
+.shared-range-controls {
+  margin-left: auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.chart-header-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chart-card-expand-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.chart-card-expand-btn:hover { color: var(--accent); border-color: var(--accent); background: var(--bg-hover); }
+.chart-wrap { position: relative; height: 320px; }
+.chart-expand-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+  z-index: 2;
+}
+.chart-wrap:hover .chart-expand-btn { opacity: 1; }
+.chart-expand-btn:hover { color: var(--accent); border-color: var(--accent); }
+.chart-empty {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 0.9rem;
+  pointer-events: none; text-align: center; padding: 20px;
+}
+.weather-chart-card { display: flex; flex-direction: column; gap: 8px; }
+.weather-chart-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-sec);
+  text-align: center;
+}
+.two-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+/* -- Battery Forecast info cards ----------------------------------- */
+.fc-info-chip {
+  display: inline-block; border: 1px solid; border-radius: 20px;
+  padding: 2px 12px; font-size: 0.72rem; margin: 2px 4px 6px 0;
+}
+.fc-cards {
+  display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;
+}
+.fc-card {
+  flex: 1 1 130px; max-width: 180px;
+  background: var(--bg-card-alt); border-radius: 8px; padding: 10px 12px;
+}
+.fc-card-sm { flex: 0 1 140px; max-width: 160px; }
+.fc-card-label { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 2px; }
+.fc-card-value { font-size: 1.35rem; font-weight: 700; line-height: 1.2; }
+.fc-card-unit  { font-size: 0.7rem; font-weight: 400; }
+.fc-card-sub   { font-size: 0.68rem; color: var(--text-muted); }
+
+/* -- Health panel -------------------------------------------------- */
+.health-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+.health-panel h3 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.health-item { background: var(--bg); border-radius: 8px; padding: 12px 14px; }
+.health-item .h-label { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.health-item .h-value { font-size: 1.1rem; font-weight: 600; margin-top: 2px; }
+
+/* -- Daily peaks table --------------------------------------------- */
+.peaks-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  overflow-x: auto;
+}
+.peaks-panel h3 { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
+.peaks-panel .peaks-sub { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 12px; }
+.peaks-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.peaks-table th, .peaks-table td {
+  padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.peaks-table th {
+  color: var(--text-muted); font-weight: 500; text-transform: uppercase;
+  font-size: 0.7rem; letter-spacing: 0.04em; position: sticky; top: 0; background: var(--bg-card);
+}
+.peaks-table td:first-child, .peaks-table th:first-child { text-align: left; }
+.peaks-table tbody tr:hover { background: var(--bg-hover); }
+.peaks-nc { color: var(--text-muted); font-style: italic; }
+
+/* -- Loading / empty state ----------------------------------------- */
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-sec); }
+.empty-state h2 { font-size: 1.3rem; margin-bottom: 8px; color: var(--text); }
+.empty-state p { font-size: 0.9rem; margin-bottom: 20px; max-width: 520px; margin-left: auto; margin-right: auto; }
+.spinner {
+  display: inline-block; width: 18px; height: 18px;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+  vertical-align: middle; margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* -- Footer -------------------------------------------------------- */
+.footer { text-align: center; padding: 20px; font-size: 0.75rem; color: var(--text-muted); }
+
+/* -- Diagnostics --------------------------------------------------- */
+.diag-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.diag-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-sec);
+}
+.diag-panel summary::-webkit-details-marker { display: none; }
+.diag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+.diag-item {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.diag-label {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.diag-value {
+  margin-top: 2px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-word;
+}
+.diag-value-warn { color: var(--warning); }
+.diag-value-error { color: var(--danger); }
+.diag-value-good { color: var(--success); }
+.diag-pill {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.diag-good { background: var(--success-dim); color: var(--success); }
+.diag-warn { background: var(--warning-dim); color: var(--warning); }
+.diag-error { background: var(--danger-dim); color: var(--danger); }
+.diag-muted { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
+.diag-message {
+  margin: 0 16px 16px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.76rem;
+}
+.diag-message-note {
+  background: var(--bg);
+  color: var(--text-sec);
+}
+.diag-message-error {
+  background: var(--danger-dim);
+  color: var(--danger);
+}
+
+/* -- Print --------------------------------------------------------- */
+@media print {
+  body { background: #fff; color: #000; }
+  .header { background: #f8f8f8; }
+  .status-card, .chart-panel, .health-panel, .peaks-panel { box-shadow: none; border-color: #ddd; background: #fff; }
+  .btn, .header-actions { display: none !important; }
+}
+
+/* -- Responsive ---------------------------------------------------- */
+@media (max-width: 900px) { .two-charts { grid-template-columns: 1fr; } }
+@media (max-width: 768px) {
+  .header { padding: 12px 16px; }
+  .header-left h1 { font-size: 1.05rem; }
+  .main { padding: 12px; gap: 12px; }
+  .status-grid { grid-template-columns: 1fr; }
+  .chart-wrap { height: 260px; }
+  .big-number { font-size: 1.8rem; }
+  .network-bar { flex-direction: column; }
+  .sensor-map-layout { grid-template-columns: 1fr; }
+  .sensor-mini-map { height: 200px; }
+}
+
+/* -- Tides & Moon Phase -------------------------------------------- */
+.tide-moon-row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; padding:12px 0; }
+#moonInfo { display:flex; align-items:center; gap:10px; }
+#moonDetails { display:flex; gap:12px; flex-wrap:wrap; }
+.moon-next { display:flex; flex-direction:column; gap:1px; background:var(--card); padding:6px 12px; border-radius:8px; font-size:0.8rem; }
+.mn-label { color:var(--text-muted); font-size:0.7rem; text-transform:uppercase; letter-spacing:0.5px; }
+.mn-date { font-weight:600; }
+.harvest-info { display:flex; align-items:center; gap:10px; border-radius:8px; padding:10px 14px; font-size:0.85rem; color:var(--text-sec); margin:6px 0 10px; }
+.harvest-info.harvest-active { background:#22c55e18; border:1px solid #22c55e44; }
+.harvest-info.harvest-upcoming { background:#3b82f610; border:1px solid #3b82f633; }
+.harvest-icon { font-size:1.5rem; }
+.harvest-calendar { display:flex; gap:16px; flex-wrap:wrap; padding:4px 0; }
+.cal-month {
+  flex:1;
+  min-width:230px;
+  background:rgba(255,255,255,0.55);
+  border:1px solid rgba(148,163,184,0.18);
+  border-radius:12px;
+  padding:12px 12px 10px;
+  box-shadow:0 1px 0 rgba(255,255,255,0.55) inset;
+}
+.cal-title { font-weight:700; font-size:0.85rem; margin-bottom:8px; color:var(--text); }
+.cal-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px 2px; }
+.cal-dow { font-size:0.65rem; color:var(--text-muted); text-align:center; padding:2px 0; font-weight:600; }
+.cal-day { font-size:0.75rem; text-align:center; padding:5px 2px; border-radius:4px; cursor:default; color:var(--text-sec); position:relative; }
+.cal-day.harvest { background:rgba(34,197,94,0.18); color:#22c55e; font-weight:700; }
+.cal-day.today { outline:2px solid var(--accent); outline-offset:-1px; font-weight:700; color:var(--text); }
+.cal-day.moon { color:#fbbf24; }
+.cal-day .moon-icon { font-size:0.55rem; position:absolute; top:-1px; right:1px; line-height:1; }
+.cal-day.empty { background:transparent; }
+.low-tide-table { width:100%; border-collapse:collapse; font-size:0.8rem; margin-top:6px; }
+.low-tide-table th { text-align:left; color:var(--text-muted); font-weight:600; padding:5px 8px; border-bottom:1px solid var(--border); font-size:0.72rem; text-transform:uppercase; letter-spacing:0.5px; }
+.low-tide-table td { padding:5px 8px; border-bottom:1px solid var(--border); }
+@media (max-width:768px) { .harvest-calendar { flex-direction:column; } .cal-month { padding:10px; } }
+
+/* -- Collapsible sections ---------------------------------------- */
+.collapsible-section{margin-bottom:12px}
+.collapsible-toggle{width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:1rem;font-weight:600;padding:10px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:background .2s}
+.collapsible-toggle:hover{background:var(--bg-hover)}
+.collapsible-chevron{font-size:.7rem;transition:transform .3s}
+.collapsible-body{padding-top:6px}
+.stack-gap{margin-bottom:12px}
+
+/* -- Daily summary highlight classes ------------------------------ */
+.peaks-table td .hl-min{color:#38bdf8;font-weight:700}
+.peaks-table td .hl-avg{color:#22c55e;font-weight:700}
+.peaks-table td .hl-max{color:#ef4444;font-weight:700}
+
+/* -- Health link bar ---------------------------------------------- */
+.health-link-bar{text-align:center;padding:18px 0;margin:12px 0;border:1px dashed var(--border);border-radius:8px;font-size:.95rem}
+
+/* -- Table configuration ------------------------------------------ */
+.table-config-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
+.table-config-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.table-config-head h3{font-size:1rem;font-weight:600;margin:0}
+.table-config-status{color:var(--text-sec);font-size:.78rem}
+.table-config-status.good{color:var(--success)}
+.table-config-status.warn{color:var(--warning)}
+.table-config-status.bad{color:var(--danger)}
+.table-config-editor{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card-alt);margin:10px 0}
+.table-config-editor label{display:flex;flex-direction:column;gap:4px;color:var(--text-sec);font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
+.table-config-editor input,.table-config-editor select{min-height:32px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);padding:6px 8px;font:inherit}
+.table-config-actions{display:flex;gap:6px;flex-wrap:wrap}
+.table-config-table{width:100%;border-collapse:collapse;font-size:.82rem;min-width:850px}
+.table-config-table th,.table-config-table td{border-bottom:1px solid var(--border);padding:8px 9px;text-align:left;vertical-align:middle}
+.table-config-table th{background:var(--bg-card-alt);color:var(--text-sec);font-size:.68rem;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.table-config-table tr.tc-active td{background:rgba(31,157,108,.08)}
+.tc-badge{border:1px solid var(--border);border-radius:999px;display:inline-flex;font-size:.72rem;font-weight:700;line-height:1;padding:4px 8px;white-space:nowrap;background:#eef5f2;color:var(--text-sec)}
+.tc-badge.open{background:rgba(47,137,183,.12);border-color:rgba(47,137,183,.35);color:var(--accent)}
+.tc-badge.closed{background:var(--success-dim);border-color:#b9e6d4;color:var(--success)}
+.tc-badge.mid,.tc-badge.full{background:var(--warning-dim);border-color:#ead0a2;color:var(--warning)}
+.tc-badge.ongoing{background:var(--success-dim);border-color:#b9e6d4;color:var(--success)}
+.tc-empty{text-align:center;color:var(--text-muted);padding:22px!important}
+.tc-small{font-size:.72rem;color:var(--text-muted)}
+.tc-actions{display:flex;gap:6px;flex-wrap:wrap}
+.tc-danger{color:var(--danger)}
+.table-config-footer{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+</style>
+</head>
+<body>
+
+<!-- ===================================================================
+     HEADER
+     =================================================================== -->
+<header class="header">
+  <div class="header-left">
+    <span class="wave">&#127807;</span>
+    <div>
+      <h1 id="stationTitle">Station</h1>
+      <div class="sub" id="stationSubtitle">Seaweed Table T/H Monitoring</div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <a class="btn btn-sm" href="overview.html" title="All tables overview">&#9664; Overview</a>
+    <button class="btn btn-primary" id="btnFetch" onclick="fetchLiveData()">Fetch Live</button>
+    <button class="btn" id="btnExportCSV" onclick="exportCSV()" title="Export processed data as CSV" style="display:none">Export CSV</button>
+    <a class="btn btn-sm" href="settings.html" data-feature="settings">&#9881; Settings</a>
+    <a class="btn btn-sm" href="station_health.html" title="Battery, Sync, Data Health" data-feature="stationHealth">&#128267; Station Health</a>
+  </div>
+  <div class="header-meta">
+    <span><span class="label">Source:</span> <span id="dataSourceLabel">No data loaded</span></span>
+    <span><span class="label">Entries:</span> <span id="entryCountLabel">0</span></span>
+    <span><span class="label">Range:</span> <span id="dateRangeLabel">--</span></span>
+    <span><span class="label">Channel:</span> <span id="channelLabel">--</span></span>
+    <span><span class="label">Times shown in:</span> <span id="tzLabel">--</span></span>
+  </div>
+</header>
+
+<!-- ===================================================================
+     MAIN CONTENT
+     =================================================================== -->
+<main class="main">
+
+  <!-- Freshness banner -->
+  <div class="freshness-banner" id="freshnessBanner">
+    <span id="freshnessIcon"></span>
+    <span id="freshnessText"></span>
+    <span class="next-check-pill unknown" id="nextCheckLabel">Next check in: --</span>
+    <span style="margin-left:auto;font-size:0.75rem" id="autoRefreshLabel"></span>
+  </div>
+
+  <!-- Empty state (shown when no data loaded) -->
+  <div class="empty-state" id="emptyState">
+    <h2>No Data Loaded</h2>
+    <p>Click <strong>Fetch Live</strong> to pull data from Supabase.</p>
+    <button class="btn btn-primary" onclick="fetchLiveData()" style="margin-top:10px">Fetch Live Now</button>
+  </div>
+
+  <!-- Sensor Placement Map (populated per-station by JS) -->
+  <div class="sensor-map-panel" id="sensorMapPanel" style="display:none">
+    <button class="sensor-map-toggle" id="sensorMapToggle" onclick="toggleSensorMap()" aria-expanded="false">
+      <span>&#9741; Sensor Placement Reference</span>
+      <span class="sensor-map-chevron" id="sensorMapChevron">&#9660;</span>
+    </button>
+    <div class="sensor-map-body" id="sensorMapBody" style="display:none">
+      <div class="sensor-map-inner" id="sensorMapInner">
+        <!-- SVG injected by JS based on station config -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Dashboard content (hidden until data loaded) -->
+  <div id="dashboardContent" style="display:none">
+
+    <!-- Sensor Summary Cards -->
+    <section class="status-grid" id="sensorCards" style="margin-bottom:16px"></section>
+
+    <!-- Sensor Chart Overlay Controls -->
+    <div style="display:flex;align-items:center;gap:16px;padding:8px 14px;margin-bottom:8px;background:var(--bg-card);border-radius:8px;border:1px solid var(--border);flex-wrap:wrap">
+      <span style="color:var(--text-muted);font-size:0.75rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase">Chart overlays:</span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="ovNight" checked style="accent-color:#94a3b8;width:14px;height:14px" onchange="onSensorOptsChange()">
+        <span style="color:var(--text-sec);font-size:0.82rem">&#127769; Night/Day</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="ovHarvest" checked style="accent-color:#22c55e;width:14px;height:14px" onchange="onSensorOptsChange()">
+        <span style="color:#22c55e;font-size:0.82rem">&#127807; Harvest Windows</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="ovWx" style="accent-color:#f59e0b;width:14px;height:14px" onchange="onSensorOptsChange()">
+        <span style="color:#f59e0b;font-size:0.82rem">&#9729; Open-Meteo overlay</span>
+      </label>
+    </div>
+
+    <!-- -- Temperature Chart -------------------------------------- -->
+    <section class="chart-panel">
+      <div class="chart-header">
+        <h3>Temperature (&#176;C)</h3>
+        <div class="chart-header-right">
+          <div class="time-btns shared-range-controls">
+            <button class="btn btn-sm" data-range="day" onclick="setTimeRange('day')">Day</button>
+            <button class="btn btn-sm active" data-range="week" onclick="setTimeRange('week')">Week</button>
+            <button class="btn btn-sm" data-range="month" onclick="setTimeRange('month')">Month</button>
+            <button class="btn btn-sm" data-range="all" onclick="setTimeRange('all')">All</button>
+          </div>
+          <button class="chart-card-expand-btn" onclick="openSensorChartModal('temp')" title="Expand chart">&#10530;</button>
+        </div>
+      </div>
+      <div class="chart-subhead" id="tempSubhead">Showing: All data</div>
+      <div class="chart-wrap">
+        <canvas id="tempChart"></canvas>
+        <div class="chart-empty" id="tempEmpty">No temperature sensor data yet -- probes may not be connected</div>
+      </div>
+    </section>
+
+    <!-- -- Humidity Chart ----------------------------------------- -->
+    <section class="chart-panel stack-gap">
+      <div class="chart-header">
+        <h3>Humidity (%RH)</h3>
+        <div class="chart-header-right">
+          <div class="time-btns">
+            <button class="btn btn-sm" data-range="day" onclick="setTimeRange('day')">Day</button>
+            <button class="btn btn-sm active" data-range="week" onclick="setTimeRange('week')">Week</button>
+            <button class="btn btn-sm" data-range="month" onclick="setTimeRange('month')">Month</button>
+            <button class="btn btn-sm" data-range="all" onclick="setTimeRange('all')">All</button>
+          </div>
+          <button class="chart-card-expand-btn" onclick="openSensorChartModal('hum')" title="Expand chart">&#10530;</button>
+        </div>
+      </div>
+      <div class="chart-subhead" id="humSubhead">Showing: All data</div>
+      <div class="chart-wrap">
+        <canvas id="humChart"></canvas>
+        <div class="chart-empty" id="humEmpty">No humidity sensor data yet -- probes may not be connected</div>
+      </div>
+    </section>
+
+    <!-- -- Daily Summary Table ------------------------------------ -->
+    <section class="peaks-panel stack-gap" id="peaksPanel">
+      <h3>Daily Summary</h3>
+      <div class="peaks-sub" id="peaksSub">
+        Sensor min / avg / max per logged day &mdash; most recent first &mdash;
+        <span style="color:#38bdf8">&#9632; Lowest Min</span> &nbsp;
+        <span style="color:#22c55e">&#9632; Highest Avg</span> &nbsp;
+        <span style="color:#ef4444">&#9632; Highest Max</span>
+      </div>
+      <div class="chart-subhead" id="peaksPagerLabel">Showing latest 14 logged days</div>
+      <table class="peaks-table">
+        <thead id="peaksHead"></thead>
+        <tbody id="peaksBody"></tbody>
+      </table>
+      <button class="btn btn-sm" id="peaksLoadMoreBtn" style="margin-top:10px;width:100%;color:var(--text-muted);border-color:var(--border)"
+        onclick="loadMoreDailySummary()">Load next 14 days &darr;</button>
+    </section>
+
+    <!-- -- Local Weather (Open-Meteo) -- collapsible --------------- -->
+    <div class="collapsible-section" id="weatherCollapsible" style="display:none">
+    <button class="collapsible-toggle" onclick="toggleCollapsible('weatherCollapsible')">
+      &#127326; Local Weather (Open-Meteo)
+      <span class="collapsible-chevron">&#9660;</span>
+    </button>
+    <div class="collapsible-body" style="display:none">
+    <section class="chart-panel" id="weatherSection" style="display:block">
+      <div class="chart-header">
+        <span class="chart-subhead" id="weatherLocation" style="margin:0"></span>
+        <div class="time-btns">
+          <button class="btn btn-sm" data-wxrange="day" onclick="setWeatherTimeRange('day')">Day</button>
+          <button class="btn btn-sm active" data-wxrange="week" onclick="setWeatherTimeRange('week')">Week</button>
+          <button class="btn btn-sm" data-wxrange="month" onclick="setWeatherTimeRange('month')">Month</button>
+          <button class="btn btn-sm" data-wxrange="all" onclick="setWeatherTimeRange('all')">All</button>
+          <button class="btn btn-sm" data-wxrange="forecast" onclick="setWeatherTimeRange('forecast')">7-Day &#x2197;</button>
+        </div>
+      </div>
+      <div class="chart-subhead" id="weatherSubhead">Hourly weather from Open-Meteo</div>
+      <div class="two-charts" style="margin-top:8px">
+        <div class="weather-chart-card">
+          <div class="weather-chart-title">Temperature</div>
+          <div class="chart-wrap">
+            <canvas id="weatherTempChart"></canvas>
+          </div>
+        </div>
+        <div class="weather-chart-card">
+          <div class="weather-chart-title">Humidity</div>
+          <div class="chart-wrap">
+            <canvas id="weatherHumChart"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="two-charts" style="margin-top:8px">
+        <div class="weather-chart-card">
+          <div class="weather-chart-title">Precipitation</div>
+          <div class="chart-wrap">
+            <canvas id="weatherPrecipChart"></canvas>
+          </div>
+        </div>
+        <div class="weather-chart-card">
+          <div class="weather-chart-title">UV Index</div>
+          <div class="chart-wrap">
+            <canvas id="weatherUVChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+    </div><!-- /collapsible-body -->
+    </div><!-- /weatherCollapsible -->
+
+    <!-- -- Local Tides -- collapsible ------------------------------ -->
+    <div class="collapsible-section" id="tidesCollapsible" style="display:none">
+    <button class="collapsible-toggle" onclick="toggleCollapsible('tidesCollapsible')">
+      &#127754; Local Tides
+      <span class="collapsible-chevron">&#9660;</span>
+    </button>
+    <div class="collapsible-body" id="tidesCollapsibleBody" style="display:none">
+    <section class="chart-panel" id="tidesSection" style="display:block">
+      <div class="chart-header">
+        <span class="chart-subhead" id="tideStation" style="margin:0"></span>
+      </div>
+
+      <!-- Harvest threshold control -->
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;margin-bottom:12px;background:var(--bg-card-alt);border-radius:8px;border:1px solid var(--border);flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none">
+          <input type="checkbox" id="harvestThreshEnabled" checked style="accent-color:#22c55e;width:15px;height:15px" onchange="onHarvestCtrlChange()">
+          <span style="color:#22c55e;font-weight:600;font-size:0.85rem">&#127807; Show harvest</span>
+        </label>
+        <span style="color:var(--text-muted);font-size:0.82rem">when tide is below</span>
+        <input type="number" id="harvestThreshHeight" value="0.50" min="0" max="5" step="0.05"
+          style="width:64px;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 8px;font-size:0.85rem"
+          oninput="onHarvestCtrlChange()" onchange="onHarvestCtrlChange()">
+        <span style="color:var(--text-muted);font-size:0.82rem">m</span>
+      </div>
+
+      <!-- Moon info -->
+      <div class="tide-moon-row">
+        <div id="moonInfo"></div>
+        <div id="moonDetails"></div>
+      </div>
+
+      <!-- Harvest window banner -->
+      <div id="harvestInfo" class="harvest-info"></div>
+
+      <!-- 7-day detailed tide chart -->
+      <div class="chart-subhead">7-Day Tide Forecast <span style="display:inline-block;padding:1px 6px;border-radius:999px;background:rgba(34,197,94,0.18);border:1px solid rgba(34,197,94,0.45);color:#15803d;font-weight:700">Harvest window</span></div>
+      <div class="chart-wrap" style="height:290px">
+        <canvas id="tideChartDetail"></canvas>
+      </div>
+
+      <!-- 3-month overview -->
+      <div class="chart-subhead" style="margin-top:16px">3-Month Tide Overview &amp; Harvest Windows</div>
+      <div class="chart-wrap" style="height:250px">
+        <canvas id="tideChartOverview"></canvas>
+      </div>
+
+      <!-- Upcoming low tides table -->
+      <div class="chart-subhead" id="tideTableSubhead" style="margin-top:16px">Upcoming Low Tides (next 14 days)</div>
+      <table class="low-tide-table">
+        <thead><tr><th>Date</th><th>Time</th><th>Height</th><th></th></tr></thead>
+        <tbody id="lowTideTable"></tbody>
+      </table>
+      <button class="btn btn-sm" style="margin-top:10px;width:100%;color:var(--text-muted);border-color:var(--border)"
+        onclick="if(window.SeaweedTides)window.SeaweedTides.loadMoreTides()">Load next 14 days &darr;</button>
+
+      <!-- Harvest calendar -->
+      <div class="chart-subhead" style="margin-top:16px">Harvest Calendar (3 months)</div>
+      <div id="harvestCalendar" class="harvest-calendar"></div>
+    </section>
+    </div><!-- /collapsible-body -->
+    </div><!-- /tidesCollapsible -->
+
+    <!-- Battery / Sync / Drift / Health sections removed -->
+    <!-- See station_health.html for these metrics -->
+
+  </div> <!-- /dashboardContent -->
+
+  <!-- -- Table Configuration -- collapsible ------------------------ -->
+  <div class="collapsible-section" id="tableConfigCollapsible" style="display:none">
+  <button class="collapsible-toggle" onclick="toggleCollapsible('tableConfigCollapsible')">
+    &#9881; Table Configuration
+    <span class="collapsible-chevron">&#9660;</span>
+  </button>
+  <div class="collapsible-body" style="display:none">
+  <section class="table-config-panel" id="tableConfigSection">
+    <div class="table-config-head">
+      <h3>Table Configuration</h3>
+      <span id="tableConfigEditHint" class="chart-subhead" style="margin:0"></span>
+    </div>
+    <div class="table-config-editor" id="tableConfigEditor" style="display:none">
+      <label>Front Panel
+        <select id="tcFront">
+          <option value="Open">Open</option>
+          <option value="Closed">Closed</option>
+        </select>
+      </label>
+      <label>Rear Panel
+        <select id="tcRear">
+          <option value="Closed">Closed</option>
+          <option value="Mid">Mid</option>
+          <option value="Full Open">Full Open</option>
+        </select>
+      </label>
+      <label>Other Notes
+        <input type="text" id="tcOther" placeholder="Shade cloth, panel changes, sensor move">
+      </label>
+      <label>Date Start
+        <input type="date" id="tcStart">
+      </label>
+      <label>Date End
+        <input type="date" id="tcEnd">
+      </label>
+      <div class="table-config-actions">
+        <button class="btn btn-primary btn-sm" id="tcApplyBtn" type="button">Add Row</button>
+        <button class="btn btn-sm" id="tcCancelBtn" type="button" style="display:none">Cancel</button>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="table-config-table">
+        <thead><tr><th>#</th><th>Front Panel</th><th>Rear Panel</th><th>Other</th><th>Date Start</th><th>Date End</th><th>Applied</th><th>Actions</th></tr></thead>
+        <tbody id="tableConfigRows"></tbody>
+      </table>
+    </div>
+    <div class="table-config-footer">
+      <button class="btn btn-sm" id="tcRefreshBtn" type="button">Refresh</button>
+      <button class="btn btn-primary btn-sm" id="tcPushBtn" type="button">Push to V4 Supabase</button>
+      <button class="btn btn-sm" id="tcExportCsvBtn" type="button">Export CSV</button>
+      <button class="btn btn-sm" id="tcExportJsonBtn" type="button">Export JSON</button>
+      <button class="btn btn-sm" id="tcImportBtn" type="button">Import</button>
+      <input type="file" id="tcImportInput" accept=".csv,.json" style="display:none">
+      <span class="table-config-status" id="tableConfigStatus"></span>
+    </div>
+  </section>
+  </div><!-- /collapsible-body -->
+  </div><!-- /tableConfigCollapsible -->
+
+  <details class="diag-panel" id="stationDiagnosticsPanel"></details>
+
+</main>
+
+<div id="sensorChartModalOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:9000;display:none;align-items:center;justify-content:center;padding:20px;">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:18px 20px;width:calc(100vw - 40px);max-width:1400px;display:flex;flex-direction:column;gap:10px;box-shadow:0 24px 64px rgba(0,0,0,.7)">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <h3 id="sensorChartModalTitle" style="font-size:1rem;font-weight:600">Expanded Chart</h3>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-sm" data-scmrange="day" onclick="setSensorModalRange('day')">Day</button>
+        <button class="btn btn-sm active" data-scmrange="week" onclick="setSensorModalRange('week')">Week</button>
+        <button class="btn btn-sm" data-scmrange="month" onclick="setSensorModalRange('month')">Month</button>
+        <button class="btn btn-sm" data-scmrange="all" onclick="setSensorModalRange('all')">All</button>
+        <button class="btn btn-sm" onclick="closeSensorChartModal()">Close</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:8px 12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px">
+      <span style="color:var(--text-muted);font-size:0.72rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase">Chart overlays:</span>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="scmOvNight" checked style="accent-color:#94a3b8;width:14px;height:14px" onchange="onSensorModalOptsChange()">
+        <span style="color:var(--text-sec);font-size:0.82rem">&#127769; Night/Day</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="scmOvHarvest" checked style="accent-color:#22c55e;width:14px;height:14px" onchange="onSensorModalOptsChange()">
+        <span style="color:#22c55e;font-size:0.82rem">&#127807; Harvest Windows</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none">
+        <input type="checkbox" id="scmOvWx" style="accent-color:#f59e0b;width:14px;height:14px" onchange="onSensorModalOptsChange()">
+        <span style="color:#f59e0b;font-size:0.82rem">&#9729; Open-Meteo overlay</span>
+      </label>
+    </div>
+    <div style="font-size:.72rem;color:var(--text-muted)">Scroll: zoom, drag: pan, double-click: reset zoom</div>
+    <div style="position:relative;height:calc(100vh - 220px);max-height:580px;min-height:300px">
+      <canvas id="sensorChartModalCanvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="sensor-map-modal-overlay" id="sensorMapModalOverlay" onclick="closeSensorMapModal(event)">
+  <div class="sensor-map-modal">
+    <div class="sensor-map-modal-head">
+      <span class="sensor-map-modal-title" id="sensorMapModalTitle">Station Location</span>
+      <button class="sensor-map-modal-close" onclick="closeSensorMapModal(event)">Close</button>
+    </div>
+    <div class="sensor-map-modal-canvas" id="sensorMapModalCanvas"></div>
+  </div>
+</div>
+
+<footer class="footer">
+  <span id="footerName">Station</span>
+  <span id="footerChannel"></span>
+  &mdash; Seaweed Table T/H Monitoring
+</footer>
+
+<!-- ===================================================================
+     BOOT LOADER: resolves station config + weather_data.js
+     =================================================================== -->
+<!-- seaweed_common.js must load before bootLoader — STATION_REGISTRY is defined there -->
+<script src="js/catalog_provider_v4.js?v=20260506sharedmeta"></script>
+<script src="../pages/seaweed_common.js?v=20260504v4"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260506sharedmeta"></script>
+<script id="bootLoader">
+// Boot loader: reads ?table= param, injects data scripts
+(function(){
+  function buildWeatherLocation(name, lat, lon) {
+    var parsedLat = Number(lat);
+    var parsedLon = Number(lon);
+    if (!isFinite(parsedLat) || !isFinite(parsedLon)) return null;
+    return {
+      name: name || 'Station Weather',
+      lat: parsedLat,
+      lon: parsedLon
+    };
+  }
+
+  var params = new URLSearchParams(window.location.search);
+  var v4StationKey = params.get('station') || params.get('table') || '';
+  var v4Station = window.SW_V4_DASHBOARD ? window.SW_V4_DASHBOARD.findStation(v4StationKey) : null;
+  var tableId = (v4Station && v4Station.id) || params.get('table') || v4StationKey || 'tb-01';
+  window.__TABLE_ID = tableId;
+
+  // Station definitions — derived from STATION_REGISTRY (seaweed_common.js)
+  var STATIONS_DEFAULT = {};
+  STATION_REGISTRY.forEach(function(s) {
+    STATIONS_DEFAULT[s.id] = {
+      id: s.id,
+      title: s.name,
+      subtitle: s.location + ' -- Seaweed Table T/H Monitoring',
+      channelId: '',
+      apiKey: '',
+      dataFolder: s.dataFolder,
+      mapLat: s.lat,
+      mapLon: s.lon,
+      weather: buildWeatherLocation(s.weatherName || s.name, s.lat, s.lon),
+      tideStation: s.tideStation || 'kenya',
+      satellites: 2,
+      sensorMap: s.sensorMap || 'funzi'
+    };
+  });
+
+  function titleCaseDeviceId(id) {
+    return String(id || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+  }
+
+  function buildStationsFromConfig() {
+    var out = {};
+    var configured = null;
+    try {
+      var s = JSON.parse(localStorage.getItem('seaweed_dashboard_config') || '{}');
+      configured = Array.isArray(s.deviceProfiles) ? s.deviceProfiles : null;
+    } catch(e) {}
+
+    Object.keys(STATIONS_DEFAULT).forEach(function(id) {
+      out[id] = Object.assign({}, STATIONS_DEFAULT[id]);
+    });
+
+    if (configured && configured.length) {
+      configured.forEach(function(p) {
+        if (!p || !p.id) return;
+        var id = String(p.id).trim().toLowerCase();
+        if (!id) return;
+        if (p.enabled === false) {
+          delete out[id];
+          return;
+        }
+        var base = STATIONS_DEFAULT[id] || {
+          id: id,
+          title: titleCaseDeviceId(id),
+          subtitle: titleCaseDeviceId(id) + ' -- Seaweed Table T/H Monitoring',
+          channelId: '',
+          apiKey: '',
+          dataFolder: 'data_' + id,
+          mapLat: null,
+          mapLon: null,
+          weather: null,
+          tideStation: 'kenya',
+          satellites: 2,
+          sensorMap: 'funzi'
+        };
+        var merged = Object.assign({}, base);
+        if (p.name) {
+          merged.title = p.name;
+          merged.subtitle = p.name + ' -- Seaweed Table T/H Monitoring';
+        }
+        if (p.dataFolder) merged.dataFolder = String(p.dataFolder);
+        if (Object.prototype.hasOwnProperty.call(p, 'mapLat')) {
+          var rawLat = (p.mapLat === null || p.mapLat === undefined) ? '' : String(p.mapLat).trim();
+          var cfgLat = Number(rawLat);
+          merged.mapLat = (rawLat !== '' && isFinite(cfgLat)) ? cfgLat : null;
+        }
+        if (Object.prototype.hasOwnProperty.call(p, 'mapLon')) {
+          var rawLon = (p.mapLon === null || p.mapLon === undefined) ? '' : String(p.mapLon).trim();
+          var cfgLon = Number(rawLon);
+          merged.mapLon = (rawLon !== '' && isFinite(cfgLon)) ? cfgLon : null;
+        }
+        var weatherLabel = (base.weather && base.weather.name) ? base.weather.name : merged.title;
+        merged.weather = buildWeatherLocation(weatherLabel, merged.mapLat, merged.mapLon);
+        out[id] = merged;
+      });
+    }
+
+    return out;
+  }
+
+  var STATIONS = buildStationsFromConfig();
+
+  // Role-based station filtering: remove stations the current role cannot see
+  if (typeof filterStationsForRole === 'function') {
+    var allowedIds = filterStationsForRole(Object.keys(STATIONS).map(function(id) { return { id: id }; })).map(function(s) { return s.id; });
+    Object.keys(STATIONS).forEach(function(id) {
+      if (allowedIds.indexOf(id) === -1) delete STATIONS[id];
+    });
+  }
+
+  var stationIds = Object.keys(STATIONS);
+  if (!STATIONS[tableId]) {
+    var fallbackId = stationIds.length ? stationIds[0] : 'perth';
+    tableId = fallbackId;
+    window.__TABLE_ID = fallbackId;
+  }
+  var cfg = STATIONS[tableId] || STATIONS_DEFAULT.perth;
+
+  window.__STATIONS = STATIONS;
+  window.__STATION = cfg;
+
+  var _sharedProfilesStationReloaded = false;
+  if (typeof onSharedDeviceProfilesUpdated === 'function') {
+    onSharedDeviceProfilesUpdated(function(detail) {
+      if (!detail || !detail.changed || _sharedProfilesStationReloaded) return;
+      _sharedProfilesStationReloaded = true;
+      location.reload();
+    });
+  }
+
+  // merged_data.js injection removed — edge function is the sole data path
+})();
+</script>
+
+<!-- Shared utility libraries (seaweed_common.js loaded above bootLoader) -->
+<script src="../pages/seaweed_sync.js?v=20260504v4"></script>
+
+<!-- Battery prediction engine (shared) -->
+<script src="../pages/battery_model.js"></script>
+<script src="../pages/battery_forecast_widget.js"></script>
+
+<!-- Tide prediction engine (shared) -->
+<script src="../pages/tides.js"></script>
+
+<!-- Cached weather data -->
+<script>
+(function(){
+  function hasWeatherLocation(weather) {
+    return !!weather && isFinite(Number(weather.lat)) && isFinite(Number(weather.lon));
+  }
+
+  var df = window.__STATION ? window.__STATION.dataFolder : 'data_3262071_TT';
+  var weather = window.__STATION ? window.__STATION.weather : null;
+  if (window.SW_V4_DASHBOARD) return;
+  if (!/^[\w\-]+$/.test(df)) { console.warn('[Weather] Invalid dataFolder, skipping weather data'); df = null; }
+  if (df && hasWeatherLocation(weather)) document.write('<scr'+'ipt src="../data/'+df+'/weather_data.js" onerror="console.log(\'[Weather] No cached weather data\')"><\/scr'+'ipt>');
+})();
+</script>
+
+<!-- ================================================================= -->
+<!--     SECTION 3: CONFIGURATION, STATE, UTILITIES                    -->
+<!-- ================================================================= -->
+<script src="../pages/station_config.js"></script>
+
+<!-- ================================================================= -->
+<!--     SECTION 4: DATA PARSING + LOADING                             -->
+<!-- ================================================================= -->
+<script src="../pages/station_data.js?v=20260504v4d"></script>
+<script>
+if (window.SW_V4_DASHBOARD) window.SW_V4_DASHBOARD.installStationDataAdapter();
+</script>
+
+<!-- ================================================================= -->
+<!--     SECTION 5: RENDERING (status cards, network bar, header)      -->
+<!-- ================================================================= -->
+<script src="../pages/station_render.js"></script>
+
+<!-- ================================================================= -->
+<!--     SECTION 6: CHARTS + PLUGINS                                  -->
+<!-- ================================================================= -->
+<script src="../pages/station_charts.js"></script>
+
+<!-- ================================================================= -->
+<!--     SECTION 7: SYNC / DRIFT / WEATHER                            -->
+<!-- ================================================================= -->
+<script src="../pages/station_weather.js"></script>
+
+<!-- ================================================================= -->
+<!--     SECTION 7B: TABLE CONFIGURATION                              -->
+<!-- ================================================================= -->
+<script src="js/table_config_v4.js?v=20260505table"></script>
+
+<!-- ================================================================= -->
+<!--     SECTION 8: INITIALIZATION + TIDES                             -->
+<!-- ================================================================= -->
+<script src="../pages/station_setup.js?v=20260504v4d"></script>
+
+<div style="text-align:center;padding:18px 20px 24px;color:#475569;font-size:.8rem;border-top:1px solid #1e293b;margin-top:8px">
+  For battery, sync reliability and data health metrics see
+  <a href="station_health.html" style="color:#64748b;text-decoration:underline dotted">&#128267; Station Health</a>
+</div>
+</body>
+</html>
