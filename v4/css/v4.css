@@ -130,6 +130,8 @@ a:hover { text-decoration: underline; }
 }
 .table-sort:hover { color: var(--accent); text-decoration: underline; }
 .data-table tr:hover td { background: #f3faf7; }
+.data-table tr.dirty-row td { background: #fff8df; }
+.data-table tr.dirty-row:hover td { background: #fff1bf; }
 .data-table td { font-size: 0.82rem; }
 .cell-main { font-weight: 700; }
 .cell-sub { color: var(--text-muted); font-size: 0.72rem; margin-top: 2px; }

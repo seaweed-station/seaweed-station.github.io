@@ -1058,6 +1058,54 @@ function edgeStationToSummary(st) {
   };
 }
 
+function samplesRawPayloadToOverviewEntries(payload) {
+  if (!payload || !Array.isArray(payload.feeds)) return [];
+  var slots = [];
+  if (payload.slot_map) {
+    Object.keys(payload.slot_map).forEach(function(k) {
+      var sn = Number(payload.slot_map[k]);
+      if (sn && slots.indexOf(sn) < 0) slots.push(sn);
+    });
+  }
+  if (!slots.length) slots = [1, 2];
+  return payload.feeds.map(function(feed) {
+    return feedToEntry(feed, slots);
+  }).filter(function(entry) {
+    return entry && entry.timestamp instanceof Date && !isNaN(entry.timestamp.getTime());
+  }).sort(function(a, b) { return a.timestamp - b.timestamp; });
+}
+
+async function hydrateOverviewCardFromSamplesRaw(table, card) {
+  if (!table || !table.id || typeof fetchSamplesRawStationPayload !== 'function') return false;
+  try {
+    var to = new Date();
+    var from = new Date(to.getTime() - 7 * 86400000);
+    var payload = await fetchSamplesRawStationPayload(table.id, { from: from, to: to }, {
+      target: OVERVIEW_DETAIL_POINTS,
+      maxRows: 16000
+    });
+    var entries = samplesRawPayloadToOverviewEntries(payload);
+    if (!entries.length) return false;
+    tableEntries[table.id] = entries;
+    _dataSource[table.id] = 'live';
+    if (payload.device_status) {
+      _deviceStatusById[table.id] = {
+        batteryPct: payload.device_status.battery_pct,
+        nextCheckInAt: payload.device_status.next_check_in ? new Date(payload.device_status.next_check_in) : null,
+        lastSeenAt: payload.device_status.last_seen ? new Date(payload.device_status.last_seen) : null,
+        lastUploadAt: payload.device_status.last_upload_at ? new Date(payload.device_status.last_upload_at) : null,
+        raw: payload.device_status
+      };
+    }
+    var replacement = renderTableCard(table, computeSummary(table.id, entries));
+    if (card && card.parentNode) card.parentNode.replaceChild(replacement, card);
+    return true;
+  } catch (err) {
+    console.warn('[Overview] samples_raw fallback failed for ' + table.id + ':', err && err.message ? err.message : err);
+    return false;
+  }
+}
+
 /**
  * Look up the TABLES entry for a given station_id.
  */
@@ -1482,6 +1530,7 @@ function renderEdgeCards(payload) {
     _dataSource[table.id] = st ? 'edge' : 'edge-missing';
     var card = renderTableCard(table, summary);
     grid.appendChild(card);
+    if (!summary) hydrateOverviewCardFromSamplesRaw(table, card);
   }
 }
 

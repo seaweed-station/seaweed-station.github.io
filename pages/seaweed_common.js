@@ -112,10 +112,30 @@ var RESET_CUTOFF_STORAGE_KEY = 'seaweed_reset_cutoff_utc';
 var RESET_CUTOFF_ENABLED = false;
 
 var DASHBOARD_CONFIG_KEY = 'seaweed_dashboard_config';
+var DASHBOARD_EGRESS_SAFE_STORAGE_KEY = 'seaweed_egress_safe_mode';
 var SHARED_DEVICE_PROFILES_CACHE_KEY = 'seaweed_shared_device_profiles_cache';
 var SHARED_DEVICE_PROFILES_CACHE_TTL_MS = 10 * 60 * 1000;
 var SHARED_DEVICE_PROFILES_EVENT = 'seaweed:deviceProfilesUpdated';
 var _sharedDeviceProfilesRefreshPromise = null;
+
+function dashboardEgressSafeMode() {
+  try {
+    var stored = localStorage.getItem(DASHBOARD_EGRESS_SAFE_STORAGE_KEY);
+    if (stored !== null) return !/^(0|false|off|no)$/i.test(String(stored).trim());
+    var cfg = getDashboardConfig();
+    if (cfg && Object.prototype.hasOwnProperty.call(cfg, 'egressSafeMode')) return cfg.egressSafeMode !== false;
+  } catch (_) {}
+  return true;
+}
+
+function dashboardClampInt(value, fallback, minValue, maxValue) {
+  var n = Number(value);
+  if (!isFinite(n) || n <= 0) n = fallback;
+  n = Math.floor(n);
+  if (minValue != null) n = Math.max(Number(minValue), n);
+  if (maxValue != null) n = Math.min(Number(maxValue), n);
+  return n;
+}
 
 /**
  * Canonical station registry — keep in sync with config.json "stations" array.
@@ -1114,6 +1134,193 @@ function onDashboardDataRefresh(handler) {
       } catch (e3) {}
     }
   };
+}
+
+// =====================================================================
+// RAW SAMPLES FALLBACK
+// =====================================================================
+
+function stationRawSlotNumber(row) {
+  if (!row) return null;
+  var n = Number(row.slot_number);
+  if (isFinite(n) && n > 0) return n;
+  var node = String(row.node_id || '').trim().toUpperCase();
+  if (node === 'SIA' || node === 'A') return 1;
+  if (node === 'B') return 2;
+  return null;
+}
+
+function buildSamplesRawStationPayload(stationId, rows, meta) {
+  rows = Array.isArray(rows) ? rows : [];
+  meta = meta || {};
+
+  var hubRows = [];
+  var satRows = [];
+  var slotMap = {};
+  rows.forEach(function(row) {
+    if (!row) return;
+    var node = String(row.node_id || '').trim();
+    if (!node) return;
+    if (node.toLowerCase() === 'hub') {
+      hubRows.push(row);
+      return;
+    }
+    var slot = stationRawSlotNumber(row);
+    if (slot) slotMap[node] = slot;
+    satRows.push(row);
+  });
+
+  hubRows.sort(function(a, b) { return new Date(a.sample_epoch).getTime() - new Date(b.sample_epoch).getTime(); });
+  satRows.sort(function(a, b) { return new Date(a.sample_epoch).getTime() - new Date(b.sample_epoch).getTime(); });
+
+  function nearestSat(hub, slotNumber) {
+    var hubMs = new Date(hub.sample_epoch).getTime();
+    if (!isFinite(hubMs)) return null;
+    var best = null;
+    var bestDelta = Infinity;
+    for (var i = 0; i < satRows.length; i++) {
+      var sat = satRows[i];
+      var slot = stationRawSlotNumber(sat);
+      if (slot !== slotNumber) continue;
+      var satMs = new Date(sat.sample_epoch).getTime();
+      if (!isFinite(satMs)) continue;
+      var delta = Math.abs(satMs - hubMs);
+      if (delta <= 150000 && delta < bestDelta) {
+        best = sat;
+        bestDelta = delta;
+      }
+    }
+    return best;
+  }
+
+  function applySat(feed, sat, slotNumber) {
+    if (!sat || !slotNumber) return;
+    feed['sat_' + slotNumber + '_temp_1'] = sat.temp_1;
+    feed['sat_' + slotNumber + '_humidity_1'] = sat.humidity_1;
+    feed['sat_' + slotNumber + '_temp_2'] = sat.temp_2;
+    feed['sat_' + slotNumber + '_humidity_2'] = sat.humidity_2;
+    feed['sat_' + slotNumber + '_battery_v'] = sat.battery_v;
+    feed['sat_' + slotNumber + '_battery_pct'] = sat.battery_pct;
+  }
+
+  var feeds = hubRows.map(function(hub) {
+    var feed = {
+      entry_id: hub.id,
+      created_at: hub.sample_epoch,
+      temp_1: hub.temp_1,
+      humidity_1: hub.humidity_1,
+      temp_2: hub.temp_2,
+      humidity_2: hub.humidity_2,
+      temp_3: hub.temp_3,
+      humidity_3: hub.humidity_3,
+      battery_v: hub.battery_v,
+      battery_pct: hub.battery_pct,
+      solar_v: hub.solar_v
+    };
+    applySat(feed, nearestSat(hub, 1), 1);
+    applySat(feed, nearestSat(hub, 2), 2);
+    return feed;
+  });
+
+  return {
+    source: 'samples_raw',
+    generated_at: new Date().toISOString(),
+    data_as_of: feeds.length ? feeds[feeds.length - 1].created_at : null,
+    schema_version: 1,
+    station_id: stationId,
+    device_id: stationId,
+    time_range: meta.timeRange || null,
+    downsampling: {
+      total_rows: hubRows.length,
+      step: 1,
+      returned: feeds.length,
+      target: meta.target || null
+    },
+    feeds: feeds,
+    slot_map: slotMap,
+    device_status: meta.deviceStatus || null,
+    device_config: meta.deviceConfig || null,
+    sync_sessions: Array.isArray(meta.syncSessions) ? meta.syncSessions : [],
+    upload_sessions: Array.isArray(meta.uploadSessions) ? meta.uploadSessions : []
+  };
+}
+
+async function fetchSamplesRawStationPayload(stationId, windowLike, opts) {
+  opts = opts || {};
+  var bounds = windowLike || {};
+  var from = bounds.from instanceof Date ? bounds.from : new Date(bounds.from || Date.now() - 7 * 86400000);
+  var to = bounds.to instanceof Date ? bounds.to : new Date(bounds.to || Date.now());
+  if (isNaN(from.getTime()) || isNaN(to.getTime())) throw new Error('Invalid raw fallback window');
+
+  var supaCfg = getSupabaseConfig();
+  var hdrs = supabaseHeaders(supaCfg.key);
+  var safeMode = typeof dashboardEgressSafeMode === 'function' ? dashboardEgressSafeMode() : true;
+  var maxRowsHardCap = safeMode ? 3000 : 12000;
+  var maxRows = dashboardClampInt(opts.maxRows, safeMode ? 3000 : 12000, 1, maxRowsHardCap);
+  var pageSize = dashboardClampInt(opts.pageSize, safeMode ? 500 : 1000, 1, Math.min(1000, maxRows));
+  var sideLimit = safeMode ? 300 : 1000;
+  var fromIso = from.toISOString();
+  var toIso = to.toISOString();
+
+  var select = [
+    'id', 'device_id', 'node_id', 'slot_number', 'sample_id', 'sample_epoch',
+    'temp_1', 'humidity_1', 'temp_2', 'humidity_2', 'temp_3', 'humidity_3',
+    'battery_v', 'battery_pct', 'solar_v', 'inserted_at'
+  ].join(',');
+
+  var rows = [];
+  for (var offset = 0; offset < maxRows; offset += pageSize) {
+    var url = supaCfg.url + '/rest/v1/samples_raw' +
+      '?select=' + encodeURIComponent(select) +
+      '&device_id=eq.' + encodeURIComponent(stationId) +
+      '&sample_epoch=gte.' + encodeURIComponent(fromIso) +
+      '&sample_epoch=lte.' + encodeURIComponent(toIso) +
+      '&order=sample_epoch.asc' +
+      '&limit=' + pageSize +
+      '&offset=' + offset;
+    var res = await fetchWithTimeout(url, 30000, { headers: hdrs });
+    if (!res.ok) throw new Error('samples_raw HTTP ' + res.status);
+    var batch = await res.json();
+    if (Array.isArray(batch) && batch.length) rows = rows.concat(batch);
+    if (!Array.isArray(batch) || batch.length < pageSize) break;
+    await yieldToBrowser();
+  }
+
+  async function fetchOne(path) {
+    try {
+      var res = await fetchWithTimeout(supaCfg.url + path, 15000, { headers: hdrs });
+      if (!res.ok) return null;
+      var data = await res.json();
+      return Array.isArray(data) && data.length ? data[0] : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function fetchMany(path) {
+    try {
+      var res = await fetchWithTimeout(supaCfg.url + path, 15000, { headers: hdrs });
+      if (!res.ok) return [];
+      var data = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  var status = await fetchOne('/rest/v1/device_status?device_id=eq.' + encodeURIComponent(stationId) + '&select=device_id,last_seen,last_upload_at,next_check_in,battery_pct,fw_version');
+  var config = await fetchOne('/rest/v1/device_config?device_id=eq.' + encodeURIComponent(stationId) + '&select=device_id,upload_interval_hours,sample_period_min,sat_sync_period_hours,deploy_mode,sleep_enable,updated_at');
+  var syncs = await fetchMany('/rest/v1/sync_sessions?device_id=eq.' + encodeURIComponent(stationId) + '&select=*&sync_started_at=gte.' + encodeURIComponent(fromIso) + '&sync_started_at=lte.' + encodeURIComponent(toIso) + '&order=sync_started_at.asc&limit=' + sideLimit);
+  var uploads = await fetchMany('/rest/v1/upload_sessions?device_id=eq.' + encodeURIComponent(stationId) + '&select=*&upload_started_at=gte.' + encodeURIComponent(fromIso) + '&upload_started_at=lte.' + encodeURIComponent(toIso) + '&order=upload_started_at.asc&limit=' + sideLimit);
+
+  return buildSamplesRawStationPayload(stationId, rows, {
+    timeRange: { from: fromIso, to: toIso },
+    target: opts.target || null,
+    deviceStatus: status,
+    deviceConfig: config,
+    syncSessions: syncs,
+    uploadSessions: uploads
+  });
 }
 
 // =====================================================================

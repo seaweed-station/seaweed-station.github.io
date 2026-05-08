@@ -178,10 +178,11 @@ var _edgeDetailPayload = null;   // last successful Edge payload
 var _edgeDetailPayloadAt = 0;    // Date.now() when fetched
 var _stationLoadedWindow = null; // { min, max } for the current in-memory allEntries set
 var _stationDiagMeta = { source: 'idle' };
-var STATION_SUMMARY_HISTORY_DAYS = 370;
-var STATION_SUMMARY_PAGE_SIZE = 1000;
-var STATION_SUMMARY_MAX_ROWS = 50000;
-var STATION_SUMMARY_REFRESH_MS = 30 * 60 * 1000;
+var STATION_SUMMARY_SAFE_MODE = typeof dashboardEgressSafeMode === 'function' ? dashboardEgressSafeMode() : true;
+var STATION_SUMMARY_HISTORY_DAYS = STATION_SUMMARY_SAFE_MODE ? 90 : 370;
+var STATION_SUMMARY_PAGE_SIZE = STATION_SUMMARY_SAFE_MODE ? 500 : 1000;
+var STATION_SUMMARY_MAX_ROWS = STATION_SUMMARY_SAFE_MODE ? 3000 : 50000;
+var STATION_SUMMARY_REFRESH_MS = STATION_SUMMARY_SAFE_MODE ? 2 * 60 * 60 * 1000 : 30 * 60 * 1000;
 var _stationSummaryFetchPromise = null;
 
 function getStationSummaryCacheKey() {
@@ -551,6 +552,18 @@ async function fetchEdgeStationDetail() {
   return payload;
 }
 
+async function fetchSamplesRawStationDetailFallback(reason) {
+  if (typeof fetchSamplesRawStationPayload !== 'function') throw new Error('samples_raw fallback unavailable');
+  var startedAt = Date.now();
+  var payload = await fetchSamplesRawStationPayload(TABLE_ID, getEdgeTimeWindow(), {
+    target: getEdgePointsTarget(),
+    maxRows: STATION_SUMMARY_SAFE_MODE ? 3000 : 16000
+  });
+  payload._response_duration_ms = Date.now() - startedAt;
+  payload._fallback_reason = reason || '';
+  return payload;
+}
+
 /**
  * Convert feeds from the Edge payload into chart-ready entries.
  * The RPC returns flat rows with the same shape as buildSlotAlignedFeeds.
@@ -619,7 +632,15 @@ async function fetchLiveDataEdge(silent) {
   updateStationDiagnostics({ source: 'loading', lastRefreshAt: Date.now(), error: '', note: 'Waiting for station-detail payload…' });
 
   try {
-    var payload = await fetchEdgeStationDetail();
+    var payload;
+    try {
+      payload = await fetchEdgeStationDetail();
+    } catch (edgeErr) {
+      var msg = edgeErr && edgeErr.message ? edgeErr.message : String(edgeErr || '');
+      if (msg.indexOf('Station not found or inactive') === -1) throw edgeErr;
+      console.warn('[Dashboard] Station registry missing for ' + TABLE_ID + ', using samples_raw fallback');
+      payload = await fetchSamplesRawStationDetailFallback(msg);
+    }
     _edgeDetailPayload = payload;
     _edgeDetailPayloadAt = Date.now();
 
@@ -629,7 +650,8 @@ async function fetchLiveDataEdge(silent) {
     // Replace allEntries with edge data (edge returns the exact window requested)
     state.allEntries = entries;
     setStationLoadedWindow(payload.time_range || getEntriesBounds(entries));
-    state.dataSource = 'Edge Function (' + new Date().toLocaleTimeString('en-GB') + ')';
+    state.dataSource = (payload.source_label || (payload.source === 'samples_raw' ? 'Supabase samples_raw' : 'Edge Function')) +
+      ' (' + new Date().toLocaleTimeString('en-GB') + ')';
 
     // Apply side data (status, slots, sync)
     applyEdgeSideData(payload);
@@ -670,7 +692,9 @@ async function fetchLiveDataEdge(silent) {
       cacheAgeS: 0,
       lastRefreshAt: Date.now(),
       error: '',
-      note: 'Single station-detail Edge payload for the visible time range.'
+      note: payload.source === 'samples_raw'
+        ? 'Station registry is missing this station, so data was linked directly from samples_raw.'
+        : 'Single station-detail Edge payload for the visible time range.'
     });
 
   } catch (err) {

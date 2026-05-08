@@ -205,14 +205,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
   (async function() {
     try {
-      var payload = await fetchEdgeStationDetail();
+      var payload;
+      try {
+        payload = await fetchEdgeStationDetail();
+      } catch (edgeErr) {
+        var msg = edgeErr && edgeErr.message ? edgeErr.message : String(edgeErr || '');
+        if (msg.indexOf('Station not found or inactive') === -1 ||
+            typeof fetchSamplesRawStationDetailFallback !== 'function') {
+          throw edgeErr;
+        }
+        console.warn('[Dashboard] Station registry missing for ' + TABLE_ID + ', using samples_raw init fallback');
+        payload = await fetchSamplesRawStationDetailFallback(msg);
+      }
       _edgeDetailPayload = payload;
       _edgeDetailPayloadAt = Date.now();
 
       var entries = edgePayloadToEntries(payload);
       state.allEntries = entries;
   setStationLoadedWindow(payload.time_range || getEntriesBounds(entries));
-      state.dataSource = 'Edge Function';
+      state.dataSource = payload.source_label || (payload.source === 'samples_raw' ? 'Supabase samples_raw' : 'Edge Function');
 
       applyEdgeSideData(payload);
       applyTimeRange();
@@ -245,7 +256,9 @@ document.addEventListener('DOMContentLoaded', function () {
         cacheAgeS: 0,
         lastRefreshAt: Date.now(),
         error: '',
-        note: 'Initial station-detail load completed from Edge Function.'
+        note: payload.source === 'samples_raw'
+          ? 'Initial station load linked directly from samples_raw because station_registry is missing this station.'
+          : 'Initial station-detail load completed from Edge Function.'
       });
     } catch (edgeErr) {
       console.warn('[Dashboard] Edge init failed:', edgeErr.message);

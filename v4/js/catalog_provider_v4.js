@@ -671,6 +671,27 @@
     }
   }
 
+  async function deleteV4AlertSetting(stationUid, alertKey, adminPassword) {
+    var project = await getV4AuthProject();
+    try {
+      return await fetchJson(project.url + "/rest/v1/rpc/dashboard_delete_v4_alert_setting", 15000, {
+        method: "POST",
+        headers: Object.assign({}, supabaseHeaders(project.key), { "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          p_admin_password: text(adminPassword),
+          p_station_uid: text(stationUid),
+          p_alert_key: text(alertKey),
+          p_role: text(sessionStorage.getItem("sw_role") || "dashboard")
+        })
+      });
+    } catch (err) {
+      if (isMissingAlertSettingsRpcError(err)) {
+        throw new Error("V4 alert delete RPC is not installed yet. Reapply the V4 alert-settings SQL amendment.");
+      }
+      throw err;
+    }
+  }
+
   async function sendV4AlertTest(dispatchSecret) {
     var project = await getV4AuthProject();
     return await fetchJson(project.url + "/functions/v1/v4-dispatch-alerts", 15000, {
@@ -911,6 +932,7 @@
     ACCESS_CONTROL_CACHE_KEY: ACCESS_CONTROL_CACHE_KEY,
     BOOTSTRAP_ADMIN_PASSWORD: BOOTSTRAP_ADMIN_PASSWORD,
     authenticateAccessRole: authenticateAccessRole,
+    deleteV4AlertSetting: deleteV4AlertSetting,
     escapeHtml: escapeHtml,
     fetchAccessRoleDefinitions: fetchAccessRoleDefinitions,
     fetchV4AlertOverview: fetchV4AlertOverview,

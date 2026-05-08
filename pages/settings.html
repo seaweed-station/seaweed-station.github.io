@@ -311,19 +311,50 @@ input.wide { max-width: none; }
 }
 
 .device-profiles {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.device-profile-row {
-  display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(145px, 0.8fr) minmax(280px, 1.5fr) minmax(230px, 1fr);
-  gap: 10px;
-  align-items: center;
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 12px;
-  background: var(--bg);
+  background: var(--bg-card);
+}
+.device-profile-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.device-profile-table th,
+.device-profile-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 6px 7px;
+  text-align: left;
+  vertical-align: middle;
+}
+.device-profile-table th {
+  background: var(--bg-alt);
+  color: var(--text-sec);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.device-profile-table tr:last-child td { border-bottom: none; }
+.device-profile-table tr:hover td { background: #f7fcfa; }
+.device-profile-table input,
+.device-profile-table select {
+  min-height: 28px;
+  padding: 4px 6px;
+  font-size: 0.76rem;
+}
+.device-profile-table .enabled-col { width: 74px; }
+.device-profile-table .station-col { width: 180px; }
+.device-profile-table .date-col { width: 118px; }
+.device-profile-table .status-col { width: 126px; }
+.device-profile-table .note-col { width: 220px; }
+.device-profile-table .coord-col { width: 100px; }
+.device-profile-table .folder-col { width: 150px; }
+.device-profile-row {
+  background: var(--bg-card);
 }
 .device-profile-id {
   font-size: 0.72rem;
@@ -346,11 +377,13 @@ input.wide { max-width: none; }
   letter-spacing: 0;
   font-weight: 600;
 }
-
-@media (max-width: 760px) {
-  .device-profile-row {
-    grid-template-columns: 1fr;
-  }
+.device-profile-folder {
+  color: var(--text-sec);
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 0.74rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Access Roles editor */
@@ -763,11 +796,26 @@ function renderDeviceProfiles(profiles) {
     root.innerHTML = '<div class="info-box">No devices found yet. Click <strong>Refresh from Supabase</strong>.</div>';
     return;
   }
-  root.innerHTML = '';
+  root.innerHTML =
+    '<table class="device-profile-table">' +
+      '<thead><tr>' +
+        '<th class="enabled-col">Enabled</th>' +
+        '<th class="station-col">Station</th>' +
+        '<th class="date-col">Install Date</th>' +
+        '<th class="status-col">Dataset</th>' +
+        '<th class="date-col">End Date</th>' +
+        '<th class="note-col">Note</th>' +
+        '<th class="coord-col">Lat</th>' +
+        '<th class="coord-col">Lon</th>' +
+        '<th class="folder-col">Data Folder</th>' +
+      '</tr></thead>' +
+      '<tbody></tbody>' +
+    '</table>';
+  var tbody = root.querySelector('tbody');
   profiles.forEach(function(p) {
     var id = String(p.id || '').trim().toLowerCase();
     if (!id) return;
-    var row = document.createElement('div');
+    var row = document.createElement('tr');
     row.className = 'device-profile-row';
     row.setAttribute('data-id', id);
     row.setAttribute('data-name', String(p.name || titleCaseDeviceId(id)));
@@ -782,38 +830,40 @@ function renderDeviceProfiles(profiles) {
     var safeDatasetNote = escHtml(p.datasetEndNote || '');
     var datasetStatus = normalizeDatasetStatus(p.datasetStatus);
     row.innerHTML =
-      '<div>' +
+      '<td>' +
         '<div class="device-profile-check">' +
           '<input type="checkbox" data-role="enabled" id="dp_en_' + safeId + '" ' + (p.enabled !== false ? 'checked' : '') + '>' +
-          '<label for="dp_en_' + safeId + '">' + safeName + '</label>' +
+          '<label for="dp_en_' + safeId + '">Show</label>' +
         '</div>' +
+      '</td>' +
+      '<td>' +
+        '<div style="font-weight:600">' + safeName + '</div>' +
         '<div class="device-profile-id">device_id: ' + safeId + '</div>' +
-      '</div>' +
-      '<div class="field" style="gap:3px">' +
-        '<label style="font-size:0.68rem">Install Date (UTC)</label>' +
+      '</td>' +
+      '<td>' +
         '<input type="date" data-role="installDate" value="' + normalizeInstallDateForInput(p.installDateUtc) + '">' +
-      '</div>' +
-      '<div class="field" style="gap:3px">' +
-        '<label style="font-size:0.68rem">Dataset status</label>' +
-        '<div style="display:grid;grid-template-columns:minmax(110px,0.8fr) minmax(130px,1fr);gap:6px">' +
-          '<select data-role="datasetStatus">' +
-            '<option value="active"' + (datasetStatus === 'active' ? ' selected' : '') + '>Active</option>' +
-            '<option value="paused"' + (datasetStatus === 'paused' ? ' selected' : '') + '>Paused</option>' +
-            '<option value="finished"' + (datasetStatus === 'finished' ? ' selected' : '') + '>Finished campaign</option>' +
-          '</select>' +
-          '<input type="date" data-role="datasetEndDate" value="' + normalizeDatasetEndForInput(p.datasetEndUtc) + '" title="Dataset end date (UTC)">' +
-        '</div>' +
-        '<input type="text" data-role="datasetEndNote" placeholder="Units shipped, dataset paused" value="' + safeDatasetNote + '">' +
-        '<div style="font-size:0.72rem;color:var(--text-muted)">Data folder: <strong style="color:var(--text-sec)">' + safeFolder + '</strong></div>' +
-      '</div>' +
-      '<div class="field" style="gap:3px">' +
-        '<label style="font-size:0.68rem">Coordinates (lat, lon)</label>' +
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
-          '<input type="text" data-role="mapLat" placeholder="-4.581429" value="' + (p.mapLat != null ? String(p.mapLat) : '') + '">' +
-          '<input type="text" data-role="mapLon" placeholder="39.437527" value="' + (p.mapLon != null ? String(p.mapLon) : '') + '">' +
-        '</div>' +
-      '</div>';
-    root.appendChild(row);
+      '</td>' +
+      '<td>' +
+        '<select data-role="datasetStatus">' +
+          '<option value="active"' + (datasetStatus === 'active' ? ' selected' : '') + '>Active</option>' +
+          '<option value="paused"' + (datasetStatus === 'paused' ? ' selected' : '') + '>Paused</option>' +
+          '<option value="finished"' + (datasetStatus === 'finished' ? ' selected' : '') + '>Finished</option>' +
+        '</select>' +
+      '</td>' +
+      '<td>' +
+        '<input type="date" data-role="datasetEndDate" value="' + normalizeDatasetEndForInput(p.datasetEndUtc) + '" title="Dataset end date (UTC)">' +
+      '</td>' +
+      '<td>' +
+        '<input type="text" data-role="datasetEndNote" placeholder="Units shipped, paused" value="' + safeDatasetNote + '">' +
+      '</td>' +
+      '<td>' +
+        '<input type="text" data-role="mapLat" placeholder="-4.581429" value="' + (p.mapLat != null ? String(p.mapLat) : '') + '">' +
+      '</td>' +
+      '<td>' +
+        '<input type="text" data-role="mapLon" placeholder="39.437527" value="' + (p.mapLon != null ? String(p.mapLon) : '') + '">' +
+      '</td>' +
+      '<td><div class="device-profile-folder" title="' + safeFolder + '">' + safeFolder + '</div></td>';
+    tbody.appendChild(row);
 
     var enabledEl = row.querySelector('input[data-role="enabled"]');
     var dateEl = row.querySelector('input[data-role="installDate"]');

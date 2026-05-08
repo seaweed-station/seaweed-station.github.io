@@ -71,12 +71,47 @@ function applyModalDatasetVisibilityState(state) {
   }
 }
 
+function getModalMutableOptions() {
+  if (!_modalChart) return null;
+  if (_modalChart.config && _modalChart.config._config && _modalChart.config._config.options) {
+    return _modalChart.config._config.options;
+  }
+  if (_modalChart.config && _modalChart.config.options) return _modalChart.config.options;
+  return _modalChart.options || null;
+}
+
+function getModalMutableXScaleOptions() {
+  var opts = getModalMutableOptions();
+  if (!opts) return null;
+  opts.scales = opts.scales || {};
+  opts.scales.x = opts.scales.x || {};
+  return opts.scales.x;
+}
+
 function applyModalZoomLimits(bounds) {
   if (!_modalChart || !_modalChart.options || !bounds || !isFinite(bounds.min) || !isFinite(bounds.max)) return;
-  _modalChart.options.plugins = _modalChart.options.plugins || {};
-  _modalChart.options.plugins.zoom = _modalChart.options.plugins.zoom || {};
-  _modalChart.options.plugins.zoom.limits = _modalChart.options.plugins.zoom.limits || {};
-  _modalChart.options.plugins.zoom.limits.x = { min: bounds.min, max: bounds.max, minRange: 60 * 60 * 1000 };
+  var limits = buildModalZoomLimits(bounds);
+  var rawOptions = (_modalChart.config && _modalChart.config._config && _modalChart.config._config.options)
+    ? _modalChart.config._config.options
+    : null;
+  var configOptions = _modalChart.config ? _modalChart.config.options : null;
+
+  // Chart.js resolves plugin options through proxy objects. Mutating
+  // chart.options.plugins.zoom.limits after construction can recurse inside
+  // that proxy and leave the expanded modal blank, so keep zoom limits on the
+  // raw config objects that Chart.js re-resolves on update.
+  [rawOptions, configOptions].forEach(function(opts) {
+    if (!opts) return;
+    opts.plugins = opts.plugins || {};
+    opts.plugins.zoom = opts.plugins.zoom || {};
+    opts.plugins.zoom.limits = opts.plugins.zoom.limits || {};
+    opts.plugins.zoom.limits.x = limits.x;
+  });
+}
+
+function buildModalZoomLimits(bounds) {
+  if (!bounds || !isFinite(bounds.min) || !isFinite(bounds.max)) return undefined;
+  return { x: { min: bounds.min, max: bounds.max, minRange: 60 * 60 * 1000 } };
 }
 
 function getModalSourceSnapshot(range) {
@@ -115,9 +150,21 @@ function buildModalTimeAxis(range) {
   return { time: { tooltipFormat: 'dd MMM HH:mm', unit: 'day', displayFormats: { day: 'dd MMM' } }, maxTicks: 12, autoSkip: true };
 }
 
+function modalBaseTitle(title) {
+  return String(title || '').replace(/\s(?:\u2013|-)\s(?:Day|Week|Month|All)\s*$/, '');
+}
+
+function updateModalTitleForRange(range) {
+  var titleEl = document.getElementById('chartModalTitle');
+  if (!titleEl || !_modalSource) return;
+  var baseTitle = _modalSource.baseTitle || modalBaseTitle(titleEl.textContent);
+  titleEl.textContent = baseTitle + ' \u2013 ' + rangeLabel(range || _modalSource.modalRange || 'week');
+}
+
 function applyModalLineRange(range, observedBounds) {
-  if (!_modalChart || !_modalChart.options || !_modalChart.options.scales || !_modalChart.options.scales.x) return;
-  var xScale = _modalChart.options.scales.x;
+  if (!_modalChart) return;
+  var xScale = getModalMutableXScaleOptions();
+  if (!xScale) return;
   var axisCfg = buildModalTimeAxis(range);
   var win = getWindowForRange(observedBounds, range);
 
@@ -185,6 +232,7 @@ function openChartModal(title, srcCanvas) {
   _modalSource = {
     stationId: stationId,
     chartKey: chartKey,
+    baseTitle: modalBaseTitle(title),
     sourceCanvas: liveSourceCanvas,
     dataRange: snapshotRange,
     pageRange: activeRange,
@@ -193,7 +241,7 @@ function openChartModal(title, srcCanvas) {
     allBounds: allBounds
   };
   updateModalRangeControls();
-  document.getElementById('chartModalTitle').textContent = title;
+  updateModalTitleForRange(activeRange);
   var overlay = document.getElementById('chartModalOverlay');
   overlay.classList.add('open');
   if (_modalChart) { _modalChart.destroy(); _modalChart = null; }
@@ -221,7 +269,8 @@ function openChartModal(title, srcCanvas) {
       responsive: true, maintainAspectRatio: false, animation: false,
       plugins: {
         legend: { position: 'top', labels: { color: '#94a3b8', font: { size: 11 }, filter: modalLegendFilter } },
-        zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
+        zoom: { limits: buildModalZoomLimits(_modalSource.allBounds || _modalSource.observedBounds),
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
                 pan:  { enabled: true, mode: 'xy' } }
       },
       scales: {
@@ -239,7 +288,8 @@ function openChartModal(title, srcCanvas) {
       plugins: {
         legend: { display: true, position: 'top', labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 14, padding: 10, filter: modalLegendFilter } },
         tooltip: { backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8', borderColor: '#334155', borderWidth: 1 },
-        zoom: { zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+        zoom: { limits: buildModalZoomLimits(_modalSource.allBounds || _modalSource.observedBounds),
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
                 pan:  { enabled: true, mode: 'x' } }
       },
       scales: (function() {
@@ -323,7 +373,7 @@ function syncModalDataFromSource() {
   var visibilityState = cloneModalVisibilityState();
   var snap = getModalSourceSnapshot((_modalSource && _modalSource.dataRange) || (_modalSource && _modalSource.modalRange) || 'week');
   if (!snap || !snap.data) return;
-  var xOpts = _modalChart.options && _modalChart.options.scales ? _modalChart.options.scales.x : null;
+  var xOpts = getModalMutableXScaleOptions();
   var curMin = xOpts ? xOpts.min : undefined;
   var curMax = xOpts ? xOpts.max : undefined;
   _modalChart.config.type = snap.type || _modalChart.config.type;
@@ -334,8 +384,11 @@ function syncModalDataFromSource() {
   applyModalZoomLimits(_modalSource.allBounds || _modalSource.observedBounds);
   if (xOpts) {
     applyModalLineRange((_modalSource && _modalSource.modalRange) || 'week', _modalSource.observedBounds);
-    xOpts.min = curMin;
-    xOpts.max = curMax;
+    var nextXOpts = getModalMutableXScaleOptions();
+    if (nextXOpts) {
+      nextXOpts.min = curMin;
+      nextXOpts.max = curMax;
+    }
   }
   _modalChart.update('none');
   updateModalToggleControls();
@@ -464,6 +517,7 @@ function findStationChartCanvas(stationId, chartKey) {
 async function setModalRange(range) {
   if (!_modalSource || !_modalChart) return;
   _modalSource.modalRange = range;
+  updateModalTitleForRange(range);
   var isLineModal = _modalChart.config && _modalChart.config.type !== 'bar';
 
   if (range === 'all' && typeof healthDataCanServeRange === 'function' && !healthDataCanServeRange('all')) {
@@ -503,6 +557,7 @@ async function setModalRange(range) {
 
   openChartModal(title, liveCanvas);
   if (_modalSource) _modalSource.modalRange = range;
+  updateModalTitleForRange(range);
   applyModalDatasetVisibilityState(visibilityState);
   if (_modalChart) _modalChart.update('none');
   updateModalRangeControls();

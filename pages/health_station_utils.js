@@ -84,7 +84,7 @@ function healthStationHasSlotMetadata(stationId) {
 }
 
 function healthStationHasSatelliteEvidence(stationId, entries) {
-  return isSatelliteVisible(stationId, entries, 1) || isSatelliteVisible(stationId, entries, 2);
+  return isSatelliteVisible(stationId, entries, 1) || isSatelliteVisible(stationId, entries, 2) || isSatelliteVisible(stationId, entries, 3);
 }
 
 function healthStationSyncContextPending(stationId, entries) {
@@ -223,13 +223,17 @@ function getHealthSlotContext(stationId, entries, syncRows, opts) {
   var hasHistoricalWindow = isFinite(windowStartMs) && isFinite(windowEndMs) && windowEndMs > windowStartMs && getHealthSlotHistory(stationId).length > 0;
   var slot1Configured = !hasHistoricalWindow && isSatelliteConfiguredSlot(stationId, 1);
   var slot2Configured = !hasHistoricalWindow && isSatelliteConfiguredSlot(stationId, 2);
+  var slot3Configured = !hasHistoricalWindow && isSatelliteConfiguredSlot(stationId, 3);
   var slot1HasData = typeof hasSlotData === 'function' ? hasSlotData(stationEntries, 1) : hasSatelliteSignals(stationEntries, 1);
   var slot2HasData = typeof hasSlotData === 'function' ? hasSlotData(stationEntries, 2) : hasSatelliteSignals(stationEntries, 2);
+  var slot3HasData = typeof hasSlotData === 'function' ? hasSlotData(stationEntries, 3) : hasSatelliteSignals(stationEntries, 3);
   var slot1Known = !!(slot1Configured || slot1HasData || slotState[1]);
   var slot2Known = !!(slot2Configured || slot2HasData || slotState[2]);
-  var allowObservedOnlyFallback = !slot1Known && !slot2Known;
+  var slot3Known = !!(slot3Configured || slot3HasData || slotState[3]);
+  var allowObservedOnlyFallback = !slot1Known && !slot2Known && !slot3Known;
   var slot1Node = slotState[1] || (slot1Configured ? satelliteNodeLetter(stationId, 1) : null);
   var slot2Node = slotState[2] || (slot2Configured ? satelliteNodeLetter(stationId, 2) : null);
+  var slot3Node = slotState[3] || (slot3Configured ? satelliteNodeLetter(stationId, 3) : null);
   var observedNodes = [];
   var observedTimeline = timeline;
 
@@ -252,28 +256,35 @@ function getHealthSlotContext(stationId, entries, syncRows, opts) {
   if (!hasHistoricalWindow && observedNodes.length === 1) {
     slot1Node = observedNodes[0];
     slot2Node = null;
+    slot3Node = null;
     slot1Known = true;
     slot2Known = false;
+    slot3Known = false;
     slot1HasData = slot1HasData || slot2HasData;
     slot2HasData = false;
+    slot3HasData = false;
     slot1Configured = slot1Configured || slot2Configured;
     slot2Configured = false;
+    slot3Configured = false;
     allowObservedOnlyFallback = false;
   }
 
   var remainingNodes = observedNodes.filter(function(node) {
-    return node !== slot1Node && node !== slot2Node;
+    return node !== slot1Node && node !== slot2Node && node !== slot3Node;
   });
 
   if (!slot1Node && slot1Known && remainingNodes.length) slot1Node = remainingNodes.shift();
   if (!slot2Node && slot2Known && remainingNodes.length) slot2Node = remainingNodes.shift();
+  if (!slot3Node && slot3Known && remainingNodes.length) slot3Node = remainingNodes.shift();
   if (allowObservedOnlyFallback) {
     if (!slot1Node && remainingNodes.length) slot1Node = remainingNodes.shift();
     if (!slot2Node && remainingNodes.length) slot2Node = remainingNodes.shift();
+    if (!slot3Node && remainingNodes.length) slot3Node = remainingNodes.shift();
   }
 
   var slot1Label = satelliteDisplayName(stationId, 1);
   var slot2Label = satelliteDisplayName(stationId, 2);
+  var slot3Label = satelliteDisplayName(stationId, 3);
 
   return {
     slotMap: slotState,
@@ -290,6 +301,13 @@ function getHealthSlotContext(stationId, entries, syncRows, opts) {
       label: slot2Label,
       hasData: slot2HasData,
       configured: slot2Configured
+    },
+    slot3: {
+      enabled: !!(slot3Known || (allowObservedOnlyFallback && slot3Node)),
+      nodeLetter: slot3Node,
+      label: slot3Label,
+      hasData: slot3HasData,
+      configured: slot3Configured
     }
   };
 }

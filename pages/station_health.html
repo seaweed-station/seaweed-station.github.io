@@ -89,6 +89,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .chart-modal-close:hover{background:var(--bg-hover);color:var(--text)}
 .chart-modal-hint{font-size:.7rem;color:var(--text-muted)}
 .chart-modal-wrap{position:relative;height:calc(100vh - 200px);max-height:580px;min-height:300px}
+.chart-modal-wrap canvas{width:100%!important;height:100%!important;display:block}
 
 /* ======================== DAILY HEALTH TABLE ======================== */
 .health-table-wrap{overflow-x:auto;margin-bottom:14px}
@@ -646,6 +647,12 @@ function rebuildHealthStations(openStationIds) {
   STATIONS.forEach(function(station) {
     var data = stationData[station.id];
     container.appendChild(renderStationSection(station, data || { entries: [], raw: null }));
+    if ((!data || !Array.isArray(data.entries) || !data.entries.length) &&
+        typeof ensureHealthStationRawData === 'function') {
+      ensureHealthStationRawData(station.id, stationRanges[station.id] || 'week', { rerender: false }).then(function(changed) {
+        if (changed) rebuildHealthStations(getOpenHealthStationIds());
+      });
+    }
   });
 
   bindForecastPanelToggle();

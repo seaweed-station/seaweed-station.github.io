@@ -5,14 +5,14 @@
   var V4_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5b2lobHd0dmRzaHRsempkb2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MTA4MTksImV4cCI6MjA5MjI4NjgxOX0.i3jy8WlSF72v7Ypb2ulkL12EJaDfGcDYbdiC--PgjOc";
   var CATALOG_CACHE_KEY = "sw_v4_local_station_catalog";
   var STATION_META_KEY = "sw_v4_local_station_metadata";
-  var V4_SAFE_POINT_CAP = 500;
-  var V4_NORMAL_POINT_CAP = 1500;
-  var V4_SAFE_ROW_CAP = 3000;
-  var V4_NORMAL_ROW_CAP = 12000;
-  var V4_HISTORY_SAFE_ROW_CAP = 25000;
-  var V4_HISTORY_NORMAL_ROW_CAP = 60000;
-  var V4_HISTORY_PAGE_SIZE = 1000;
-  var V4_HISTORY_WINDOW_DAYS = 45;
+  var V4_SAFE_POINT_CAP = 300;
+  var V4_NORMAL_POINT_CAP = 1000;
+  var V4_SAFE_ROW_CAP = 1500;
+  var V4_NORMAL_ROW_CAP = 6000;
+  var V4_HISTORY_SAFE_ROW_CAP = 6000;
+  var V4_HISTORY_NORMAL_ROW_CAP = 20000;
+  var V4_HISTORY_PAGE_SIZE = 500;
+  var V4_HISTORY_WINDOW_DAYS = 14;
 
   var STATIC_V4_STATIONS = [
     {
@@ -604,7 +604,7 @@
       var offset = 0;
       while (rows.length < effectiveLimit) {
         var pageParams = Object.assign({}, params, {
-          order: "sample_epoch.asc",
+          order: "sample_epoch.desc",
           limit: String(Math.min(V4_HISTORY_PAGE_SIZE, effectiveLimit - rows.length)),
           offset: String(offset)
         });
@@ -628,7 +628,7 @@
   async function fetchSlotRowsForStation(station) {
     try {
       var rows = await getPostgrest("active_slot_map", {
-        select: "*",
+        select: "station_uid,station_name,slot_number,station_display_name,active_hub_board_id,node_board_id,node_primary_label,node_secondary_label,link_required",
         station_uid: "eq." + station.station_uid,
         order: "slot_number.asc",
         limit: "20"
@@ -644,7 +644,7 @@
     var win = windowParams(windowLike);
     try {
       var rows = await getPostgrest("sync_sessions", {
-        select: "*",
+        select: "station_uid,hub_board_id,node_board_id,slot_number,sync_id,upload_id,sync_started_at,sync_ended_at,status,status_detail,expected_samples,received_total,transfer_mode,requested_files,received_files,received_file_rows,persisted_sd,sat_rssi_avg,sat_rssi_min,sat_drift_s,sat_battery_v,sat_flash_pct,sat_fw_ver,sat_fw_date,hello_seen,mac_ack_ok,ack_sample_id,transfer_elapsed_ms,sync_period_min,sample_period_min,boot_count,received_live,min_sample_id,max_sample_id,sync_duration_ms,last_miss_summary,t0_backlog_stop_reason,sat_file_fail_reason,t0_file_fail_detail,sync_phase,scheduled_heavy_at,sleep_commanded,ota_deployment_id,ota_attempt_id,ota_target_version,post_ota_fw_ver",
         station_uid: "eq." + station.station_uid,
         sync_started_at: "gte." + win.from.toISOString(),
         order: "sync_started_at.desc",
@@ -669,7 +669,7 @@
     var win = windowParams(windowLike);
     try {
       var rows = await getPostgrest("upload_sessions", {
-        select: "*",
+        select: "station_uid,source_board_id,upload_id,upload_started_at,upload_ended_at,boot_count,upload_duration_ms,transport,csq,espnow_sched_drift_s,abs_time_resync_drift_s,hub_rows_uploaded,sat_rows_uploaded,batches_attempted,batches_succeeded,free_heap,sd_free_kb,files_archived,config_version,config_sync_result,status,status_detail,applied_sample_period_min,applied_upload_interval_hours,applied_upload_anchor_hour_utc,applied_upload_anchor_minute_utc,applied_satellite_sync_period_hours,applied_slot_count,applied_sleep_enable,applied_deploy_mode,applied_fw_version,applied_fw_date",
         station_uid: "eq." + station.station_uid,
         upload_started_at: "gte." + win.from.toISOString(),
         order: "upload_started_at.desc",
@@ -695,8 +695,8 @@
       : clampRowLimit(Math.max(pointTarget * 6, 600), 1800);
     var result = await fetchRowsForStation(stationId, windowLike, rowLimit);
     var slotRows = await fetchSlotRowsForStation(result.station);
-    var syncRows = await fetchSyncRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 300 : 1200);
-    var uploadRows = await fetchUploadRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 200 : 600);
+    var syncRows = await fetchSyncRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 200 : 800);
+    var uploadRows = await fetchUploadRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 120 : 400);
     var slots = discoverSlots(result.rows, slotRows);
     var feeds = rowsToFeeds(result.rows, slots);
     var latestUpload = uploadRows.length ? uploadRows[uploadRows.length - 1] : null;
@@ -794,7 +794,7 @@
     var payloadStations = [];
     for (var i = 0; i < stationRows.length; i++) {
       try {
-        var detail = await fetchStationPayload(stationRows[i].id, windowLike, 300);
+        var detail = await fetchStationPayload(stationRows[i].id, windowLike, 180);
         var entries = payloadToEntries(detail);
         var summary = stationSummaryFromEntries(stationRows[i], entries);
         summary.feeds = detail.feeds;
@@ -829,7 +829,7 @@
     };
 
     window.fetchStationDetailOverviewPayloadWithRetry = async function(stationId) {
-      var payload = await fetchStationPayload(stationId, { from: new Date(Date.now() - 7 * 24 * 3600000), to: new Date() }, 500);
+      var payload = await fetchStationPayload(stationId, { from: new Date(Date.now() - 7 * 24 * 3600000), to: new Date() }, 300);
       payload.station_id = stationId;
       return payload;
     };
@@ -839,7 +839,8 @@
     window.fetchEdgeHealthSummaryResilient = async function(opts) {
       opts = opts || {};
       var startedAt = Date.now();
-      var fromMs = opts.range === "all" ? Date.now() - 90 * 24 * 3600000 : Date.now() - 7 * 24 * 3600000;
+      var allRangeDays = v4EgressSafeMode() ? 30 : 90;
+      var fromMs = opts.range === "all" ? Date.now() - allRangeDays * 24 * 3600000 : Date.now() - 7 * 24 * 3600000;
       var payload = await buildOverviewPayload({ from: new Date(fromMs), to: new Date() });
       payload.time_range = { from: new Date(fromMs).toISOString(), to: new Date().toISOString(), label: opts.range || "recent" };
       payload._response_duration_ms = Date.now() - startedAt;

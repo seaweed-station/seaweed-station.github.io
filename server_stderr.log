@@ -33,3 +33,760 @@
 127.0.0.1 - - [24/Apr/2026 16:03:48] "GET /pages/station_setup.js HTTP/1.1" 200 -
 127.0.0.1 - - [24/Apr/2026 16:03:48] "GET /data/data_perth_table/weather_data.js HTTP/1.1" 200 -
 127.0.0.1 - - [24/Apr/2026 16:03:49] "GET /data/data_perth_table/merged_data.js?ts=1777017829193 HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:06] "GET /login.html?r=http://127.0.0.1:8765/pages/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:06] "GET /pages/seaweed_common.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:06] "GET /favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:07] "GET /pages/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:07] "GET /pages/seaweed_sync.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:07] "GET /pages/plot_overlays.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:07] "GET /pages/plot_core.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:07] "GET /pages/chart_manager.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:07] "GET /pages/battery_model.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:07] "GET /pages/battery_forecast_widget.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_station_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_chart_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_edge_fetch.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_data_parser.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_config_log.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_summary_cards.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_battery_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_chart_modal.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_sync_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:08] "GET /pages/health_daily_table.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/station.html?table=perth_table HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/seaweed_common.js?v=20260317 HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/tides.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/seaweed_sync.js?v=20260317 HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/station_data.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/station_config.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/station_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/station_render.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/station_weather.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /pages/station_setup.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:27] "GET /data/data_perth_table/weather_data.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:07:29] "GET /data/data_perth_table/merged_data.js?ts=1777028849065 HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:43] "GET /login.html?r=http://127.0.0.1:8765/pages/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:43] "GET /pages/seaweed_common.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:43] "GET /favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:44] "GET /pages/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:44] "GET /pages/seaweed_sync.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:44] "GET /pages/plot_core.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:44] "GET /pages/plot_overlays.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:44] "GET /pages/chart_manager.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:44] "GET /pages/battery_model.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:44] "GET /pages/battery_forecast_widget.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_station_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_chart_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_config_log.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_data_parser.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_edge_fetch.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_chart_modal.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_sync_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_summary_cards.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_battery_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:08:45] "GET /pages/health_daily_table.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/station.html?table=perth_table HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/seaweed_common.js?v=20260317 HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/seaweed_sync.js?v=20260317 HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/tides.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/station_config.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/station_data.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/station_render.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/station_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/station_weather.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /pages/station_setup.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:09:02] "GET /data/data_perth_table/weather_data.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:37] "GET /login.html?r=http://127.0.0.1:8765/ESP32_Weather_Station_Dashboard.html HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:37] "GET /pages/seaweed_common.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:37] "GET /favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:38] "GET /ESP32_Weather_Station_Dashboard.html HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/seaweed_sync.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/plot_core.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/chart_manager.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/plot_overlays.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/battery_model.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/battery_forecast_widget.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_station_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_chart_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_edge_fetch.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_data_parser.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_config_log.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_summary_cards.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_battery_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_sync_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_chart_modal.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:11:54] "GET /pages/health_daily_table.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/station.html?table=perth_table HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/seaweed_common.js?v=20260317 HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/seaweed_sync.js?v=20260317 HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/tides.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/station_config.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/station_data.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/station_render.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/station_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/station_weather.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /pages/station_setup.js HTTP/1.1" 200 -
+127.0.0.1 - - [24/Apr/2026 19:12:13] "GET /data/data_perth_table/weather_data.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:03] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:18] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:26] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:26] "GET /v4/css/v4.css HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:26] "GET /v4/js/catalog_provider_v4.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:26] "GET /v4/js/nav_v4.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:26] "GET /v4/js/page_bootstrap_v4.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:26] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Foverview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:26] "GET /pages/seaweed_common.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:26] "GET /favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:41] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:51] "GET /v4/station_health.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:12:58] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:13:04] "GET /pages/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:13:04] "GET /pages/seaweed_common.js?v=20260318 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:13:12] "GET /login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fpages%2Fsettings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:14:14] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:14:14] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:14:14] "GET /v4/js/catalog_provider_v4.js HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:14:14] "GET /v4/js/nav_v4.js HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:14:14] "GET /v4/js/page_bootstrap_v4.js HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:14:15] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:15:14] "GET /pages/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:15:45] "GET /v4/station.html?station=perth HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:15:46] "GET /v4/station_health.html?station=perth HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:15:47] "GET /v4/station_health.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:15:47] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:16:27] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:27] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:16:27] "GET /v4/js/nav_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:27] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:27] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:28] "GET /v4/station.html?station=perth HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:29] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:29] "GET /v4/station_health.html?station=perth HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:30] "GET /v4/station_health.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:31] "GET /v4/js/catalog_provider_v4.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:16:31] "GET /v4/js/nav_v4.js HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:16:31] "GET /v4/js/page_bootstrap_v4.js HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:16:40] "GET /v4/station_health.html?station=tdb-02 HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:16:40] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:16:59] "GET /pages/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:17:56] "GET /v4/station_health.html?station=tdb-02 HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:17:56] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:17:56] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fstation_health.html%3Fstation%3Dtdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 09:18:29] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 09:18:29] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:34:09] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:09] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Foverview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:09] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:34:09] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:34:09] "GET /pages/seaweed_common.js?v=20260504v4 HTTP/1.1" 200 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 53528)
+Traceback (most recent call last):
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+127.0.0.1 - - [04/May/2026 12:34:18] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:34:18] "GET /pages/seaweed_common.js?v=20260504v4 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/chart_manager.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/plot_core.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/plot_overlays.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/seaweed_sync.js?v=20260504v4 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/battery_forecast_widget.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/battery_model.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/tides.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/station_config.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/station_data.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/station_render.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/station_weather.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/station_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:25] "GET /pages/station_setup.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:26] "GET /data/data_Shangani/weather_data.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_config_log.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_chart_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_data_parser.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_summary_cards.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_edge_fetch.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_station_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_chart_modal.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_sync_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_battery_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:28] "GET /pages/health_daily_table.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:34:59] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:34:59] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:35:00] "GET /v4/station_health.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:40:34] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:40:34] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:40:36] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:40:37] code 404, message File not found
+127.0.0.1 - - [04/May/2026 12:40:37] "GET /data/data_tdb_02/weather_data.js HTTP/1.1" 404 -
+127.0.0.1 - - [04/May/2026 12:40:37] code 404, message File not found
+127.0.0.1 - - [04/May/2026 12:40:37] "GET /data/data_tdb_02/merged_data.js?ts=1777869637292 HTTP/1.1" 404 -
+127.0.0.1 - - [04/May/2026 12:40:39] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:40:39] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:41:06] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:41:06] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:41:06] code 404, message File not found
+127.0.0.1 - - [04/May/2026 12:41:06] "GET /data/data_tdb_02/weather_data.js HTTP/1.1" 404 -
+127.0.0.1 - - [04/May/2026 12:41:06] code 404, message File not found
+127.0.0.1 - - [04/May/2026 12:41:06] "GET /data/data_tdb_02/merged_data.js?ts=1777869666745 HTTP/1.1" 404 -
+127.0.0.1 - - [04/May/2026 12:41:50] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:41:50] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4c HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:41:54] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:41:54] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4c HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:41:54] code 404, message File not found
+127.0.0.1 - - [04/May/2026 12:41:54] "GET /data/data_tdb_02/weather_data.js HTTP/1.1" 404 -
+127.0.0.1 - - [04/May/2026 12:41:58] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:41:58] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4c HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:43:28] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:43:28] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:43:32] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:43:32] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:43:32] code 404, message File not found
+127.0.0.1 - - [04/May/2026 12:43:32] "GET /data/data_tdb_02/weather_data.js HTTP/1.1" 404 -
+127.0.0.1 - - [04/May/2026 12:43:36] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:43:36] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:44:12] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:44:12] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:44:12] "GET /pages/station_data.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:44:13] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:44:45] "GET /pages/station_data.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:45:22] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:45:22] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:45:22] "GET /pages/station_data.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 12:45:22] "GET /pages/station_setup.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fstation.html%3Fstation%3Dtdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/plot_core.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/plot_overlays.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/chart_manager.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/seaweed_common.js?v=20260504v4 HTTP/1.1" 200 -
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 50793)
+Exception occurred during processing of request from ('127.0.0.1', 56201)
+----------------------------------------
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/seaweed_sync.js?v=20260504v4 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/battery_forecast_widget.js HTTP/1.1" 200 -
+Traceback (most recent call last):
+Traceback (most recent call last):
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/tides.js HTTP/1.1" 200 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 59938)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+Exception occurred during processing of request from ('127.0.0.1', 61388)
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/station_charts.js HTTP/1.1" 200 -
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 53641)
+Traceback (most recent call last):
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 51699)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 50319)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 63397)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+Traceback (most recent call last):
+Traceback (most recent call last):
+----------------------------------------
+----------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+Traceback (most recent call last):
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+Traceback (most recent call last):
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+----------------------------------------
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+----------------------------------------
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+----------------------------------------
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+----------------------------------------
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /pages/seaweed_common.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /v4/css/v4.css HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:40] "GET /favicon.ico HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/plot_core.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/plot_overlays.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/chart_manager.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/seaweed_common.js?v=20260504v4 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/seaweed_sync.js?v=20260504v4 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/battery_model.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/battery_forecast_widget.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/station_config.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/station_data.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/tides.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/station_render.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/station_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/station_weather.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:44] "GET /pages/station_setup.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:54:51] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:00] "GET /v4/station.html?table=perth_table HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:05] "GET /v4/station.html?table=tb-01 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_station_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_edge_fetch.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_chart_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_data_parser.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_config_log.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_summary_cards.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_sync_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_battery_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_chart_modal.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 12:55:18] "GET /pages/health_daily_table.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 13:04:57] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 13:04:57] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 13:04:58] "GET /v4/station_health.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 13:05:25] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 13:05:25] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 13:05:26] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 13:05:26] "GET /v4/js/nav_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 13:05:26] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 13:30:28] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 13:30:29] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 13:30:29] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 13:30:29] "GET /v4/js/nav_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 13:30:29] "GET /v4/css/v4.css HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:19:19] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:19:19] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:19:19] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:19:19] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:19:19] "GET /v4/js/nav_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:19:19] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:19:19] "GET /pages/seaweed_common.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:19:19] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:19:27] "GET /v4/js/nav_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:19:27] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:19:36] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:19:36] "GET /pages/seaweed_common.js?v=20260504v4 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:19:36] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /v4/station_health.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/seaweed_sync.js?v=20260504v4 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/plot_core.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/plot_overlays.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/chart_manager.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/battery_model.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/battery_forecast_widget.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_station_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_chart_utils.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_edge_fetch.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_data_parser.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_config_log.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_summary_cards.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_battery_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_sync_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_chart_modal.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:20:28] "GET /pages/health_daily_table.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:21:04] code 404, message File not found
+127.0.0.1 - - [04/May/2026 14:21:04] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+127.0.0.1 - - [04/May/2026 14:21:07] code 404, message File not found
+127.0.0.1 - - [04/May/2026 14:21:07] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+127.0.0.1 - - [04/May/2026 14:31:01] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:31:01] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fstation_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:31:01] "GET /v4/css/v4.css HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:31:01] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:31:01] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 200 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 58533)
+Traceback (most recent call last):
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+127.0.0.1 - - [04/May/2026 14:31:01] "GET /pages/health_battery_charts.js HTTP/1.1" 200 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 56767)
+Traceback (most recent call last):
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+127.0.0.1 - - [04/May/2026 14:31:13] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:31:13] "GET /pages/health_battery_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:33:24] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:33:24] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4e HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:33:24] "GET /pages/health_station_utils.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:33:24] "GET /pages/health_edge_fetch.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:33:24] "GET /pages/health_battery_charts.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:33:24] "GET /pages/health_sync_charts.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:33:24] "GET /pages/health_daily_table.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:34:08] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:34:08] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4e HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:34:08] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Foverview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:34:13] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:35:03] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:35:03] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4e HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:35:13] "GET /v4/station.html?station=tdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:35:13] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fstation.html%3Fstation%3Dtdb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:35:13] "GET /pages/station_data.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:35:13] "GET /pages/station_setup.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:43:39] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:43:39] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:43:39] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:43:39] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:43:39] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:43:39] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:43:44] "GET /v4/js/nav_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:43:44] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /v4/station.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /v4/js/v4_dashboard_adapter.js?v=20260504v4e HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /pages/tides.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /pages/station_data.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /pages/station_config.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /pages/station_render.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /pages/station_charts.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /pages/station_weather.js HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:05] "GET /pages/station_setup.js?v=20260504v4d HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:07] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:07] "GET /pages/health_station_utils.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:07] "GET /pages/health_edge_fetch.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:07] "GET /pages/health_battery_charts.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:07] "GET /pages/health_sync_charts.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:44:07] "GET /pages/health_daily_table.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:45:15] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:58:42] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:58:42] "GET /v4/js/nav_v4.js?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:58:42] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:58:42] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 14:58:42] "GET /v4/js/catalog_provider_v4.js?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:45] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:45] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:45] "GET /v4/js/catalog_provider_v4.js?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:45] "GET /v4/js/nav_v4.js?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:45] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:45] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:45] "GET /v4/css/v4.css HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:45] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 14:59:58] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:00:51] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:00:51] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:00:51] "GET /v4/js/catalog_provider_v4.js?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:13:00] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:13:00] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:13:00] "GET /v4/js/nav_v4.js?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:13:00] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:13:00] "GET /v4/js/catalog_provider_v4.js?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:14:35] "GET /v4/overview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:14:35] "GET /v4/js/v4_dashboard_adapter.js?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:14:35] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:14:42] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Foverview.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:14:42] "GET /v4/css/v4.css HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:14:42] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:15:12] "GET /login.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:15:39] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:15:41] "GET /ESP32_Weather_Station_Dashboard.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:15:47] "GET /pages/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:15:47] "GET /pages/seaweed_common.js?v=20260318 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:15:53] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:15:53] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:15:53] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:15:53] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:15:53] "GET /v4/js/catalog_provider_v4.js?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:15:53] "GET /v4/js/catalog_provider_v4.js?v=20260504b HTTP/1.1" 200 -
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 50613)
+Traceback (most recent call last):
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 683, in process_request_thread
+    self.finish_request(request, client_address)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 1288, in finish_request
+    self.RequestHandlerClass(request, client_address, self,
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 651, in __init__
+    super().__init__(*args, **kwargs)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 747, in __init__
+    self.handle()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 425, in handle
+    self.handle_one_request()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 413, in handle_one_request
+    method()
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 658, in do_GET
+    self.copyfile(f, self.wfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\http\server.py", line 858, in copyfile
+    shutil.copyfileobj(source, outputfile)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\shutil.py", line 208, in copyfileobj
+    fdst_write(buf)
+  File "C:\Users\bosun\AppData\Local\Programs\Python\Python39\lib\socketserver.py", line 826, in write
+    self._sock.sendall(b)
+ConnectionAbortedError: [WinError 10053] An established connection was aborted by the software in your host machine
+----------------------------------------
+127.0.0.1 - - [04/May/2026 15:19:41] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:19:41] "GET /v4/css/v4.css HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:19:41] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:19:41] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:19:42] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:19:42] "GET /v4/js/nav_v4.js?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:19:42] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:19:48] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:19:48] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:20:16] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:20:16] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:20:57] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:20:57] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:20:57] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:20:58] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:20:58] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:21:06] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:21:16] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:21:16] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:22:31] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:22:32] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:22:32] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:22:38] "GET /v4/settings.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:22:38] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:22:38] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:22:55] "GET /v4/station.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:22:55] "GET /v4/js/v4_dashboard_adapter.js?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:22:55] "GET /pages/station_data.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:22:55] "GET /pages/station_setup.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:23:21] "GET /v4/station_health.html HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:23:21] "GET /pages/health_station_utils.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:23:21] "GET /pages/health_battery_charts.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:23:21] "GET /pages/health_daily_table.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:23:21] "GET /pages/health_sync_charts.js?v=20260504v4slots HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:26:23] "GET /v4/station.html?table=tb-01 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:26:23] "GET /v4/js/v4_dashboard_adapter.js?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:26:24] "GET /v4/station.html?table=tb-01 HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:26:36] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:26:43] "GET /v4/station.html?table=tb-02 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:27:11] "GET /v4/station.html?table=tdb-03 HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:27:18] "GET /v4/station_health.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:27:18] "GET /pages/health_station_utils.js?v=20260504v4slots HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:27:18] "GET /pages/health_battery_charts.js?v=20260504v4slots HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:27:18] "GET /pages/health_sync_charts.js?v=20260504v4slots HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:27:18] "GET /pages/health_daily_table.js?v=20260504v4slots HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:49:59] "GET /v4/settings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:49:59] "GET /v4/login.html?r=http%3A%2F%2F127.0.0.1%3A8765%2Fv4%2Fsettings.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:49:59] "GET /v4/css/v4.css?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:49:59] "GET /v4/js/catalog_provider_v4.js?v=20260504auth HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:49:59] "GET /v4/js/nav_v4.js?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:49:59] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:49:59] "GET /v4/css/v4.css HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:50:07] "GET /v4/js/nav_v4.js?v=20260504roles HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:50:07] "GET /v4/js/page_bootstrap_v4.js?v=20260504b HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:53:21] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:53:21] "GET /v4/js/v4_dashboard_adapter.js?v=20260504roles HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:53:22] "GET /v4/overview.html HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:53:29] "GET /v4/station.html?table=perth_table HTTP/1.1" 200 -
+127.0.0.1 - - [04/May/2026 15:53:29] "GET /pages/station_data.js?v=20260504v4d HTTP/1.1" 304 -
+127.0.0.1 - - [04/May/2026 15:53:29] "GET /pages/station_setup.js?v=20260504v4d HTTP/1.1" 304 -

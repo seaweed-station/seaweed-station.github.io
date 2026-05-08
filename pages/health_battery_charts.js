@@ -9,14 +9,31 @@ function renderBatteryCharts(container, entries, stationId, range) {
   var syncRowsAll = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
   var slotCtx = typeof getHealthSlotContext === 'function' ? getHealthSlotContext(stationId, entries, syncRowsAll) : null;
   var slot2Enabled = slotCtx ? slotCtx.slot2.enabled : isSatelliteVisible(stationId, entries, 2);
+  var slot3Enabled = slotCtx ? (slotCtx.slot3 && slotCtx.slot3.enabled) : isSatelliteVisible(stationId, entries, 3);
   var firstTs = entries[0].timestamp;
   var lastTs = entries[entries.length - 1].timestamp;
   var CUTOFF_V = 3.3;
   var FULL_V = 4.2;
   var PLOT_MIN_V = 3.2;
-  var PLOT_MAX_V = 4.3;
+  var DEFAULT_PLOT_MAX_V = 4.3;
   var PLOT_MIN_PCT = 0;
   var PLOT_MAX_PCT = 110;
+
+  function resolvePlotMaxVoltage(data) {
+    var keys = ['t0BatV', 'sat1BatV', 'sat2BatV', 'sat3BatV'];
+    var maxV = FULL_V;
+    for (var i = 0; i < data.length; i++) {
+      var entry = data[i];
+      for (var k = 0; k < keys.length; k++) {
+        var value = Number(entry[keys[k]]);
+        if (isFinite(value) && value > 0) maxV = Math.max(maxV, value);
+      }
+    }
+    if (!isFinite(maxV)) return DEFAULT_PLOT_MAX_V;
+    return Math.max(DEFAULT_PLOT_MAX_V, Math.ceil((maxV + 0.05) * 10) / 10);
+  }
+
+  var PLOT_MAX_V = resolvePlotMaxVoltage(entries);
 
   var voltWrap = document.createElement('div');
   voltWrap.className = 'chart-box-full chart-box-voltage';
@@ -63,10 +80,51 @@ function renderBatteryCharts(container, entries, stationId, range) {
 
   container.appendChild(voltWrap);
 
-  function makeVoltDS(data, key, label, color) {
+  function medianNumber(values) {
+    var nums = (values || []).filter(function(v) { return isFinite(v); }).sort(function(a, b) { return a - b; });
+    if (!nums.length) return null;
+    var mid = Math.floor(nums.length / 2);
+    return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+  }
+
+  function voltageBinMsForRange() {
+    if (range === 'week') return 30 * 60000;
+    if (range === 'month') return 2 * 3600000;
+    if (range === 'all') return 6 * 3600000;
+    return 0;
+  }
+
+  function cleanSatelliteVoltagePoints(points) {
+    if (range === 'day' || !points || points.length < 4) return points;
+    var binMs = voltageBinMsForRange();
+    if (!binMs) return points;
+
+    var byBin = {};
+    for (var i = 0; i < points.length; i++) {
+      var pt = points[i];
+      var ts = pt.x instanceof Date ? pt.x.getTime() : Number(pt.x);
+      var y = Number(pt.y);
+      if (!isFinite(ts) || !isFinite(y)) continue;
+      var key = Math.floor(ts / binMs);
+      if (!byBin[key]) byBin[key] = { ts: [], values: [] };
+      byBin[key].ts.push(ts);
+      byBin[key].values.push(y);
+    }
+
+    return Object.keys(byBin).sort(function(a, b) { return Number(a) - Number(b); }).map(function(key) {
+      var bucket = byBin[key];
+      var y = medianNumber(bucket.values);
+      var t = medianNumber(bucket.ts);
+      if (y === null || t === null) return null;
+      return { x: new Date(t), y: Number(y.toFixed(3)) };
+    }).filter(function(pt) { return !!pt; });
+  }
+
+  function makeVoltDS(data, key, label, color, cleanTransientSpikes) {
     var pts = data
       .filter(function(e) { return e[key] !== null && e[key] !== undefined && isFinite(e[key]) && Number(e[key]) > 0; })
       .map(function(e) { return { x: e.timestamp, y: Number(e[key]) }; });
+    if (cleanTransientSpikes) pts = cleanSatelliteVoltagePoints(pts);
     return {
       label: label,
       data: memoizeHealthSeries('health:' + stationId + ':battery:' + range + ':' + key, pts),
@@ -194,7 +252,7 @@ function renderBatteryCharts(container, entries, stationId, range) {
     if (typeof BatteryModel === 'undefined' || typeof BatteryModel.projectVoltageCurve !== 'function') return [];
     var rawPts = pctSeries(data, pctKey);
     // For satellites, use an upper-envelope to ignore transient sync droops.
-    var useEnvelope = (pctKey === 'sat1BatPct' || pctKey === 'sat2BatPct');
+    var useEnvelope = (pctKey === 'sat1BatPct' || pctKey === 'sat2BatPct' || pctKey === 'sat3BatPct');
     var fitPts = useEnvelope ? pctUpperEnvelope(rawPts, 3 * 3600000) : rawPts;
     if (fitPts.length < 2) fitPts = rawPts;
 
@@ -366,8 +424,10 @@ function renderBatteryCharts(container, entries, stationId, range) {
   var syncRows = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
   var slot1Label = slotCtx ? slotCtx.slot1.label : satelliteDisplayName(stationId, 1);
   var slot2Label = slotCtx ? slotCtx.slot2.label : satelliteDisplayName(stationId, 2);
+  var slot3Label = slotCtx && slotCtx.slot3 ? slotCtx.slot3.label : satelliteDisplayName(stationId, 3);
   var slot1Node = slotCtx ? slotCtx.slot1.nodeLetter : satelliteNodeLetter(stationId, 1);
   var slot2Node = slotCtx ? slotCtx.slot2.nodeLetter : satelliteNodeLetter(stationId, 2);
+  var slot3Node = slotCtx && slotCtx.slot3 ? slotCtx.slot3.nodeLetter : satelliteNodeLetter(stationId, 3);
   var uploadEventTimes = uniqSortedTimes(uploadRows.map(function(r) {
     return r && r.upload_started_at ? new Date(ensureUTC(r.upload_started_at)) : null;
   }).filter(function(d) {
@@ -388,6 +448,13 @@ function renderBatteryCharts(container, entries, stationId, range) {
   }));
   var syncEventTimesB = uniqSortedTimes(syncRows.filter(function(r) {
     return slot2Node && String((r && r.node_id) || '').toUpperCase() === slot2Node;
+  }).map(function(r) {
+    return r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)) : null;
+  }).filter(function(d) {
+    return d && !isNaN(d.getTime()) && d.getTime() >= rangeStartMs && d.getTime() <= rangeEndMs;
+  }));
+  var syncEventTimesC = uniqSortedTimes(syncRows.filter(function(r) {
+    return slot3Node && String((r && r.node_id) || '').toUpperCase() === slot3Node;
   }).map(function(r) {
     return r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)) : null;
   }).filter(function(d) {
@@ -427,19 +494,26 @@ function renderBatteryCharts(container, entries, stationId, range) {
       fill: false,
       _isGuide: true
     },
-    makeVoltDS(entries, 't0BatV', 'T0', '#60a5fa'),
-    makeVoltDS(entries, 'sat1BatV', slot1Label, '#34d399'),
+    makeVoltDS(entries, 't0BatV', 'T0', '#60a5fa', false),
+    makeVoltDS(entries, 'sat1BatV', slot1Label, '#34d399', true),
     calculatedDataset('T0 Calculated', '#93c5fd', 't0BatPct', 't0', calcAnchorMs, rangeStartMs, rangeEndMs, 't0BatV'),
     calculatedDataset(slot1Label + ' Calculated', '#6ee7b7', 'sat1BatPct', 'te', calcAnchorMs, rangeStartMs, rangeEndMs, 'sat1BatV')
   ];
   if (slot2Enabled) {
-    voltDatasets.push(makeVoltDS(entries, 'sat2BatV', slot2Label, '#fbbf24'));
+    voltDatasets.push(makeVoltDS(entries, 'sat2BatV', slot2Label, '#fbbf24', true));
     voltDatasets.push(calculatedDataset(slot2Label + ' Calculated', '#fde68a', 'sat2BatPct', 'te', calcAnchorMs, rangeStartMs, rangeEndMs, 'sat2BatV'));
+  }
+  if (slot3Enabled) {
+    voltDatasets.push(makeVoltDS(entries, 'sat3BatV', slot3Label, '#a78bfa', true));
+    voltDatasets.push(calculatedDataset(slot3Label + ' Calculated', '#c4b5fd', 'sat3BatPct', 'te', calcAnchorMs, rangeStartMs, rangeEndMs, 'sat3BatV'));
   }
   voltDatasets.push(verticalEventDataset('T0 Upload Events', 'rgba(96,165,250,0.85)', uploadEventTimes, true, [7, 5], 1.6, 'upload'));
   voltDatasets.push(verticalEventDataset(slot1Label + ' Sync Events', 'rgba(52,211,153,0.85)', syncEventTimesA, true, [7, 5], 1.6, 'sync'));
   if (slot2Enabled) {
     voltDatasets.push(verticalEventDataset(slot2Label + ' Sync Events', 'rgba(251,191,36,0.85)', syncEventTimesB, true, [7, 5], 1.6, 'sync'));
+  }
+  if (slot3Enabled) {
+    voltDatasets.push(verticalEventDataset(slot3Label + ' Sync Events', 'rgba(167,139,250,0.85)', syncEventTimesC, true, [7, 5], 1.6, 'sync'));
   }
   voltDatasets.push(verticalEventDataset('Config Events', 'rgba(239,68,68,0.85)', configEventTimes, true, [4, 4], 1.6, 'config'));
   // Keep sample events available but placed last and hidden by default.
@@ -536,6 +610,11 @@ function renderBatteryCharts(container, entries, stationId, range) {
     if (slot2Enabled) {
       var sb = lifeSummary('sat2BatPct', true, 'te');
       cards.push({ title: slot2Label, color: '#fbbf24', calcDays: sb.calcDays });
+    }
+
+    if (slot3Enabled) {
+      var sc = lifeSummary('sat3BatPct', true, 'te');
+      cards.push({ title: slot3Label, color: '#a78bfa', calcDays: sc.calcDays });
     }
 
     calcDaysRow.innerHTML = cards.map(function(c) {
@@ -651,7 +730,7 @@ function renderSolarChart(container, entries, stationId, range) {
 
   var solarPoints = entries
     .filter(function(e) {
-      return e.t0SolarV !== null && e.t0SolarV !== undefined && isFinite(e.t0SolarV) && Number(e.t0SolarV) > 0;
+        return e.t0SolarV !== null && e.t0SolarV !== undefined && isFinite(e.t0SolarV) && Number(e.t0SolarV) >= 0;
     })
     .map(function(e) {
       return { x: e.timestamp, y: Number(e.t0SolarV) };
@@ -683,6 +762,7 @@ function renderSolarChart(container, entries, stationId, range) {
         borderWidth: 2,
         pointRadius: 0,
         tension: 0.2,
+        spanGaps: false,
         fill: false
       }]
     },

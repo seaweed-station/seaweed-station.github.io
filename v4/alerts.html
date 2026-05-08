@@ -20,23 +20,6 @@
 </header>
 <main class="main">
   <section class="band">
-    <div class="band-head"><h2>Alert Controls</h2><span class="status-line" id="alertStatus">Loading...</span></div>
-    <div class="band-body">
-      <div class="notice">
-        Alerts are configured for Slack delivery. Fleet default rows apply to every station unless a station-specific override exists.
-      </div>
-      <div class="toolbar" style="margin-top:12px">
-        <button class="btn" id="reloadBtn" type="button">Reload</button>
-        <button class="btn" id="addOverrideBtn" type="button">Add Station Override</button>
-        <button class="btn" id="testSlackBtn" type="button">Send Test Alert</button>
-        <button class="btn btn-primary" id="pushBtn" type="button">Push Alert Settings</button>
-        <span class="status-line" id="pushStatus"></span>
-        <span class="status-line" id="testStatus"></span>
-      </div>
-    </div>
-  </section>
-
-  <section class="band">
     <div class="band-head"><h2>Summary</h2><span class="status-line">Local editor state</span></div>
     <div class="band-body">
       <div class="summary-grid">
@@ -56,11 +39,12 @@
           <tr>
             <th><button class="table-sort" type="button" data-current-sort="severity">Severity</button></th>
             <th><button class="table-sort" type="button" data-current-sort="station">Station</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="board">Board</button></th>
             <th><button class="table-sort" type="button" data-current-sort="alert">Alert</button></th>
-            <th><button class="table-sort" type="button" data-current-sort="slot">Slot</button></th>
             <th><button class="table-sort" type="button" data-current-sort="value">Current Value</button></th>
             <th><button class="table-sort" type="button" data-current-sort="threshold">Threshold</button></th>
-            <th><button class="table-sort" type="button" data-current-sort="silenced">Notify</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="silenced">Notification</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="next_notification">Next Slack</button></th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -70,7 +54,20 @@
   </section>
 
   <section class="band">
-    <div class="band-head"><h2>Alert Settings</h2><span class="status-line">Silence a row to permanently mute that alert family for the selected scope; unsilence to resume Slack notifications.</span></div>
+    <div class="band-head"><h2>Alert Settings</h2><span class="status-line" id="alertStatus">Loading...</span></div>
+    <div class="band-body">
+      <div class="notice">
+        Fleet default rows apply to every station unless a station-specific override exists. Station-specific override rows can be removed.
+      </div>
+      <div class="toolbar" style="margin-top:12px">
+        <button class="btn" id="reloadBtn" type="button">Reload</button>
+        <button class="btn" id="addOverrideBtn" type="button">Add Station Override</button>
+        <button class="btn" id="testSlackBtn" type="button">Send Test Alert</button>
+        <button class="btn btn-primary" id="pushBtn" type="button">Push Alert Settings</button>
+        <span class="status-line" id="pushStatus"></span>
+        <span class="status-line" id="testStatus"></span>
+      </div>
+    </div>
     <div class="table-wrap">
       <table class="data-table" id="alertTable">
         <thead>
@@ -114,12 +111,16 @@
     satellite_sync: { warning_missed_windows: 1, critical_missed_windows: 2 },
     solar_missing: { daylight_min_v: 1.0, warning_days: 1, critical_days: 2 },
     temperature: { warning_c: 55, critical_c: 60 },
-    sensor_missing: { expected_hub_sensors: [1, 2, 3], severity: "warning" }
+    sensor_missing: { expected_hub_sensors: [1, 2, 3], expected_satellite_sensors: [1, 2, 3], severity: "warning" }
   };
   var stations = [];
+  var currentAlertSourceRows = [];
   var currentAlerts = [];
   var currentAlertSort = { key: "severity", dir: "desc" };
-  var locallySilencedCurrentAlerts = {};
+  var LOCAL_SILENCED_ALERTS_KEY = "sw_v4_locally_silenced_current_alerts";
+  var locallySilencedCurrentAlerts = loadLocalSilencedCurrentAlerts();
+  var dirtySettingRows = {};
+  var pendingDeleteSettingRows = {};
   var alertRowsEl = document.getElementById("alertRows");
   var currentAlertRowsEl = document.getElementById("currentAlertRows");
   var alertStatus = document.getElementById("alertStatus");
@@ -135,7 +136,7 @@
   }
 
   function emptyCurrentAlertRow(message) {
-    currentAlertRowsEl.innerHTML = '<tr><td colspan="8" class="muted">' + html(message) + '</td></tr>';
+    currentAlertRowsEl.innerHTML = '<tr><td colspan="9" class="muted">' + html(message) + '</td></tr>';
   }
 
   function stationName(uid) {
@@ -158,6 +159,18 @@
     if (!value) return "";
     var d = new Date(value);
     return isNaN(d.getTime()) ? "" : d.toISOString();
+  }
+
+  function shortDateTime(value) {
+    if (!value) return "";
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
   }
 
   function thresholdText(row) {
@@ -183,6 +196,18 @@
     }).join("");
   }
 
+  function settingKey(stationUid, alertKey) {
+    return (stationUid || "*") + "|" + (alertKey || "upload_freshness");
+  }
+
+  function markSettingDirty(stationUid, alertKey) {
+    dirtySettingRows[settingKey(stationUid, alertKey)] = true;
+  }
+
+  function markSettingClean(stationUid, alertKey) {
+    delete dirtySettingRows[settingKey(stationUid, alertKey)];
+  }
+
   function renderRows(rows) {
     rows = normalizeSettingsRows(rows);
     if (!rows.length) {
@@ -198,7 +223,8 @@
     alertRowsEl.innerHTML = rows.map(function(row) {
       var stationUid = row.station_uid || "*";
       var alertKey = row.alert_key || "upload_freshness";
-      return '<tr data-alert-row>' +
+      var key = settingKey(stationUid, alertKey);
+      return '<tr data-alert-row data-setting-key="' + html(key) + '"' + (dirtySettingRows[key] ? ' class="dirty-row"' : '') + '>' +
         '<td><select data-field="station_uid">' + scopeOptions(stationUid) + '</select><div class="cell-sub">' + html(stationName(stationUid)) + '</div></td>' +
         '<td><select data-field="alert_key">' + alertOptions(alertKey) + '</select></td>' +
         '<td><label class="inline-check"><input type="checkbox" data-field="enabled" ' + (row.enabled !== false ? "checked" : "") + '> Active</label></td>' +
@@ -207,7 +233,10 @@
         '<td><input type="datetime-local" data-field="suppress_until" value="' + html(toDateTimeLocal(row.suppress_until)) + '"></td>' +
         '<td><textarea data-field="thresholds" spellcheck="false">' + html(thresholdText(row)) + '</textarea></td>' +
         '<td><input type="text" data-field="notes" value="' + html(row.notes || "") + '" placeholder="Reason, owner, context"></td>' +
-        '<td><button class="btn btn-small" type="button" data-setting-action="toggleSilence">' + (row.enabled === false ? "\uD83D\uDD14 Unsilence" : "\uD83D\uDD15 Silence") + '</button></td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-small" type="button" data-setting-action="toggleSilence">' + (row.enabled === false ? "\uD83D\uDD14 Unsilence" : "\uD83D\uDD15 Silence") + '</button>' +
+          (stationUid === "*" ? "" : '<button class="btn btn-small btn-danger" type="button" data-setting-action="removeRow">Remove</button>') +
+        '</div></td>' +
       '</tr>';
     }).join("");
     alertRowsEl.querySelectorAll('[data-field="alert_key"]').forEach(function(sel) {
@@ -217,11 +246,12 @@
         if (text && (!text.value.trim() || text.value.trim() === "{}")) {
           text.value = JSON.stringify(DEFAULT_THRESHOLDS[sel.value] || {}, null, 2);
         }
+        markRenderedRowDirty(tr);
       });
     });
     alertRowsEl.querySelectorAll("input,select,textarea").forEach(function(el) {
-      el.addEventListener("change", updateSummary);
-      el.addEventListener("input", updateSummary);
+      el.addEventListener("change", function() { markRenderedRowDirty(el.closest("tr")); updateSummary(); renderCurrentAlerts(); });
+      el.addEventListener("input", function() { markRenderedRowDirty(el.closest("tr")); updateSummary(); renderCurrentAlerts(); });
     });
     alertRowsEl.querySelectorAll("[data-setting-action]").forEach(function(btn) {
       btn.addEventListener("click", function() {
@@ -229,6 +259,13 @@
       });
     });
     updateSummary();
+  }
+
+  function markRenderedRowDirty(tr) {
+    if (!tr) return;
+    var identity = settingRowIdentity(tr);
+    markSettingDirty(identity.station_uid, identity.alert_key);
+    tr.classList.add("dirty-row");
   }
 
   function normalizeSettingsRows(rows) {
@@ -272,26 +309,50 @@
   }
 
   function currentAlertNotifyLabel(row) {
-    return isCurrentAlertSilenced(row) ? "\uD83D\uDD15 Silenced" : "\uD83D\uDD14 Notify";
+    return isCurrentAlertSilenced(row) ? "\uD83D\uDD15 Silenced" : "\uD83D\uDD14 Alerting";
   }
 
   function currentAlertNotifyAction(row) {
     return isCurrentAlertSilenced(row) ? "unsilence" : "silence";
   }
 
+  function loadLocalSilencedCurrentAlerts() {
+    try {
+      var parsed = JSON.parse(sessionStorage.getItem(LOCAL_SILENCED_ALERTS_KEY) || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function saveLocalSilencedCurrentAlerts() {
+    try {
+      sessionStorage.setItem(LOCAL_SILENCED_ALERTS_KEY, JSON.stringify(locallySilencedCurrentAlerts));
+    } catch (_) {}
+  }
+
+  function updateCurrentAlertLocalSilence(alert, silenced) {
+    var key = currentAlertIdentity(alert);
+    if (silenced) {
+      locallySilencedCurrentAlerts[key] = Object.assign({}, alert, {
+        silenced: true,
+        silence_reason: "silenced"
+      });
+    } else {
+      delete locallySilencedCurrentAlerts[key];
+    }
+    saveLocalSilencedCurrentAlerts();
+    renderCurrentAlerts();
+  }
+
   function mergeLocalCurrentAlertState(rows) {
     var out = Array.isArray(rows) ? rows.slice() : [];
-    var seen = {};
     out = out.map(function(row) {
       var key = currentAlertIdentity(row);
-      seen[key] = true;
       if (locallySilencedCurrentAlerts[key]) {
         return Object.assign({}, row, { silenced: true, silence_reason: "silenced" });
       }
       return row;
-    });
-    Object.keys(locallySilencedCurrentAlerts).forEach(function(key) {
-      if (!seen[key]) out.push(locallySilencedCurrentAlerts[key]);
     });
     return out;
   }
@@ -299,12 +360,28 @@
   function currentAlertSortValue(row, key) {
     if (key === "severity") return row.severity === "critical" ? 2 : row.severity === "warning" ? 1 : 0;
     if (key === "station") return String(row.station_name || row.station_uid || "").toLowerCase();
+    if (key === "board") return boardSortValue(row);
     if (key === "alert") return String(ALERT_LABELS[row.alert_key] || row.alert_key || "").toLowerCase();
     if (key === "slot") return row.slot_number == null ? -1 : Number(row.slot_number);
     if (key === "value") return String(row.value_text || "").toLowerCase();
     if (key === "threshold") return String(row.threshold_text || "").toLowerCase();
     if (key === "silenced") return isCurrentAlertSilenced(row) ? 1 : 0;
+    if (key === "next_notification") return nextNotificationSortValue(row);
     return "";
+  }
+
+  function boardLabel(row) {
+    row = row || {};
+    var details = row.details_json || {};
+    var role = String(details.sample_role || "").toLowerCase();
+    if (row.slot_number != null) return "Slot " + row.slot_number;
+    if (role === "satellite") return "Satellite";
+    return "Hub";
+  }
+
+  function boardSortValue(row) {
+    if (row && row.slot_number != null) return Number(row.slot_number);
+    return 0;
   }
 
   function sortedCurrentAlerts(rows) {
@@ -320,28 +397,103 @@
     return out;
   }
 
+  function localSettingForAlert(alert) {
+    var rows;
+    try {
+      rows = collectRows();
+    } catch (_) {
+      return null;
+    }
+    var stationUid = alert && alert.station_uid;
+    var alertKey = alert && alert.alert_key;
+    var fleet = null;
+    var station = null;
+    rows.forEach(function(row) {
+      if (row.alert_key !== alertKey) return;
+      if (row.station_uid === "*") fleet = row;
+      if (row.station_uid === stationUid) station = row;
+    });
+    return station || fleet;
+  }
+
+  function isAlertSilencedByLocalSettings(alert) {
+    var setting = localSettingForAlert(alert);
+    if (!setting) return null;
+    if (setting.enabled === false || setting.delivery_channel === "disabled") return true;
+    if (setting.suppress_until && new Date(setting.suppress_until).getTime() > Date.now()) return true;
+    if (alert.severity === "critical" && setting.critical_enabled === false) return true;
+    if (alert.severity === "warning" && setting.warning_enabled === false) return true;
+    return false;
+  }
+
+  function applyLocalNotificationState(alert) {
+    var localSilenced = isAlertSilencedByLocalSettings(alert);
+    if (localSilenced === null) return alert;
+    return Object.assign({}, alert, {
+      silenced: localSilenced,
+      silence_reason: localSilenced ? "silenced" : ""
+    });
+  }
+
+  function nextNotificationText(row) {
+    var localSetting = localSettingForAlert(row);
+    if (isCurrentAlertSilenced(row)) {
+      if (localSetting && localSetting.suppress_until) {
+        var suppressUntil = new Date(localSetting.suppress_until);
+        if (!isNaN(suppressUntil.getTime()) && suppressUntil.getTime() > Date.now()) {
+          return "Suppressed until " + shortDateTime(suppressUntil);
+        }
+      }
+      return "Silenced";
+    }
+    if (!row.last_notified_at || !Number(row.notification_count || 0)) {
+      return "On next dispatch";
+    }
+    var basis = row.last_reminder_at || row.last_notified_at;
+    var next = new Date(new Date(basis).getTime() + 24 * 3600 * 1000);
+    if (isNaN(next.getTime())) return "On next dispatch";
+    if (next.getTime() <= Date.now()) return "Reminder due next dispatch";
+    return "Reminder " + shortDateTime(next);
+  }
+
+  function nextNotificationSortValue(row) {
+    if (isCurrentAlertSilenced(row)) return Number.MAX_SAFE_INTEGER;
+    if (!row.last_notified_at || !Number(row.notification_count || 0)) return 0;
+    var basis = row.last_reminder_at || row.last_notified_at;
+    var next = new Date(new Date(basis).getTime() + 24 * 3600 * 1000);
+    return isNaN(next.getTime()) ? 0 : next.getTime();
+  }
+
+  function visibleCurrentAlerts(rows) {
+    return (Array.isArray(rows) ? rows : []).filter(function(row) {
+      return !isCurrentAlertSilenced(row);
+    });
+  }
+
   function renderCurrentAlerts(rows) {
-    currentAlerts = Array.isArray(rows) ? rows : [];
-    if (!currentAlerts.length) {
+    if (Array.isArray(rows)) currentAlertSourceRows = rows;
+    currentAlerts = currentAlertSourceRows.map(applyLocalNotificationState);
+    var visibleAlerts = visibleCurrentAlerts(currentAlerts);
+    if (!visibleAlerts.length) {
       emptyCurrentAlertRow("No current alert conditions.");
       currentAlertStatus.textContent = "No active computed alerts.";
       updateSummary();
       return;
     }
-    var displayRows = sortedCurrentAlerts(currentAlerts);
+    var displayRows = sortedCurrentAlerts(visibleAlerts);
     currentAlertRowsEl.innerHTML = displayRows.map(function(row, idx) {
       var severity = row.severity || "warning";
       var pillClass = severity === "critical" ? "pill-bad" : "pill-warn";
-      var slot = row.slot_number == null ? "--" : String(row.slot_number);
       var silenced = isCurrentAlertSilenced(row);
       return '<tr>' +
         '<td><span class="pill ' + pillClass + '">' + html(severity) + '</span></td>' +
         '<td><div class="cell-main">' + html(row.station_name || row.station_uid || "--") + '</div><div class="cell-sub">' + html(row.station_uid || "") + '</div></td>' +
+        '<td>' + html(boardLabel(row)) + '</td>' +
         '<td>' + html(ALERT_LABELS[row.alert_key] || row.alert_key || "--") + '</td>' +
-        '<td>' + html(slot) + '</td>' +
         '<td>' + html(row.value_text || "--") + '</td>' +
         '<td>' + html(row.threshold_text || "--") + '</td>' +
         '<td><button class="btn btn-small ' + (silenced ? "" : "btn-danger") + '" type="button" data-alert-action="' + currentAlertNotifyAction(row) + '" data-alert-index="' + idx + '">' + currentAlertNotifyLabel(row) + '</button></td>' +
+        '<td>' + html(nextNotificationText(row)) + '</td>' +
         '<td><div class="actions">' +
           '<button class="btn btn-small" type="button" data-alert-action="suppress24" data-alert-index="' + idx + '">Suppress 24h</button>' +
           '<button class="btn btn-small" type="button" data-alert-action="suppressUntil" data-alert-index="' + idx + '">Until...</button>' +
@@ -353,8 +505,8 @@
         handleCurrentAlertAction(btn.getAttribute("data-alert-action"), displayRows[Number(btn.getAttribute("data-alert-index"))]);
       });
     });
-    var critical = currentAlerts.filter(function(row) { return row.severity === "critical"; }).length;
-    var warning = currentAlerts.filter(function(row) { return row.severity === "warning"; }).length;
+    var critical = visibleAlerts.filter(function(row) { return row.severity === "critical"; }).length;
+    var warning = visibleAlerts.filter(function(row) { return row.severity === "warning"; }).length;
     currentAlertStatus.textContent = critical + " critical, " + warning + " warning.";
     updateSummary();
   }
@@ -391,22 +543,13 @@
     return rows;
   }
 
-  async function pushActionRows(rows, successText, afterSuccess) {
-    var password = SeaweedV4.sessionAdminPassword();
-    if (!password) {
-      password = prompt("Admin session password not available. Enter it once, or sign out and back in.");
-      if (!password) return;
-      SeaweedV4.rememberSessionAdminPassword(password);
+  function stageActionRows(rows, successText, dirtyAlert, afterStage) {
+    if (dirtyAlert && dirtyAlert.station_uid && dirtyAlert.alert_key) {
+      markSettingDirty(dirtyAlert.station_uid, dirtyAlert.alert_key);
     }
-    pushStatus.textContent = "Pushing alert action...";
-    try {
-      await SeaweedV4.pushV4AlertSettings(rows, password);
-      if (typeof afterSuccess === "function") afterSuccess();
-      pushStatus.textContent = successText;
-      await loadAlerts();
-    } catch (err) {
-      pushStatus.textContent = err.message || String(err);
-    }
+    if (typeof afterStage === "function") afterStage();
+    renderRows(rows);
+    pushStatus.textContent = successText + " Push Alert Settings to save.";
   }
 
   function localDateTimeToIso(value) {
@@ -420,12 +563,12 @@
     var label = (alert.station_name || alert.station_uid || "station") + " / " + (ALERT_LABELS[alert.alert_key] || alert.alert_key);
     if (action === "suppress24") {
       var until = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-      return pushActionRows(mergeAlertOverride(alert, {
+      return stageActionRows(mergeAlertOverride(alert, {
         enabled: true,
         delivery_channel: "slack",
         suppress_until: until,
         notes: "Suppressed for 24 hours from Current Alerts"
-      }), "Suppressed " + label + " for 24 hours.");
+      }), "Staged suppression for " + label + " for 24 hours.", alert);
     }
     if (action === "suppressUntil") {
       var raw = prompt("Suppress until local time (YYYY-MM-DDTHH:mm)", "");
@@ -434,47 +577,44 @@
         pushStatus.textContent = raw ? "Suppress time was not valid." : "";
         return;
       }
-      return pushActionRows(mergeAlertOverride(alert, {
+      return stageActionRows(mergeAlertOverride(alert, {
         enabled: true,
         delivery_channel: "slack",
         suppress_until: iso,
         notes: "Suppressed until " + iso + " from Current Alerts"
-      }), "Suppressed " + label + " until " + iso + ".");
+      }), "Staged suppression for " + label + " until " + iso + ".", alert);
     }
     if (action === "silence") {
       if (!confirm("Silence " + label + " until you manually unsilence it in Alert Settings?")) return;
-      var silenceKey = currentAlertIdentity(alert);
-      return pushActionRows(mergeAlertOverride(alert, {
+      return stageActionRows(mergeAlertOverride(alert, {
         enabled: false,
         warning_enabled: false,
         critical_enabled: false,
         delivery_channel: "disabled",
         suppress_until: "",
         notes: "Silenced from Current Alerts"
-      }), "Silenced " + label + " until manually unsilenced.", function() {
-        locallySilencedCurrentAlerts[silenceKey] = Object.assign({}, alert, {
-          silenced: true,
-          silence_reason: "silenced"
-        });
+      }), "Staged silence for " + label + ".", alert, function() {
+        updateCurrentAlertLocalSilence(alert, true);
       });
     }
     if (action === "unsilence") {
-      var unsilenceKey = currentAlertIdentity(alert);
-      return pushActionRows(mergeAlertOverride(alert, {
+      return stageActionRows(mergeAlertOverride(alert, {
         enabled: true,
         warning_enabled: true,
         critical_enabled: true,
         delivery_channel: "slack",
         suppress_until: "",
         notes: "Unsilenced from Current Alerts"
-      }), "Unsilenced " + label + ".", function() {
-        delete locallySilencedCurrentAlerts[unsilenceKey];
+      }), "Staged unsilence for " + label + ".", alert, function() {
+        updateCurrentAlertLocalSilence(alert, false);
       });
     }
   }
 
   function handleSettingRowAction(action, tr) {
-    if (!tr || action !== "toggleSilence") return;
+    if (!tr) return;
+    if (action === "removeRow") return removeSettingRow(tr);
+    if (action !== "toggleSilence") return;
     var enabled = tr.querySelector('[data-field="enabled"]');
     var warning = tr.querySelector('[data-field="warning_enabled"]');
     var critical = tr.querySelector('[data-field="critical_enabled"]');
@@ -486,7 +626,34 @@
     if (critical) critical.checked = shouldUnsilence;
     if (suppressUntil && shouldUnsilence) suppressUntil.value = "";
     if (notes && !notes.value) notes.value = shouldUnsilence ? "Unsilenced in Alert Settings" : "Silenced in Alert Settings";
+    markRenderedRowDirty(tr);
     renderRows(collectRows());
+    renderCurrentAlerts();
+  }
+
+  function settingRowIdentity(tr) {
+    var get = function(name) { return tr.querySelector('[data-field="' + name + '"]'); };
+    return {
+      station_uid: (get("station_uid") && get("station_uid").value) || "*",
+      alert_key: (get("alert_key") && get("alert_key").value) || "upload_freshness"
+    };
+  }
+
+  function removeSettingRow(tr) {
+    var identity = settingRowIdentity(tr);
+    var label = stationName(identity.station_uid) + " / " + (ALERT_LABELS[identity.alert_key] || identity.alert_key);
+    if (identity.station_uid === "*") {
+      pushStatus.textContent = "Fleet default rows cannot be removed; silence or edit them instead.";
+      return;
+    }
+    if (!confirm("Remove alert override for " + label + "?")) return;
+    pendingDeleteSettingRows[settingKey(identity.station_uid, identity.alert_key)] = identity;
+    markSettingClean(identity.station_uid, identity.alert_key);
+    renderRows(collectRows().filter(function(row) {
+      return !(row.station_uid === identity.station_uid && row.alert_key === identity.alert_key);
+    }));
+    renderCurrentAlerts();
+    pushStatus.textContent = "Staged removal of " + label + ". Push Alert Settings to save.";
   }
 
   function collectRows() {
@@ -526,7 +693,7 @@
     var now = Date.now();
     document.getElementById("summaryRows").textContent = String(rows.length || 0);
     document.getElementById("summaryEnabled").textContent = String(rows.filter(function(row) { return row.enabled; }).length);
-    document.getElementById("summaryCurrentAlerts").textContent = String(currentAlerts.length || 0);
+    document.getElementById("summaryCurrentAlerts").textContent = String(visibleCurrentAlerts(currentAlerts).length || 0);
     document.getElementById("summarySuppressed").textContent = String(rows.filter(function(row) {
       return row.suppress_until && new Date(row.suppress_until).getTime() > now;
     }).length);
@@ -546,7 +713,9 @@
       thresholds: DEFAULT_THRESHOLDS.upload_freshness,
       notes: "Station override"
     });
+    markSettingDirty(stationUid, "upload_freshness");
     renderRows(rows);
+    renderCurrentAlerts();
   }
 
   async function loadAlerts() {
@@ -578,7 +747,14 @@
     }
     pushStatus.textContent = "Pushing alert settings...";
     try {
+      var deleteRows = Object.keys(pendingDeleteSettingRows).map(function(key) { return pendingDeleteSettingRows[key]; });
+      for (var i = 0; i < deleteRows.length; i++) {
+        if (typeof SeaweedV4.deleteV4AlertSetting !== "function") throw new Error("Alert delete helper is not available. Reload the dashboard.");
+        await SeaweedV4.deleteV4AlertSetting(deleteRows[i].station_uid, deleteRows[i].alert_key, password);
+      }
       var payload = await SeaweedV4.pushV4AlertSettings(collectRows(), password);
+      dirtySettingRows = {};
+      pendingDeleteSettingRows = {};
       stations = Array.isArray(payload && payload.stations) ? payload.stations.filter(function(row) { return row.active !== false; }) : stations;
       renderRows(payload && payload.rows);
       pushStatus.textContent = "Alert settings pushed.";
@@ -621,7 +797,7 @@
           currentAlertSort.key = key;
           currentAlertSort.dir = key === "severity" ? "desc" : "asc";
         }
-        renderCurrentAlerts(currentAlerts);
+        renderCurrentAlerts();
       });
     });
     document.getElementById("reloadBtn").addEventListener("click", loadAlerts);

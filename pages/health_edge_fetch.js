@@ -48,11 +48,18 @@ var _healthRangeFetchPromise = null;
 var _healthRangeFetchKey = '';
 var _healthStationRawWindowById = {};
 var _healthStationRawFetchPromiseById = {};
-var HEALTH_RAW_HYDRATION_ENABLED = false;
-var HEALTH_RAW_RECENT_WINDOW_DAYS = 45;
-var HEALTH_RAW_ALL_WINDOW_DAYS = 370;
-var HEALTH_RAW_FETCH_PAGE_SIZE = 1000;
-var HEALTH_RAW_FETCH_MAX_ROWS = 20000;
+var HEALTH_RAW_EGRESS_SAFE_MODE = typeof dashboardEgressSafeMode === 'function' ? dashboardEgressSafeMode() : true;
+var HEALTH_RAW_HYDRATION_ENABLED = (function() {
+  try {
+    var stored = localStorage.getItem('seaweed_health_raw_hydration');
+    if (stored !== null) return /^(1|true|on|yes)$/i.test(String(stored).trim());
+  } catch (_) {}
+  return !HEALTH_RAW_EGRESS_SAFE_MODE;
+})();
+var HEALTH_RAW_RECENT_WINDOW_DAYS = HEALTH_RAW_EGRESS_SAFE_MODE ? 14 : 45;
+var HEALTH_RAW_ALL_WINDOW_DAYS = HEALTH_RAW_EGRESS_SAFE_MODE ? 90 : 370;
+var HEALTH_RAW_FETCH_PAGE_SIZE = HEALTH_RAW_EGRESS_SAFE_MODE ? 500 : 1000;
+var HEALTH_RAW_FETCH_MAX_ROWS = HEALTH_RAW_EGRESS_SAFE_MODE ? 3000 : 20000;
 
 function healthEntryKey(entry) {
   if (!entry) return '';
@@ -134,6 +141,26 @@ async function fetchHealthStationRawEntries(stationId, windowLike) {
   if (!stationId) return [];
   var bounds = parseHealthWindowBounds(windowLike);
   if (!bounds) return [];
+  if (typeof fetchSamplesRawStationPayload === 'function') {
+    var rawPayload = await fetchSamplesRawStationPayload(stationId, { from: new Date(bounds.min), to: new Date(bounds.max) }, {
+      target: HEALTH_RAW_FETCH_MAX_ROWS,
+      maxRows: HEALTH_RAW_FETCH_MAX_ROWS
+    });
+    if (!rawPayload || !Array.isArray(rawPayload.feeds) || !rawPayload.feeds.length) return [];
+    var rawSlots = [];
+    if (rawPayload.slot_map) {
+      Object.keys(rawPayload.slot_map).forEach(function(k) {
+        var sn = Number(rawPayload.slot_map[k]);
+        if (sn && rawSlots.indexOf(sn) < 0) rawSlots.push(sn);
+      });
+    }
+    if (!rawSlots.length) rawSlots = [1, 2];
+    return rawPayload.feeds.map(function(feed) {
+      return feedToEntry(feed, rawSlots);
+    }).filter(function(entry) {
+      return entry && entry.timestamp instanceof Date && !isNaN(entry.timestamp.getTime());
+    }).sort(function(a, b) { return a.timestamp - b.timestamp; });
+  }
   var fromIso = new Date(bounds.min).toISOString();
   var toIso = new Date(bounds.max).toISOString();
   var supaCfg = getSupabaseConfig();
@@ -158,7 +185,28 @@ async function fetchHealthStationRawEntries(stationId, windowLike) {
       '&limit=' + HEALTH_RAW_FETCH_PAGE_SIZE +
       '&offset=' + offset;
     var res = await fetchWithTimeout(url, 30000, { headers: hdrs });
-    if (!res.ok) throw new Error('sensor_readings HTTP ' + res.status);
+    if (!res.ok) {
+      if (res.status === 404 && typeof fetchSamplesRawStationPayload === 'function') {
+        var payload = await fetchSamplesRawStationPayload(stationId, { from: new Date(bounds.min), to: new Date(bounds.max) }, {
+          target: HEALTH_RAW_FETCH_MAX_ROWS,
+          maxRows: HEALTH_RAW_FETCH_MAX_ROWS
+        });
+        var slots = [];
+        if (payload && payload.slot_map) {
+          Object.keys(payload.slot_map).forEach(function(k) {
+            var sn = Number(payload.slot_map[k]);
+            if (sn && slots.indexOf(sn) < 0) slots.push(sn);
+          });
+        }
+        if (!slots.length) slots = [1, 2];
+        return (payload && Array.isArray(payload.feeds) ? payload.feeds : []).map(function(feed) {
+          return feedToEntry(feed, slots);
+        }).filter(function(entry) {
+          return entry && entry.timestamp instanceof Date && !isNaN(entry.timestamp.getTime());
+        }).sort(function(a, b) { return a.timestamp - b.timestamp; });
+      }
+      throw new Error('sensor_readings HTTP ' + res.status);
+    }
     var batch = await res.json();
     if (Array.isArray(batch) && batch.length) {
       rows = rows.concat(batch);
