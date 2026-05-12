@@ -644,7 +644,7 @@
     var win = windowParams(windowLike);
     try {
       var rows = await getPostgrest("sync_sessions", {
-        select: "station_uid,hub_board_id,node_board_id,slot_number,sync_id,upload_id,sync_started_at,sync_ended_at,status,status_detail,expected_samples,received_total,transfer_mode,requested_files,received_files,received_file_rows,persisted_sd,sat_rssi_avg,sat_rssi_min,sat_drift_s,sat_battery_v,sat_flash_pct,sat_fw_ver,sat_fw_date,hello_seen,mac_ack_ok,ack_sample_id,transfer_elapsed_ms,sync_period_min,sample_period_min,boot_count,received_live,min_sample_id,max_sample_id,sync_duration_ms,last_miss_summary,t0_backlog_stop_reason,sat_file_fail_reason,t0_file_fail_detail,sync_phase,scheduled_heavy_at,sleep_commanded,ota_deployment_id,ota_attempt_id,ota_target_version,post_ota_fw_ver",
+        select: "station_uid,hub_board_id,node_board_id,slot_number,sync_id,upload_id,sync_started_at,sync_ended_at,status,status_detail,expected_samples,received_total,transfer_mode,requested_files,received_files,received_file_rows,persisted_sd,sat_rssi_avg,sat_rssi_min,sat_drift_s,sat_battery_v,sat_flash_pct,sat_fw_ver,sat_fw_date,hello_seen,mac_ack_ok,ack_sample_id,transfer_elapsed_ms,sync_period_min,sample_period_min,boot_count,received_live,min_sample_id,max_sample_id,sync_duration_ms,last_miss_summary,t0_backlog_stop_reason,sat_file_fail_reason,t0_file_fail_detail,sync_phase,scheduled_heavy_at,service_outcome,sleep_commanded,ota_deployment_id,ota_attempt_id,ota_target_version,post_ota_fw_ver",
         station_uid: "eq." + station.station_uid,
         sync_started_at: "gte." + win.from.toISOString(),
         order: "sync_started_at.desc",

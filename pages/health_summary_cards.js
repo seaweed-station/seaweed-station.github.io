@@ -244,6 +244,7 @@ function renderSummaryCards(container, entries, stationId) {
 
   // Upload success rate in last 24h
   var uploadRows = Array.isArray(_stationUploadTimeline[stationId]) ? _stationUploadTimeline[stationId] : [];
+  var syncRows = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
   var upload24Rows = uploadRows.filter(function(r) {
     var ts = r && r.upload_started_at ? new Date(ensureUTC(r.upload_started_at)) : null;
     return ts && !isNaN(ts.getTime()) && ts.getTime() >= (latest.timestamp.getTime() - 24 * 3600000);
@@ -302,19 +303,26 @@ function renderSummaryCards(container, entries, stationId) {
     return 'var(--danger)';
   }
 
-  // Sync rates (24h) based on expected sync windows (default 3h cadence)
+  // Sync rates (24h) based on the best available applied sync cadence.
   // v2: sat1SampleId is no longer in sensor_readings view;
   // fallback to sat1BatV presence (LATERAL join → non-null when sat data present)
   var cutoff24h = latest.timestamp.getTime() - 24 * 3600000;
+  var syncCadence = typeof resolveHealthSyncCadence === 'function'
+    ? resolveHealthSyncCadence(stationId, e, uploadRows, 3 * 3600000, syncRows)
+    : { periodMs: 3 * 3600000, timeline: [] };
+  var defaultSyncPeriodMs = syncCadence && syncCadence.periodMs > 0 ? syncCadence.periodMs : 3 * 3600000;
+  var cadenceTimeline = syncCadence && Array.isArray(syncCadence.timeline) ? syncCadence.timeline : [];
   // Cache sync window evaluations per station (reused by renderSyncCharts)
-  var cacheKey = stationId + '_24h';
+  var cacheKey = stationId + '_24h_' + (typeof healthSyncCadenceTimelineSignature === 'function'
+    ? healthSyncCadenceTimelineSignature(cadenceTimeline, defaultSyncPeriodMs)
+    : Math.round(defaultSyncPeriodMs / 1000));
   if (!_syncWindowCache[cacheKey]) {
     _syncWindowCache[cacheKey] = {
       slot1: slot1Enabled
-        ? evaluateSyncWindows(e, 'sat1SampleId', 'sat1BatV', cutoff24h, latest.timestamp.getTime(), 3 * 3600000, 'sat1Installed')
+        ? evaluateSyncWindows(e, 'sat1SampleId', 'sat1BatV', cutoff24h, latest.timestamp.getTime(), defaultSyncPeriodMs, 'sat1Installed', null, cadenceTimeline)
         : { synced: 0, missed: 0, total: 0, slots: [] },
       slot2: slot2Enabled
-        ? evaluateSyncWindows(e, 'sat2SampleId', 'sat2BatV', cutoff24h, latest.timestamp.getTime(), 3 * 3600000, 'sat2Installed')
+        ? evaluateSyncWindows(e, 'sat2SampleId', 'sat2BatV', cutoff24h, latest.timestamp.getTime(), defaultSyncPeriodMs, 'sat2Installed', null, cadenceTimeline)
         : { synced: 0, missed: 0, total: 0, slots: [] }
     };
   }

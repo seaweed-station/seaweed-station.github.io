@@ -19,7 +19,7 @@ function renderSyncCharts(container, entries, stationId, range) {
 
   if (typeof healthStationSyncContextPending === 'function' && healthStationSyncContextPending(stationId, stationEntries)) {
     appendPendingBox('Satellite Sync Reliability', 'Waiting for live sync timeline. Cached station entries are loaded, but sync diagnostics have not arrived from the Edge payload yet.');
-    appendPendingBox('Satellite Sync Drift', 'Waiting for live sync timeline. Drift is derived from sync sessions, so this plot is held until live diagnostics are available.');
+    appendPendingBox('Device Time Drift', 'Waiting for live sync timeline. Device time drift is derived from sync and upload diagnostics, so this plot is held until live diagnostics are available.');
     appendPendingBox('RSSI', 'Waiting for live sync timeline. RSSI is derived from sync sessions, so this plot is held until live diagnostics are available.');
     return;
   }
@@ -66,7 +66,7 @@ function renderSyncCharts(container, entries, stationId, range) {
   }
 
   function syncPhaseText(row) {
-    return String((row && (row.sync_phase || row.transfer_mode || row.status_detail)) || '').trim().toLowerCase();
+    return String((row && (row.sync_phase || row.service_outcome || row.transfer_mode || row.status_detail)) || '').trim().toLowerCase();
   }
 
   function isHeavyFollowupSync(row) {
@@ -247,17 +247,23 @@ function renderSyncCharts(container, entries, stationId, range) {
   });
   syncBoxWrap = document.createElement('div');
   syncBoxWrap.className = 'chart-box';
-  var latestCfg = parseField8ConfigUnified(stationEntries[stationEntries.length - 1]._rawField8);
-  var cfgSyncTxt = '--';
-  var defaultSyncPeriodMs = 3 * 3600000;
-  if (latestCfg && latestCfg.espnowSyncPeriod_s) {
-    var cfgSyncSecNum = Number(latestCfg.espnowSyncPeriod_s);
-    if (isFinite(cfgSyncSecNum) && cfgSyncSecNum > 0) {
-      defaultSyncPeriodMs = cfgSyncSecNum * 1000;
-    }
-    cfgSyncTxt = latestCfg.espnowSyncPeriod_s >= 3600
-      ? (latestCfg.espnowSyncPeriod_s / 3600).toFixed(1) + 'h'
-      : Math.round(latestCfg.espnowSyncPeriod_s / 60) + 'm';
+  var syncCadence = typeof resolveHealthSyncCadence === 'function'
+    ? resolveHealthSyncCadence(stationId, stationEntries, uploadRowsAll, 3 * 3600000, syncRowsAll)
+    : { periodMs: 3 * 3600000, label: '--', timeline: [] };
+  var cadenceTimeline = syncCadence && Array.isArray(syncCadence.timeline) ? syncCadence.timeline : [];
+  var cfgSyncTxt = syncCadence && syncCadence.label ? syncCadence.label : '--';
+  var defaultSyncPeriodMs = syncCadence && syncCadence.periodMs > 0 ? syncCadence.periodMs : 3 * 3600000;
+  var visibleCadencePeriods = [];
+  for (var ci = 0; ci < cadenceTimeline.length; ci++) {
+    var cadenceEvent = cadenceTimeline[ci];
+    if (!cadenceEvent || !isFinite(cadenceEvent.ts) || !isFinite(cadenceEvent.periodSec)) continue;
+    if (cadenceEvent.ts < rangeStartMs || cadenceEvent.ts > rangeEndMs) continue;
+    if (visibleCadencePeriods.indexOf(cadenceEvent.periodSec) < 0) visibleCadencePeriods.push(cadenceEvent.periodSec);
+  }
+  if (!visibleCadencePeriods.length && syncCadence && isFinite(syncCadence.periodSec)) visibleCadencePeriods.push(syncCadence.periodSec);
+  visibleCadencePeriods.sort(function(a, b) { return a - b; });
+  if (visibleCadencePeriods.length > 1) {
+    cfgSyncTxt = 'Varies (' + visibleCadencePeriods.map(formatHealthSyncCadenceLabel).join(', ') + ')';
   }
   syncBoxWrap.innerHTML = '<h4>Satellite Sync Reliability (' + rangeLabel(range) + ')</h4><div class="chart-subhead">Configured Sat sync: ' + cfgSyncTxt + '</div>';
   var syncCanvas = document.createElement('canvas');
@@ -292,17 +298,20 @@ function renderSyncCharts(container, entries, stationId, range) {
 
     var byBucket = {}, bucketKeys = [], labels = [];
     var DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    var syncRangeCacheKey = stationId + '_sync_' + range;
+    var cadenceSignature = typeof healthSyncCadenceTimelineSignature === 'function'
+      ? healthSyncCadenceTimelineSignature(cadenceTimeline, defaultSyncPeriodMs)
+      : String(Math.round(defaultSyncPeriodMs / 1000));
+    var syncRangeCacheKey = stationId + '_sync_' + range + '_' + cadenceSignature;
     if (!_syncWindowCache[syncRangeCacheKey]) {
       _syncWindowCache[syncRangeCacheKey] = {
         slot1: slot1Enabled
-          ? evaluateSyncWindows(stationEntries, 'sat1SampleId', 'sat1BatV', rangeStartMs, rangeEndMs, defaultSyncPeriodMs, 'sat1Installed', slot1ObservedEventTimes)
+          ? evaluateSyncWindows(stationEntries, 'sat1SampleId', 'sat1BatV', rangeStartMs, rangeEndMs, defaultSyncPeriodMs, 'sat1Installed', slot1ObservedEventTimes, cadenceTimeline)
           : { synced: 0, missed: 0, total: 0, slots: [] },
         slot2: slot2Enabled
-          ? evaluateSyncWindows(stationEntries, 'sat2SampleId', 'sat2BatV', rangeStartMs, rangeEndMs, defaultSyncPeriodMs, 'sat2Installed', slot2ObservedEventTimes)
+          ? evaluateSyncWindows(stationEntries, 'sat2SampleId', 'sat2BatV', rangeStartMs, rangeEndMs, defaultSyncPeriodMs, 'sat2Installed', slot2ObservedEventTimes, cadenceTimeline)
           : { synced: 0, missed: 0, total: 0, slots: [] },
         slot3: slot3Enabled
-          ? evaluateSyncWindows(stationEntries, 'sat3SampleId', 'sat3BatV', rangeStartMs, rangeEndMs, defaultSyncPeriodMs, 'sat3Installed', slot3ObservedEventTimes)
+          ? evaluateSyncWindows(stationEntries, 'sat3SampleId', 'sat3BatV', rangeStartMs, rangeEndMs, defaultSyncPeriodMs, 'sat3Installed', slot3ObservedEventTimes, cadenceTimeline)
           : { synced: 0, missed: 0, total: 0, slots: [] }
       };
     }
@@ -438,7 +447,7 @@ function renderSyncCharts(container, entries, stationId, range) {
   driftCanvas = document.createElement('canvas');
   driftBox = document.createElement('div');
   driftBox.className = 'chart-box';
-  driftBox.innerHTML = '<h4>Satellite Sync Drift (' + rangeLabel(range) + ')</h4>';
+  driftBox.innerHTML = '<h4>Device Time Drift (' + rangeLabel(range) + ')</h4>';
   driftBox.appendChild(driftCanvas);
   container.appendChild(driftBox);
 
@@ -689,7 +698,7 @@ function renderSyncCharts(container, entries, stationId, range) {
     if (slot2Enabled && slot2DriftSeries.length) driftDatasets.push(makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':sync-drift:' + range + ':slot2', slot2DriftSeries), slot2Label + ' Drift', slot2SeriesColor));
     if (slot3Enabled && slot3DriftSeries.length) driftDatasets.push(makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':sync-drift:' + range + ':slot3', slot3DriftSeries), slot3Label + ' Drift', slot3SeriesColor));
     if (sysDriftSeriesCapped.length) { var _sdDS = makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':sync-drift:' + range + ':t0', sysDriftSeriesCapped), 'T0 Clock Drift', t0SeriesColor); _sdDS.stepped = 'before'; _sdDS.tension = 0; driftDatasets.push(_sdDS); }
-    makeLiveChart(driftBox, driftCanvas, 'Satellite Sync Drift \u2013 ' + rangeLabel(range), {
+    makeLiveChart(driftBox, driftCanvas, 'Device Time Drift \u2013 ' + rangeLabel(range), {
       type: 'line',
       data: { datasets: driftDatasets },
       options: dOpts,

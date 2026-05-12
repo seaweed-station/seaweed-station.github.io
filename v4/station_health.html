@@ -741,17 +741,17 @@ function rebuildHealthStations(openStationIds, viewState) {
 </script>
 
 <!-- Sprint 6: Extracted health page modules -->
-<script src="../pages/health_station_utils.js?v=20260504v4slots"></script>
+<script src="../pages/health_station_utils.js?v=20260508syncfieldfix"></script>
 <script src="../pages/health_chart_utils.js"></script>
 <script src="../pages/health_edge_fetch.js?v=20260504v4slots"></script>
 <script>
 if (window.SW_V4_DASHBOARD) window.SW_V4_DASHBOARD.installHealthDataAdapter();
 </script>
 <script src="../pages/health_data_parser.js"></script>
-<script src="../pages/health_config_log.js"></script>
-<script src="../pages/health_summary_cards.js"></script>
+<script src="../pages/health_config_log.js?v=20260508syncfieldfix"></script>
+<script src="../pages/health_summary_cards.js?v=20260508syncdynamic"></script>
 <script src="../pages/health_battery_charts.js?v=20260505cleanvolts"></script>
-<script src="../pages/health_sync_charts.js?v=20260505firstdrift"></script>
+<script src="../pages/health_sync_charts.js?v=20260508syncdynamic"></script>
 <script src="../pages/health_chart_modal.js?v=20260505modal2"></script>
 <script src="../pages/health_daily_table.js?v=20260505firstdrift"></script>
 

@@ -99,6 +99,7 @@
     gateway_battery: "Gateway battery",
     battery_voltage: "Battery voltage",
     satellite_sync: "Satellite sync",
+    data_gap: "Data gap",
     solar_missing: "Solar missing",
     temperature: "Temperature",
     sensor_missing: "Sensor disconnected"
@@ -109,6 +110,7 @@
     gateway_battery: { warning_pct: 30, critical_pct: 10, clear_warning_pct: 33, clear_critical_pct: 12 },
     battery_voltage: { warning_v: 3.55, critical_v: 3.4, clear_warning_v: 3.6, clear_critical_v: 3.55 },
     satellite_sync: { warning_missed_windows: 1, critical_missed_windows: 2 },
+    data_gap: { lookback_hours: 24, warning_complete_pct: 100, critical_zero_hours: 1 },
     solar_missing: { daylight_min_v: 1.0, warning_days: 1, critical_days: 2 },
     temperature: { warning_c: 55, critical_c: 60 },
     sensor_missing: { expected_hub_sensors: [1, 2, 3], expected_satellite_sensors: [1, 2, 3], severity: "warning" }

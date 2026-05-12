@@ -254,9 +254,10 @@ function syncCfgAt(tsMs, timeline, defaultPeriodMs) {
  * @param {number} defaultPeriodMs - Fallback sync period.
  * @param {string} [satInstallKey] - Optional key to check whether satellite is installed.
  * @param {number[]} [observedEventTimes] - Optional explicit epoch-ms sync events.
+ * @param {Array} [periodTimelineOverride] - Optional explicit sync period timeline.
  * @returns {{ synced: number, missed: number, total: number, slots: Array, periodMs: number, installKey: string }}
  */
-function evaluateSyncWindows(entries, sampleIdKey, valueKey, startMs, endMs, defaultPeriodMs, satInstallKey, observedEventTimes) {
+function evaluateSyncWindows(entries, sampleIdKey, valueKey, startMs, endMs, defaultPeriodMs, satInstallKey, observedEventTimes, periodTimelineOverride) {
   if (!entries || !entries.length || !(endMs >= startMs)) {
     return { synced: 0, missed: 0, total: 0, slots: [], periodMs: defaultPeriodMs, installKey: satInstallKey };
   }
@@ -264,7 +265,9 @@ function evaluateSyncWindows(entries, sampleIdKey, valueKey, startMs, endMs, def
   var eventTimes = Array.isArray(observedEventTimes) && observedEventTimes.length
     ? observedEventTimes.filter(function(ts) { return isFinite(ts); }).sort(function(a, b) { return a - b; })
     : collectSyncEventTimes(entries, sampleIdKey, valueKey);
-  var periodTimeline = buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs);
+  var periodTimeline = Array.isArray(periodTimelineOverride) && periodTimelineOverride.length
+    ? periodTimelineOverride.slice().sort(function(a, b) { return a.ts - b.ts; })
+    : buildSyncPeriodTimeline(entries, sampleIdKey, valueKey, defaultPeriodMs);
 
   // Anchor backward walk at the latest event before endMs
   var anchor = endMs;

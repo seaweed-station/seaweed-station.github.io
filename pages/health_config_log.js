@@ -6,12 +6,16 @@ function _buildConfigSnapshotFromUploadSession(row) {
   // Only use rows that have the applied config fields (post-migration firmware)
   if (row.applied_sample_period_min == null && row.applied_deploy_mode == null &&
       row.applied_fw_version == null) return null;
+  var satSyncHours = typeof getHealthUploadSatSyncPeriodHours === 'function'
+    ? getHealthUploadSatSyncPeriodHours(row)
+    : (row.applied_satellite_sync_period_hours != null ? Number(row.applied_satellite_sync_period_hours)
+       : (row.applied_sat_sync_period_hours != null ? Number(row.applied_sat_sync_period_hours) : null));
   return {
     deployMode: row.applied_deploy_mode != null ? Number(row.applied_deploy_mode) : null,
     sleepEnable: row.applied_sleep_enable === true || row.applied_sleep_enable === false ? !!row.applied_sleep_enable : null,
     samplePeriod_s: row.applied_sample_period_min != null ? Number(row.applied_sample_period_min) * 60 : null,
     uploadIntervalHours: row.applied_upload_interval_hours != null ? Number(row.applied_upload_interval_hours) : null,
-    espnowSyncPeriod_s: row.applied_sat_sync_period_hours != null ? Number(row.applied_sat_sync_period_hours) * 3600 : null,
+    espnowSyncPeriod_s: satSyncHours != null && isFinite(satSyncHours) ? Number(satSyncHours) * 3600 : null,
     slotCount: row.applied_slot_count != null ? Number(row.applied_slot_count) : null,
     fwVersion: row.applied_fw_version || null
   };

@@ -302,7 +302,7 @@ function renderDailyHealth(container, entries, stationId) {
   }
 
   function syncPhaseText(row) {
-    return String((row && (row.sync_phase || row.transfer_mode || row.status_detail)) || '').trim().toLowerCase();
+    return String((row && (row.sync_phase || row.service_outcome || row.transfer_mode || row.status_detail)) || '').trim().toLowerCase();
   }
 
   function isHeavyFollowupSync(row) {

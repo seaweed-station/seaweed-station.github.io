@@ -403,6 +403,174 @@ function isSatelliteVisible(stationId, entries, slotNumber) {
   return isSatelliteInstalled(entries, slotNumber) || isSatelliteConfiguredSlot(stationId, slotNumber);
 }
 
+function formatHealthSyncCadenceLabel(periodSec) {
+  var sec = Number(periodSec);
+  if (!isFinite(sec) || sec <= 0) return '--';
+  if (sec >= 3600) {
+    var hours = sec / 3600;
+    var roundedHours = Math.round(hours);
+    return (Math.abs(hours - roundedHours) < 1e-6 ? String(roundedHours) : hours.toFixed(1)) + 'h';
+  }
+  return Math.round(sec / 60) + 'm';
+}
+
+function getHealthUploadSatSyncPeriodHours(row) {
+  if (!row || typeof row !== 'object') return null;
+  var direct = Number(row.applied_satellite_sync_period_hours);
+  if (isFinite(direct) && direct > 0) return direct;
+  var legacy = Number(row.applied_sat_sync_period_hours);
+  if (isFinite(legacy) && legacy > 0) return legacy;
+  return null;
+}
+
+function buildHealthSyncCadenceTimeline(stationId, entries, uploadRows, syncRows, fallbackMs) {
+  var fallbackPeriodMs = Number(fallbackMs);
+  if (!isFinite(fallbackPeriodMs) || fallbackPeriodMs <= 0) fallbackPeriodMs = 3 * 3600000;
+  var events = [];
+
+  function buildEvent(tsMs, periodSec, source, priority) {
+    var sec = Number(periodSec);
+    var ts = Number(tsMs);
+    if (!isFinite(sec) || sec <= 0 || !isFinite(ts)) return null;
+    return {
+      ts: ts,
+      periodMs: sec * 1000,
+      periodSec: sec,
+      source: source || 'unknown',
+      priority: Number(priority) || 0,
+      slot1Installed: true,
+      slot2Installed: true
+    };
+  }
+
+  function pushEvent(tsMs, periodSec, source, priority) {
+    var event = buildEvent(tsMs, periodSec, source, priority);
+    if (event) events.push(event);
+  }
+
+  var syncTimeline = Array.isArray(syncRows) ? syncRows : [];
+  for (var si = 0; si < syncTimeline.length; si++) {
+    var syncRow = syncTimeline[si] || {};
+    var syncTs = syncRow.sync_started_at ? new Date(ensureUTC(syncRow.sync_started_at)).getTime() : NaN;
+    var syncPeriodMin = Number(syncRow.sync_period_min);
+    if (isFinite(syncPeriodMin) && syncPeriodMin > 0) {
+      pushEvent(syncTs, syncPeriodMin * 60, 'sync_sessions', 40);
+    }
+  }
+
+  var uploadTimeline = Array.isArray(uploadRows) ? uploadRows : [];
+  for (var ui = 0; ui < uploadTimeline.length; ui++) {
+    var uploadRow = uploadTimeline[ui] || {};
+    var uploadTs = uploadRow.upload_started_at ? new Date(ensureUTC(uploadRow.upload_started_at)).getTime() : NaN;
+    var uploadPeriodHours = getHealthUploadSatSyncPeriodHours(uploadRow);
+    if (uploadPeriodHours != null) {
+      pushEvent(uploadTs, uploadPeriodHours * 3600, 'upload_sessions', 30);
+    }
+  }
+
+  var cfgRow = stationId && _deviceConfigById ? (_deviceConfigById[stationId] || null) : null;
+  if (cfgRow) {
+    var cfgTs = cfgRow.updated_at ? new Date(ensureUTC(cfgRow.updated_at)).getTime() : NaN;
+    var cfgPeriodHours = Number(cfgRow.sat_sync_period_hours);
+    if (isFinite(cfgPeriodHours) && cfgPeriodHours > 0) {
+      pushEvent(cfgTs, cfgPeriodHours * 3600, 'device_config', 20);
+    }
+  }
+
+  var stationEntries = Array.isArray(entries) ? entries : [];
+  for (var ei = 0; ei < stationEntries.length; ei++) {
+    var entry = stationEntries[ei] || {};
+    var entryTs = entry.timestamp instanceof Date ? entry.timestamp.getTime() : NaN;
+    var entryPeriodSec = Number(entry.espnowSyncPeriod_s);
+    if (isFinite(entryPeriodSec) && entryPeriodSec > 0) {
+      pushEvent(entryTs, entryPeriodSec, 'structured_entry', 10);
+    }
+    if (entry._rawField8 && typeof parseField8ConfigUnified === 'function') {
+      var legacyCfg = parseField8ConfigUnified(entry._rawField8);
+      if (legacyCfg && Number(legacyCfg.espnowSyncPeriod_s) > 0) {
+        pushEvent(entryTs, Number(legacyCfg.espnowSyncPeriod_s), 'legacy_field8', 5);
+      }
+    }
+  }
+
+  events.sort(function(a, b) {
+    if (a.ts !== b.ts) return a.ts - b.ts;
+    return a.priority - b.priority;
+  });
+
+  var collapsed = [];
+  for (var ci = 0; ci < events.length; ci++) {
+    var event = events[ci];
+    var last = collapsed.length ? collapsed[collapsed.length - 1] : null;
+    if (last && last.ts === event.ts) {
+      if (event.priority >= last.priority) collapsed[collapsed.length - 1] = event;
+      continue;
+    }
+    if (last && last.periodMs === event.periodMs) continue;
+    collapsed.push(event);
+  }
+
+  var anchorTs = NaN;
+  if (stationEntries.length) {
+    anchorTs = stationEntries[0].timestamp instanceof Date ? stationEntries[0].timestamp.getTime() : NaN;
+  }
+  if ((!isFinite(anchorTs) || anchorTs > 0) && syncTimeline.length) {
+    var firstSyncTs = syncTimeline[0] && syncTimeline[0].sync_started_at ? new Date(ensureUTC(syncTimeline[0].sync_started_at)).getTime() : NaN;
+    if (isFinite(firstSyncTs)) anchorTs = !isFinite(anchorTs) ? firstSyncTs : Math.min(anchorTs, firstSyncTs);
+  }
+  if ((!isFinite(anchorTs) || anchorTs > 0) && uploadTimeline.length) {
+    var firstUploadTs = uploadTimeline[0] && uploadTimeline[0].upload_started_at ? new Date(ensureUTC(uploadTimeline[0].upload_started_at)).getTime() : NaN;
+    if (isFinite(firstUploadTs)) anchorTs = !isFinite(anchorTs) ? firstUploadTs : Math.min(anchorTs, firstUploadTs);
+  }
+
+  if (collapsed.length && isFinite(anchorTs) && anchorTs < collapsed[0].ts) {
+    collapsed.unshift({
+      ts: anchorTs,
+      periodMs: collapsed[0].periodMs,
+      periodSec: collapsed[0].periodSec,
+      source: 'anchored_' + collapsed[0].source,
+      priority: collapsed[0].priority,
+      slot1Installed: true,
+      slot2Installed: true
+    });
+  }
+
+  return collapsed;
+}
+
+function healthSyncCadenceTimelineSignature(timeline, fallbackMs) {
+  var fallbackPeriodMs = Number(fallbackMs);
+  if (!isFinite(fallbackPeriodMs) || fallbackPeriodMs <= 0) fallbackPeriodMs = 3 * 3600000;
+  if (!Array.isArray(timeline) || !timeline.length) return 'flat_' + Math.round(fallbackPeriodMs / 1000);
+  return timeline.map(function(event) {
+    return Math.round(Number(event.ts) / 1000) + ':' + Math.round(Number(event.periodMs) / 1000);
+  }).join(',');
+}
+
+function resolveHealthSyncCadence(stationId, entries, uploadRows, fallbackMs, syncRows) {
+  var fallbackPeriodMs = Number(fallbackMs);
+  if (!isFinite(fallbackPeriodMs) || fallbackPeriodMs <= 0) fallbackPeriodMs = 3 * 3600000;
+  var timeline = buildHealthSyncCadenceTimeline(stationId, entries, uploadRows, syncRows, fallbackPeriodMs);
+  if (timeline.length) {
+    var latest = timeline[timeline.length - 1];
+    return {
+      periodMs: latest.periodMs,
+      periodSec: latest.periodSec,
+      label: formatHealthSyncCadenceLabel(latest.periodSec),
+      source: latest.source,
+      timeline: timeline
+    };
+  }
+
+  return {
+    periodMs: fallbackPeriodMs,
+    periodSec: Math.round(fallbackPeriodMs / 1000),
+    label: '--',
+    source: 'fallback',
+    timeline: []
+  };
+}
+
 function buildStationRangeBar(stationId, range) {
   var rangeBar = document.createElement('div');
   rangeBar.className = 'station-range';
