@@ -14,11 +14,11 @@ window.BatteryModel = (function () {
   // HARDWARE DEFAULTS (match battery_estimator.html Advanced Settings)
   // ========================================================================
   var HW_T0 = {
-    sleepCurrent_mA:    0.35,     // deep-sleep draw
-    mcuActive_mA:       60,       // ESP32-S3 active (no radio)
+    sleepCurrent_mA:    1.0,      // conservative hub sleep draw; INA260 observed ~0.5 mA
+    mcuActive_mA:       44,       // measured H003 routine sample pulse
     wifiActive_mA:      150,      // WiFi TX/RX
-    cellActive_mA:      200,      // SIM7670G modem active
-    sampleDuration_s:   1.5,      // base sample wake (excl sensors)
+    cellActive_mA:      77,       // measured cellular active section
+    sampleDuration_s:   2.1,      // measured routine sample pulse
     sensorMs:           25,       // per-sensor read time (ms)
     sensorCurrent_mA:   1.0,      // per-sensor current (mA)
     sensorCount:        2,        // default T/H sensor count
@@ -28,35 +28,39 @@ window.BatteryModel = (function () {
     cellInitReg_s:      35,
     cellBulkPerRow_s:   0.1,
     blynkOps_s:         8,
+    cellSettleCurrent_mA: 20,     // measured post-upload modem/settle tail
+    cellSettle_s:       286,
     modemBlockMax_s:    180,
     wifiConnect_s:      4,
     wifiBulkUpload_s:   10,
     sdWriteCurrent_mA:  90,
     sdWriteTime_s:      0.2,
     bootOverhead_s:     1.0,
-    teRxWindowMs:       800,      // ESP-NOW listen per satellite
+    teRxWindowMs:       800,      // legacy sub-second ESP-NOW window
     teTxSyncMs:         15,       // SYNC+ACK send per satellite
     teRxProcMs:         120,      // parse/store overhead per satellite
+    teFileSyncCurrent_mA: 103,    // measured H003 satellite file-transfer sync
+    teFileSyncDuration_s: 30,
     teEarlyWake_s:      1.0,      // early wake before epoch grid
     batteryDerating:    0.85,     // usable fraction of nameplate capacity
     batteryCapacity_mAh: 3000,
   };
 
   var HW_TE = {
-    sleepUa:            10,       // deep-sleep draw (µA)
+    sleepUa:            50,       // conservative: INA260 confirms sleep, but cannot resolve true uA draw
     bootCurrent_mA:     80,
     bootMs:             300,
-    i2cCurrent_mA:      20,
-    i2cMs:              10,
-    mcuActive_mA:       50,
-    txCurrent_mA:       120,
+    i2cCurrent_mA:      0,
+    i2cMs:              0,
+    mcuActive_mA:       35.9,     // measured N0002 sample-window current
+    txCurrent_mA:       90,       // current best bench value: awake/listening plateau
     txMs:               10,
-    rxCurrent_mA:       80,
-    flashCurrent_mA:    40,
-    flashMs:            20,
+    rxCurrent_mA:       89.6,     // measured N0002 listening average
+    flashCurrent_mA:    0,
+    flashMs:            0,
     syncApplyMs:        20,
-    sensorMs:           25,
-    sensorCurrent_mA:   40,
+    sensorMs:           3000,     // aggregate 6-7 s sample wake, split across two sensors
+    sensorCurrent_mA:   0,
     sensorCount:        2,
     listenMs:           400,      // normal listen window per exchange
     listenLongMs:       1200,     // extended listen window per exchange
@@ -72,20 +76,22 @@ window.BatteryModel = (function () {
   // ========================================================================
   // DRIFT + LISTEN-WINDOW HELPERS (mirror SatelliteProtocol.h computeXxx)
   // ========================================================================
-  // ESP32 RTC drift: 300 ppm, 3× safety factor on guard windows.
-  var DRIFT_PPM = 300;
-  var DRIFT_SAFETY = 3;
+  // ESP32 RTC drift: measured field estimate used by current T-Energy firmware.
+  var DRIFT_PPM = 1500;
+  var DRIFT_SAFETY = 2;
 
   // Listen-EARLY window (ms): gate opens this far before expected SYNC. Floor 20 s.
   function computeListenEarlyMs(period_s) {
     var drift_ms = Math.floor(period_s * DRIFT_PPM * DRIFT_SAFETY / 1000);
-    return Math.max(20000, drift_ms);
+    var minEarlyMs = period_s >= 43200 ? 60000 : 20000;
+    return Math.max(minEarlyMs, drift_ms);
   }
 
   // Sync-GRACE window (ms): gate stays open this far after expected SYNC. Floor 45 s.
   function computeSyncGraceMs(period_s) {
     var drift_ms = Math.floor(period_s * DRIFT_PPM * DRIFT_SAFETY * 2 / 1000);
-    return Math.max(45000, drift_ms);
+    var minGraceMs = period_s >= 43200 ? 120000 : 45000;
+    return Math.max(minGraceMs, drift_ms);
   }
 
   // Total guard window (ms) = early + grace.
@@ -93,7 +99,7 @@ window.BatteryModel = (function () {
     return computeListenEarlyMs(period_s) + computeSyncGraceMs(period_s);
   }
 
-  // Expected peak drift (s) at 300 ppm.
+  // Expected peak drift (s) at the current firmware drift estimate.
   function computeExpectedDriftSec(period_s) {
     return period_s * DRIFT_PPM * 1e-6;
   }
@@ -145,25 +151,37 @@ window.BatteryModel = (function () {
     var earlyWakePerDay_s   = tEnergyNodes > 0 ? syncsPerDay * hw.teEarlyWake_s : 0;
     var earlyWakeEnergy_mAh = (earlyWakePerDay_s * hw.mcuActive_mA) / 3600.0;
 
-    // ESP-NOW window
-    var tePerSync_s      = (tEnergyNodes * (hw.teRxWindowMs + hw.teTxSyncMs + hw.teRxProcMs)) / 1000.0;
+    // Satellite sync. Current firmware can service file-transfer syncs that are
+    // much longer than the legacy sub-second ESP-NOW exchange, so prefer the
+    // measured file-sync model when supplied.
+    var legacyEspNowSync_s = (tEnergyNodes * (hw.teRxWindowMs + hw.teTxSyncMs + hw.teRxProcMs)) / 1000.0;
+    var fileSyncPerNode_s = Math.max(0, hw.teFileSyncDuration_s || 0);
+    var tePerSync_s      = fileSyncPerNode_s > 0 ? tEnergyNodes * fileSyncPerNode_s : legacyEspNowSync_s;
     var teActivePerDay_s = syncsPerDay * tePerSync_s;
-    var teEnergy_mAh     = (teActivePerDay_s * hw.wifiActive_mA) / 3600.0;
+    var teSyncCurrent_mA = fileSyncPerNode_s > 0 ? (hw.teFileSyncCurrent_mA || hw.wifiActive_mA) : hw.wifiActive_mA;
+    var teEnergy_mAh     = (teActivePerDay_s * teSyncCurrent_mA) / 3600.0;
 
     // Upload energy
     var uploadDuration_s = 0;
+    var uploadSettleDuration_s = 0;
     var I_radio = hw.mcuActive_mA;
+    var uploadEnergy_mAh = 0;
     if (mode === 'cell') {
       I_radio = hw.cellActive_mA;
       uploadDuration_s = hw.modemBoot_s + hw.cellInitReg_s + hw.cellBulkBase_s
                        + (rowsPerUpload * hw.cellBulkPerRow_s) + hw.blynkOps_s + hw.modemShutdown_s;
       uploadDuration_s = Math.min(uploadDuration_s, hw.modemBlockMax_s);
+      uploadSettleDuration_s = Math.max(0, hw.cellSettle_s || 0);
+      uploadEnergy_mAh = uploadsPerDay * (
+        (uploadDuration_s * I_radio) +
+        (uploadSettleDuration_s * (hw.cellSettleCurrent_mA || 0))
+      ) / 3600.0;
     } else {
       I_radio = hw.wifiActive_mA;
       uploadDuration_s = hw.wifiConnect_s + hw.wifiBulkUpload_s + (rowsPerUpload * 0.05);
+      uploadEnergy_mAh = (uploadsPerDay * uploadDuration_s * I_radio) / 3600.0;
     }
-    var uploadActivePerDay_s = uploadsPerDay * uploadDuration_s;
-    var uploadEnergy_mAh     = (uploadActivePerDay_s * I_radio) / 3600.0;
+    var uploadActivePerDay_s = uploadsPerDay * (uploadDuration_s + uploadSettleDuration_s);
 
     // Sleep energy
     var totalActivePerDay_s = sampleActivePerDay_s + earlyWakePerDay_s + teActivePerDay_s + uploadActivePerDay_s;
@@ -191,6 +209,10 @@ window.BatteryModel = (function () {
       uploadMah:        uploadEnergy_mAh,
       espNowMah:        teEnergy_mAh,
       earlyWakeMah:     earlyWakeEnergy_mAh,
+      uploadActive_s:   uploadDuration_s,
+      uploadSettle_s:   uploadSettleDuration_s,
+      satSync_s:        tePerSync_s,
+      satSyncCurrent_mA: teSyncCurrent_mA,
       // Config echo (for display)
       mode:             mode,
       sleepEn:          sleepEn,
@@ -264,12 +286,13 @@ window.BatteryModel = (function () {
     var e_tx_uAh      = hw.txCurrent_mA   * tx_ms * mAhPerMs * 1000;
     var e_rx_uAh      = hw.rxCurrent_mA   * avgListenMs * mAhPerMs * 1000;
     var e_flash_uAh   = hw.flashCurrent_mA * flash_ms * mAhPerMs * 1000;
+    var e_preWake_uAh = hw.mcuActive_mA * (syncWakeCount * preWakeMargin_ms) * mAhPerMs * 1000;
 
     var sampleMcuMs    = hw.i2cMs + sensor_ms + flash_ms;
     var syncApplyMcuMs = sync_ms;
     var e_mcuActive_uAh = hw.mcuActive_mA * ((sampleWakeCount * sampleMcuMs) + (syncWakeCount * syncApplyMcuMs)) * mAhPerMs * 1000;
 
-    var e_active_uAh =
+    var e_cycle_uAh =
       (e_boot_uAh * bootWakeCount) +
       e_mcuActive_uAh +
       (e_i2c_uAh * sampleWakeCount) +
@@ -277,6 +300,7 @@ window.BatteryModel = (function () {
       (e_flash_uAh * sampleWakeCount) +
       (e_tx_uAh * syncWakeCount) +
       (e_rx_uAh * syncWakeCount);
+    var e_active_uAh = e_cycle_uAh + e_preWake_uAh;
 
     var e_sleep_uAh = sleepEn
       ? (hw.sleepUa * sleepMsDay / 3600000.0)
@@ -292,8 +316,9 @@ window.BatteryModel = (function () {
       batteryCapacity: battCap,
       derating:        derating,
       // Breakdown
-      activeMah:       (e_active_uAh / 1000.0),
+      activeMah:       (e_cycle_uAh / 1000.0),
       sleepMah:        (e_sleep_uAh  / 1000.0),
+      preWakeMah:      (e_preWake_uAh / 1000.0),
       preWakeActiveMs: syncWakeCount * preWakeMargin_ms, // ms/day T-Energy is awake before exchange
       // Guard window info (for drift analysis display)
       guardWindowMs:        guardWindowMs,        // total guard per period (ms)

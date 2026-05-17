@@ -639,11 +639,11 @@
     <div class="grid">
       <div class="field">
         <label>Deep Sleep Current <span class="unit">(mA)</span></label>
-        <input type="number" id="sleepCurrent" value="0.35" min="0.01" max="50" step="0.01">
+        <input type="number" id="sleepCurrent" value="1.0" min="0.01" max="50" step="0.01">
       </div>
       <div class="field">
         <label>MCU Active Current <span class="unit">(mA)</span></label>
-        <input type="number" id="mcuActive" value="60" min="10" max="500" step="1">
+        <input type="number" id="mcuActive" value="44" min="10" max="500" step="1">
       </div>
       <div class="field">
         <label>WiFi Active Current <span class="unit">(mA)</span></label>
@@ -651,11 +651,11 @@
       </div>
       <div class="field">
         <label>Cellular Active Current <span class="unit">(mA)</span></label>
-        <input type="number" id="cellActive" value="200" min="50" max="800" step="1">
+        <input type="number" id="cellActive" value="77" min="10" max="800" step="1">
       </div>
       <div class="field">
         <label>Base Sample Duration <span class="unit">(s — excludes sensors)</span></label>
-        <input type="number" id="sampleDuration" value="1.5" min="0.1" max="30" step="0.05">
+        <input type="number" id="sampleDuration" value="2.1" min="0.1" max="30" step="0.05">
       </div>
       <div class="field">
         <label>T0 T/H Sensor Read Time <span class="unit">(ms / sensor)</span></label>
@@ -688,6 +688,14 @@
       <div class="field">
         <label>Blynk Operations (Cell) <span class="unit">(s)</span></label>
         <input type="number" id="blynkOps" value="8" min="0" max="90" step="1">
+      </div>
+      <div class="field">
+        <label>Cell Upload Settle Current <span class="unit">(mA)</span></label>
+        <input type="number" id="cellSettleCurrent" value="20" min="0" max="300" step="1">
+      </div>
+      <div class="field">
+        <label>Cell Upload Settle Duration <span class="unit">(s)</span></label>
+        <input type="number" id="cellSettleDuration" value="286" min="0" max="900" step="1">
       </div>
       <div class="field">
         <label>Modem Block Hard Cap <span class="unit">(s)</span></label>
@@ -726,6 +734,14 @@
         <input type="number" id="teRxProcMs" value="120" min="0" max="2000" step="10">
       </div>
       <div class="field">
+        <label>Satellite File Sync Current <span class="unit">(mA)</span></label>
+        <input type="number" id="teFileSyncCurrent" value="103" min="0" max="300" step="1">
+      </div>
+      <div class="field">
+        <label>Satellite File Sync Duration <span class="unit">(s / node)</span></label>
+        <input type="number" id="teFileSyncDuration" value="30" min="0" max="300" step="1">
+      </div>
+      <div class="field">
         <label>T0 Early Wake for Sync <span class="unit">(s — T0 wakes before epoch grid)</span></label>
         <input type="number" id="teEarlyWakeS" value="1.0" min="0" max="10" step="0.1">
       </div>
@@ -739,11 +755,11 @@
     <div class="grid">
       <div class="field">
         <label>T-Energy T/H Sensor Read Time <span class="unit">(ms / sensor)</span></label>
-        <input type="number" id="te_sensorMs" value="25" min="1" max="200" step="1">
+        <input type="number" id="te_sensorMs" value="3000" min="1" max="5000" step="100">
       </div>
       <div class="field">
         <label>T-Energy T/H Sensor Current <span class="unit">(mA / sensor)</span></label>
-        <input type="number" id="te_sensorCurrent" value="1.0" min="0.1" max="200" step="0.1">
+        <input type="number" id="te_sensorCurrent" value="0" min="0" max="200" step="0.1">
       </div>
       <div class="field">
         <label>Normal Listen Window <span class="unit">(ms per wake)</span></label>
@@ -783,15 +799,15 @@
       </div>
       <div class="field">
         <label>I2C Overhead Duration <span class="unit">(ms — mux select, setup)</span></label>
-        <input type="number" id="te_i2cMs" value="10" min="0" max="500" step="5">
+        <input type="number" id="te_i2cMs" value="0" min="0" max="500" step="5">
       </div>
       <div class="field">
         <label>MCU Active Current <span class="unit">(mA)</span></label>
-        <input type="number" id="te_mcuActive" value="50" min="10" max="200" step="1">
+        <input type="number" id="te_mcuActive" value="35.9" min="10" max="200" step="0.1">
       </div>
       <div class="field">
         <label>I2C Overhead Current <span class="unit">(mA)</span></label>
-        <input type="number" id="te_i2cCurrent" value="5" min="0" max="200" step="5">
+        <input type="number" id="te_i2cCurrent" value="0" min="0" max="200" step="5">
       </div>
       <div class="field">
         <label>ESP-NOW TX Duration / frame <span class="unit">(ms)</span></label>
@@ -799,15 +815,15 @@
       </div>
       <div class="field">
         <label>ESP-NOW TX Current <span class="unit">(mA)</span></label>
-        <input type="number" id="te_txCurrent" value="180" min="50" max="300" step="5">
+        <input type="number" id="te_txCurrent" value="90" min="50" max="300" step="5">
       </div>
       <div class="field">
         <label>ESP-NOW RX Listen Current <span class="unit">(mA)</span></label>
-        <input type="number" id="te_rxCurrent" value="95" min="30" max="200" step="5">
+        <input type="number" id="te_rxCurrent" value="89.6" min="30" max="200" step="0.1">
       </div>
       <div class="field">
         <label>LittleFS Write Duration <span class="unit">(ms)</span></label>
-        <input type="number" id="te_flashMs" value="20" min="5" max="200" step="5">
+        <input type="number" id="te_flashMs" value="0" min="0" max="200" step="5">
       </div>
       <div class="field">
         <label>SYNC Apply <span class="unit">(ms — computeNextWake after SYNC received)</span></label>
@@ -815,7 +831,7 @@
       </div>
       <div class="field">
         <label>LittleFS Write Current <span class="unit">(mA)</span></label>
-        <input type="number" id="te_flashCurrent" value="15" min="10" max="150" step="5">
+        <input type="number" id="te_flashCurrent" value="0" min="0" max="150" step="5">
       </div>
     </div>
 
@@ -823,7 +839,7 @@
     <div class="info-box" style="margin-bottom:10px;font-size:0.75rem;">
       These values feed the <strong>RC Oscillator Drift Estimator</strong> panel below.
       <strong>Listen window fields auto-compute from the ESP-NOW Sync Period</strong> using the firmware formula
-      (300&nbsp;ppm &times; 3&times; safety).  Override manually if needed for testing.
+      (1500&nbsp;ppm &times; 2&times; safety).  Override manually if needed for testing.
     </div>
     <div class="grid">
       <div class="field">
@@ -841,12 +857,12 @@
       <div class="field">
         <label>Listen-Early Window <span class="unit">(s &mdash; auto from period, overrideable)</span></label>
         <input type="number" id="dr_listenEarly" value="20" min="1" max="3600" step="1" oninput="calcDriftEst()"
-               style="background:rgba(0,198,212,0.08);border-color:var(--accent3)" title="Auto-computed: 300ppm × 3× safety. Edit to override.">
+               style="background:rgba(0,198,212,0.08);border-color:var(--accent3)" title="Auto-computed: 1500ppm x 2x safety. Edit to override.">
       </div>
       <div class="field">
         <label>Sync-Grace Window <span class="unit">(s &mdash; auto from period, overrideable)</span></label>
         <input type="number" id="dr_syncGrace" value="45" min="1" max="3600" step="1" oninput="calcDriftEst()"
-               style="background:rgba(0,198,212,0.08);border-color:var(--accent3)" title="Auto-computed: 300ppm × 6× safety. Edit to override.">
+               style="background:rgba(0,198,212,0.08);border-color:var(--accent3)" title="Auto-computed: 1500ppm x 4x safety. Edit to override.">
       </div>
       <div class="field">
         <label>Active Time per Cycle <span class="unit">(s &mdash; awake per sample wake)</span></label>
@@ -1388,6 +1404,8 @@ function runT0Estimate() {
   const t_cellInit  = getVal('cellInitReg');
   const t_cellRow   = getVal('cellBulkPerRow');
   const t_blynk     = getVal('blynkOps', 8, true);
+  const t_cellSettleCurrent = getVal('cellSettleCurrent', 20, true);
+  const t_cellSettleDuration = getVal('cellSettleDuration', 286, true);
   const t_modemMax  = getVal('modemBlockMax');
   const t_wifiConn  = getVal('wifiConnect');
   const t_wifiBulk  = getVal('wifiBulkUpload');
@@ -1396,6 +1414,8 @@ function runT0Estimate() {
   const t_teWindowMs   = getVal('teRxWindowMs');              // ms: T0 listens per node
   const t_teTxMs       = getVal('teTxSyncMs', 15, true);     // ms: T0 sends SYNC+ACK per node
   const t_teProcMs     = getVal('teRxProcMs', 120, true);    // ms: parse/store overhead per node
+  const t_teFileSyncCurrent = getVal('teFileSyncCurrent', 103, true);
+  const t_teFileSyncDuration = getVal('teFileSyncDuration', 30, true);
   const t_teEarlyWakeS = getVal('teEarlyWakeS', 1.0, true);  // s: T0 wakes before epoch grid
   const t0SensorCount  = Math.max(0, Math.round(getVal('t0_sensorCount', 2, true)));
   const t0SensorMs     = getVal('t0_sensorMs', 25, true);
@@ -1426,6 +1446,8 @@ function runT0Estimate() {
     cellInitReg_s: t_cellInit,
     cellBulkPerRow_s: t_cellRow,
     blynkOps_s: t_blynk,
+    cellSettleCurrent_mA: t_cellSettleCurrent,
+    cellSettle_s: t_cellSettleDuration,
     modemBlockMax_s: t_modemMax,
     wifiConnect_s: t_wifiConn,
     wifiBulkUpload_s: t_wifiBulk,
@@ -1435,6 +1457,8 @@ function runT0Estimate() {
     teRxWindowMs: t_teWindowMs,
     teTxSyncMs: t_teTxMs,
     teRxProcMs: t_teProcMs,
+    teFileSyncCurrent_mA: t_teFileSyncCurrent,
+    teFileSyncDuration_s: t_teFileSyncDuration,
     teEarlyWake_s: t_teEarlyWakeS,
     batteryDerating: derating,
     batteryCapacity_mAh: battCap,
@@ -1617,21 +1641,21 @@ function runTEEstimate() {
   const retries       = getVal('te_retries', 2, true);
   const derating      = getVal('te_battDerating', 85) / 100.0;
 
-  const sleepUa    = getVal('te_sleepUa', 10);
+  const sleepUa    = getVal('te_sleepUa', 50);
   const I_boot        = getVal('te_bootCurrent', 80);
   const t_boot_ms     = getVal('te_bootMs', 300);
-  const I_i2c         = getVal('te_i2cCurrent', 20);
-  const I_teMcuActive = getVal('te_mcuActive', 50);
-  const t_i2c_ms      = getVal('te_i2cMs', 10);
-  const I_tx          = getVal('te_txCurrent', 120);
+  const I_i2c         = getVal('te_i2cCurrent', 0);
+  const I_teMcuActive = getVal('te_mcuActive', 35.9);
+  const t_i2c_ms      = getVal('te_i2cMs', 0);
+  const I_tx          = getVal('te_txCurrent', 90);
   const t_tx_ms       = getVal('te_txMs', 10);
-  const I_rx          = getVal('te_rxCurrent', 80);
-  const t_flash_ms    = getVal('te_flashMs', 20);
-  const I_flash       = getVal('te_flashCurrent', 40);
+  const I_rx          = getVal('te_rxCurrent', 89.6);
+  const t_flash_ms    = getVal('te_flashMs', 0);
+  const I_flash       = getVal('te_flashCurrent', 0);
   const t_syncApplyMs  = getVal('te_syncApplyMs', 20, true); // ms: computeNextWake after SYNC received
   const teSensorCount  = Math.max(0, Math.round(getVal('te_sensorCount', 2, true)));
-  const teSensorMs     = getVal('te_sensorMs', 25, true);
-  const teSensorCurrent = getVal('te_sensorCurrent', 40, true);
+  const teSensorMs     = getVal('te_sensorMs', 3000, true);
+  const teSensorCurrent = getVal('te_sensorCurrent', 0, true);
 
   const modelCfg = {
     samplePeriod_s: samplePeriod,
@@ -1690,7 +1714,7 @@ function runTEEstimate() {
     webSyncMah: '-',
     sampleMah: model ? model.activeMah : 0,
     espNowMah: '-',
-    otherMah: model ? ((model.preWakeActiveMs || 0) / 3600000.0 * I_teMcuActive) : 0,
+    otherMah: model ? (model.preWakeMah || 0) : 0,
     lifetimeDays,
     lifetimeMonths,
     samplesPerDay,
@@ -1830,7 +1854,7 @@ function calcDriftEst() {
       Typical drift (${formatS(driftTypical_s)}) exceeds the ${formatS(windowTotal_s)} listen window across ${cycleLabel}.<br><br>
       <strong>Options:</strong><br>
       &bull; <strong>Firmware auto-adjusts</strong>: updated firmware sizes the guard to
-             ${formatS(BatteryModel.computeTotalListenWindowMs(syncPeriod_s) / 1000)} at this period (300&nbsp;ppm &times; 3&times;).
+             ${formatS(BatteryModel.computeTotalListenWindowMs(syncPeriod_s) / 1000)} at this period (1500&nbsp;ppm &times; 2&times;).
              Ensure both boards are flashed and using a preset interval.<br>
       &bull; Reduce sync period to match sample period (${formatS(samplePeriod_s)}) &mdash; re-anchor every wake<br>
       &bull; Solder 32.768&nbsp;kHz crystal to GPIO15/16 &mdash; reduces drift to ~1&ndash;5&nbsp;s over 24&nbsp;hr
@@ -1841,7 +1865,7 @@ function calcDriftEst() {
       <strong style="color:var(--warn);">&#9888; Window is tight — cold or warm boards may miss sync.</strong><br>
       Typical drift (${formatS(driftTypical_s)}) uses ${(driftTypical_s / windowTotal_s * 100).toFixed(0)}% of the window.
       Firmware auto-computes a ${formatS(BatteryModel.computeTotalListenWindowMs(syncPeriod_s) / 1000)} guard window at this period
-      (300&nbsp;ppm &times; 3&times; safety). If you see missed syncs, try the next-longer preset interval.
+      (1500&nbsp;ppm &times; 2&times; safety). If you see missed syncs, try the next-longer preset interval.
     </div>`;
   } else if (driftWorst_s > windowTotal_s) {
     rec = `<div class="info-box" style="border-color:var(--warn);margin-top:0;">
