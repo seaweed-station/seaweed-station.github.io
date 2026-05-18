@@ -183,7 +183,9 @@
       msg.indexOf("searched for the function") !== -1 ||
       msg.indexOf("dashboard_get_v4_alert_settings") !== -1 ||
       msg.indexOf("dashboard_get_v4_alert_overview") !== -1 ||
-      msg.indexOf("dashboard_upsert_v4_alert_settings") !== -1;
+      msg.indexOf("dashboard_upsert_v4_alert_settings") !== -1 ||
+      msg.indexOf("dashboard_delete_v4_alert_setting") !== -1 ||
+      msg.indexOf("dashboard_set_v4_alert_silence") !== -1;
   }
 
   async function fetchStationMetadataFromSupabase(project) {
@@ -647,6 +649,146 @@
       if (isMissingAlertSettingsRpcError(err)) {
         throw new Error("V4 alert overview RPC is not installed yet. Reapply the V4 alert-settings SQL amendment.");
       }
+      var settings = await fetchV4AlertSettings();
+      settings.current_alert_error = err.message || String(err || "Current alert computation failed");
+      return {
+        settings: settings,
+        alerts: [],
+        current_alerts: [],
+        current_alert_error: settings.current_alert_error,
+        updatedAt: new Date().toISOString()
+      };
+    }
+  }
+
+  async function fetchV4LatestUploadHints(stationUids) {
+    var project = await getV4AuthProject();
+    var seen = {};
+    var ids = (Array.isArray(stationUids) ? stationUids : []).map(text).filter(function(id) {
+      if (!id || seen[id]) return false;
+      seen[id] = true;
+      return true;
+    });
+    if (!ids.length) return {};
+    var inList = ids.map(function(id) {
+      return encodeURIComponent(id);
+    }).join(",");
+    var url = project.url +
+      "/rest/v1/upload_sessions?select=station_uid,upload_started_at,applied_upload_interval_hours,applied_upload_anchor_hour_utc,applied_upload_anchor_minute_utc,status" +
+      "&status=eq.ok" +
+      "&station_uid=in.(" + inList + ")" +
+      "&order=upload_started_at.desc" +
+      "&limit=200";
+    var rows = await fetchJson(url, 15000, {
+      headers: supabaseHeaders(project.key)
+    });
+    var out = {};
+    (Array.isArray(rows) ? rows : []).forEach(function(row) {
+      var stationUid = text(row && row.station_uid);
+      if (!stationUid || out[stationUid]) return;
+      out[stationUid] = {
+        last_upload_started_at: row.upload_started_at,
+        expected_upload_hours: Number(row.applied_upload_interval_hours) || null,
+        upload_anchor_hour_utc: row.applied_upload_anchor_hour_utc == null ? null : Number(row.applied_upload_anchor_hour_utc),
+        upload_anchor_minute_utc: row.applied_upload_anchor_minute_utc == null ? null : Number(row.applied_upload_anchor_minute_utc)
+      };
+    });
+    return out;
+  }
+
+  function v4AlertIdentity(alert) {
+    alert = alert || {};
+    var details = alert.details_json || {};
+    if (alert.alert_identity) return text(alert.alert_identity);
+    var suffix = text(details.alert_detail_key || details.sensor_key);
+    return [
+      text(alert.station_uid),
+      text(alert.alert_key),
+      alert.slot_number === null || alert.slot_number === undefined ? "_" : text(alert.slot_number)
+    ].join("|") + (suffix ? "|" + suffix : "");
+  }
+
+  async function fetchV4AlertSilences() {
+    var project = await getV4AuthProject();
+    var url = project.url +
+      "/rest/v1/v4_alert_silences?select=alert_identity,silence_reason,silenced_at,updated_at&limit=500";
+    try {
+      var rows = await fetchJson(url, 2500, {
+        headers: supabaseHeaders(project.key)
+      });
+      var out = {};
+      (Array.isArray(rows) ? rows : []).forEach(function(row) {
+        if (!row || !row.alert_identity) return;
+        out[row.alert_identity] = row;
+      });
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  async function fetchV4OpenAlertInstances() {
+    var project = await getV4AuthProject();
+    var url = project.url +
+      "/rest/v1/v4_alert_instances?select=" +
+      [
+        "id",
+        "alert_identity",
+        "station_uid",
+        "station_name",
+        "alert_key",
+        "slot_number",
+        "severity",
+        "status",
+        "opened_at",
+        "updated_at",
+        "last_notified_at",
+        "last_reminder_at",
+        "notification_count",
+        "value_text",
+        "threshold_text",
+        "details_json"
+      ].join(",") +
+      "&status=eq.open" +
+      "&order=severity.desc,updated_at.desc" +
+      "&limit=200";
+    var result = await Promise.all([
+      fetchJson(url, 15000, { headers: supabaseHeaders(project.key) }),
+      fetchV4AlertSilences()
+    ]);
+    var rows = result[0];
+    var silences = result[1] || {};
+    return (Array.isArray(rows) ? rows : []).map(function(row) {
+      var silence = silences[row.alert_identity];
+      var details = row.details_json || {};
+      return Object.assign({}, row, {
+        instance_opened_at: row.opened_at,
+        instance_updated_at: row.updated_at,
+        silenced: Boolean(silence) || row.silenced === true || details.silenced === true,
+        silence_reason: silence ? (silence.silence_reason || "identity_silenced") : (row.silence_reason || details.silence_reason),
+        silenced_at: silence ? silence.silenced_at : row.silenced_at,
+        fallback_source: "open_alert_instances"
+      });
+    });
+  }
+
+  async function pushV4AlertSilence(alert, silenced, adminPassword) {
+    var project = await getV4AuthProject();
+    try {
+      return await fetchJson(project.url + "/rest/v1/rpc/dashboard_set_v4_alert_silence", 15000, {
+        method: "POST",
+        headers: Object.assign({}, supabaseHeaders(project.key), { "Content-Type": "application/json" }),
+        body: JSON.stringify({
+          p_admin_password: text(adminPassword),
+          p_alert: Object.assign({}, alert || {}, { alert_identity: v4AlertIdentity(alert) }),
+          p_silenced: Boolean(silenced),
+          p_role: text(sessionStorage.getItem("sw_role") || "dashboard")
+        })
+      });
+    } catch (err) {
+      if (isMissingAlertSettingsRpcError(err)) {
+        throw new Error("V4 alert silence RPC is not installed yet. Apply the 2026-05-18 alert silence SQL amendment.");
+      }
       throw err;
     }
   }
@@ -937,6 +1079,10 @@
     fetchAccessRoleDefinitions: fetchAccessRoleDefinitions,
     fetchV4AlertOverview: fetchV4AlertOverview,
     fetchV4AlertSettings: fetchV4AlertSettings,
+    fetchV4AlertSilences: fetchV4AlertSilences,
+    fetchV4LatestUploadHints: fetchV4LatestUploadHints,
+    fetchV4OpenAlertInstances: fetchV4OpenAlertInstances,
+    pushV4AlertSilence: pushV4AlertSilence,
     fetchOverviewSnapshot: fetchOverviewSnapshot,
     fetchTableConfigRows: fetchTableConfigRows,
     fetchStationReview: fetchStationReview,

@@ -107,7 +107,7 @@ window.BatteryModel = (function () {
   // ========================================================================
   // T0 ENERGY MODEL  (from battery_estimator.html runT0Estimate)
   // ========================================================================
-  // cfg = { deployMode, sleepEnable, samplePeriod_s, tsBulkInterval_s,
+  // cfg = { deployMode, sleepEnable, samplePeriod_s,
   //         tsBulkFreqHours, espnowSyncPeriod_s, sat1Installed, sat2Installed }
   // hwOverrides (optional) can override any key from HW_T0
   function calcT0Daily(cfg, hwOverrides) {
@@ -116,7 +116,6 @@ window.BatteryModel = (function () {
     var mode            = cfg.deployMode === 0 ? 'wifi' : 'cell';
     var sleepEn         = !!cfg.sleepEnable;
     var samplePeriod    = Math.max(10, cfg.samplePeriod_s || 600);
-    var bulkInterval_s  = Math.max(60, cfg.tsBulkInterval_s || 900);
     var syncFreqHours   = Math.max(1, cfg.tsBulkFreqHours || 24);
     var syncPeriod_s    = Math.max(60, cfg.espnowSyncPeriod_s || 3600);
     var tEnergyNodes    = (cfg.sat1Installed ? 1 : 0) + (cfg.sat2Installed ? 1 : 0);
@@ -127,7 +126,7 @@ window.BatteryModel = (function () {
     var samplesPerDay   = Math.floor(86400 / samplePeriod);
     var syncsPerDay     = tEnergyNodes > 0 ? Math.floor(86400 / syncPeriod_s) : 0;
     var uploadsPerDay   = 24.0 / syncFreqHours;
-    var rowsPerUpload   = Math.max(1, Math.floor((syncFreqHours * 3600) / bulkInterval_s));
+    var rowsPerUpload   = Math.max(1, Math.floor((syncFreqHours * 3600) / samplePeriod));
 
     // Sensor read time
     var sensorCount     = hw.sensorCount;
@@ -245,11 +244,20 @@ window.BatteryModel = (function () {
     var i2c_ms       = hw.i2cMs + sensor_ms;
     var tx_frames    = 2 * (1 + hw.retries);
     var tx_ms        = tx_frames * hw.txMs;
-    var normalFraction = (hw.listenEveryN - 1) / hw.listenEveryN;
-    var longFraction   = 1.0 / hw.listenEveryN;
-    var avgListenMs    = normalFraction * hw.listenMs + longFraction * hw.listenLongMs;
     var flash_ms       = hw.flashMs;
     var sync_ms        = hw.syncApplyMs;
+
+    // Guard window (early+grace): current firmware sizes the scheduled receive
+    // window from expected RTC drift. Use it as the sync listen time because a
+    // 12 h sync cannot be represented by the legacy 400/1200 ms mini-window.
+    var listenEarlyMs    = computeListenEarlyMs(syncPeriod);
+    var syncGraceMs      = computeSyncGraceMs(syncPeriod);
+    var guardWindowMs    = listenEarlyMs + syncGraceMs;
+    var expectedDrift_s  = computeExpectedDriftSec(syncPeriod);
+    var normalFraction = (hw.listenEveryN - 1) / hw.listenEveryN;
+    var longFraction   = 1.0 / hw.listenEveryN;
+    var avgLegacyListenMs = normalFraction * hw.listenMs + longFraction * hw.listenLongMs;
+    var syncListenMs   = Math.max(avgLegacyListenMs, guardWindowMs);
 
     var sampleWakeCount = samplesPerDay;
     var syncWakeCount   = periodsMatch ? samplesPerDay : syncsPerDay;
@@ -261,16 +269,11 @@ window.BatteryModel = (function () {
     var preWakeMargin_ms = sleepEn ? (hw.preWakeMargin_s * 1000) : 0;
 
     var sampleWakeMs = boot_ms + i2c_ms + flash_ms;
-    var syncWakeMs   = boot_ms + preWakeMargin_ms + tx_ms + avgListenMs + sync_ms;
+    var syncWakeMs   = boot_ms + preWakeMargin_ms + tx_ms + syncListenMs + sync_ms;
     var totalActiveMs = periodsMatch
-      ? (sampleWakeCount * (sampleWakeMs + preWakeMargin_ms + tx_ms + avgListenMs + sync_ms))
+      ? (sampleWakeCount * (sampleWakeMs + preWakeMargin_ms + tx_ms + syncListenMs + sync_ms))
       : (sampleWakeCount * sampleWakeMs) + (syncWakeCount * syncWakeMs);
 
-    // Guard window (early+grace): worst-case active time when a single SYNC is missed
-    var listenEarlyMs    = computeListenEarlyMs(syncPeriod);
-    var syncGraceMs      = computeSyncGraceMs(syncPeriod);
-    var guardWindowMs    = listenEarlyMs + syncGraceMs;
-    var expectedDrift_s  = computeExpectedDriftSec(syncPeriod);
     // Energy cost of one missed sync: radio on for guardWindowMs at rxCurrent_mA
     var guardWindowMahPerMiss = (hw.rxCurrent_mA * guardWindowMs / 3600000.0);
     // Total guard window active time per day IF all syncs were missed (for display context)
@@ -284,22 +287,30 @@ window.BatteryModel = (function () {
     var e_i2c_uAh     = hw.i2cCurrent_mA  * hw.i2cMs * mAhPerMs * 1000;
     var e_sensor_uAh  = hw.sensorCurrent_mA * sensor_ms * mAhPerMs * 1000;
     var e_tx_uAh      = hw.txCurrent_mA   * tx_ms * mAhPerMs * 1000;
-    var e_rx_uAh      = hw.rxCurrent_mA   * avgListenMs * mAhPerMs * 1000;
+    var e_rx_uAh      = hw.rxCurrent_mA   * syncListenMs * mAhPerMs * 1000;
     var e_flash_uAh   = hw.flashCurrent_mA * flash_ms * mAhPerMs * 1000;
     var e_preWake_uAh = hw.mcuActive_mA * (syncWakeCount * preWakeMargin_ms) * mAhPerMs * 1000;
 
     var sampleMcuMs    = hw.i2cMs + sensor_ms + flash_ms;
     var syncApplyMcuMs = sync_ms;
-    var e_mcuActive_uAh = hw.mcuActive_mA * ((sampleWakeCount * sampleMcuMs) + (syncWakeCount * syncApplyMcuMs)) * mAhPerMs * 1000;
-
-    var e_cycle_uAh =
-      (e_boot_uAh * bootWakeCount) +
-      e_mcuActive_uAh +
+    var e_sampleMcu_uAh = hw.mcuActive_mA * (sampleWakeCount * sampleMcuMs) * mAhPerMs * 1000;
+    var e_syncMcu_uAh = hw.mcuActive_mA * (syncWakeCount * syncApplyMcuMs) * mAhPerMs * 1000;
+    var e_mcuActive_uAh = e_sampleMcu_uAh + e_syncMcu_uAh;
+    var e_bootTotal_uAh = e_boot_uAh * bootWakeCount;
+    var e_sampleTotal_uAh =
+      e_sampleMcu_uAh +
       (e_i2c_uAh * sampleWakeCount) +
       (e_sensor_uAh * sampleWakeCount) +
-      (e_flash_uAh * sampleWakeCount) +
+      (e_flash_uAh * sampleWakeCount);
+    var e_espNowTotal_uAh =
+      e_syncMcu_uAh +
       (e_tx_uAh * syncWakeCount) +
       (e_rx_uAh * syncWakeCount);
+
+    var e_cycle_uAh =
+      e_bootTotal_uAh +
+      e_sampleTotal_uAh +
+      e_espNowTotal_uAh;
     var e_active_uAh = e_cycle_uAh + e_preWake_uAh;
 
     var e_sleep_uAh = sleepEn
@@ -317,6 +328,9 @@ window.BatteryModel = (function () {
       derating:        derating,
       // Breakdown
       activeMah:       (e_cycle_uAh / 1000.0),
+      bootMah:         (e_bootTotal_uAh / 1000.0),
+      sampleMah:       (e_sampleTotal_uAh / 1000.0),
+      espNowMah:       (e_espNowTotal_uAh / 1000.0),
       sleepMah:        (e_sleep_uAh  / 1000.0),
       preWakeMah:      (e_preWake_uAh / 1000.0),
       preWakeActiveMs: syncWakeCount * preWakeMargin_ms, // ms/day T-Energy is awake before exchange
@@ -324,7 +338,8 @@ window.BatteryModel = (function () {
       guardWindowMs:        guardWindowMs,        // total guard per period (ms)
       listenEarlyMs:        listenEarlyMs,        // early gate (ms)
       syncGraceMs:          syncGraceMs,          // grace gate (ms)
-      expectedDrift_s:      expectedDrift_s,      // expected ±peak drift at 300 ppm (s)
+      syncListenMs:         syncListenMs,         // scheduled receive window used in energy model
+      expectedDrift_s:      expectedDrift_s,      // expected peak drift at current firmware estimate (s)
       guardWindowMahPerMiss: guardWindowMahPerMiss, // extra mAh cost per missed SYNC
       guardWorstCasePerDayMs: guardWorstCasePerDayMs, // if ALL syncs missed (ms/day)
       // Echo

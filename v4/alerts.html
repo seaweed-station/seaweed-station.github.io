@@ -20,7 +20,7 @@
 </header>
 <main class="main">
   <section class="band">
-    <div class="band-head"><h2>Summary</h2><span class="status-line">Local editor state</span></div>
+    <div class="band-head"><h2>Summary</h2><span class="status-line mono" id="utcClock">UTC --</span></div>
     <div class="band-body">
       <div class="summary-grid">
         <div class="summary-item"><div class="summary-label">Rows</div><div class="summary-value" id="summaryRows">--</div><div class="summary-sub">Fleet defaults + overrides</div></div>
@@ -43,8 +43,8 @@
             <th><button class="table-sort" type="button" data-current-sort="alert">Alert</button></th>
             <th><button class="table-sort" type="button" data-current-sort="value">Current Value</button></th>
             <th><button class="table-sort" type="button" data-current-sort="threshold">Threshold</button></th>
-            <th><button class="table-sort" type="button" data-current-sort="silenced">Notification</button></th>
-            <th><button class="table-sort" type="button" data-current-sort="next_notification">Next Slack</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="timing">Timing</button></th>
+            <th><button class="table-sort" type="button" data-current-sort="next_checkin">Next Upload</button></th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -88,7 +88,7 @@
     </div>
   </section>
 </main>
-<script src="js/catalog_provider_v4.js?v=20260507alerts"></script>
+<script src="js/catalog_provider_v4.js?v=20260518alerts2"></script>
 <script src="js/nav_v4.js?v=20260507alerts"></script>
 <script src="js/page_bootstrap_v4.js?v=20260504b"></script>
 <script>
@@ -118,6 +118,7 @@
   var stations = [];
   var currentAlertSourceRows = [];
   var currentAlerts = [];
+  var stationCheckinHints = {};
   var currentAlertSort = { key: "severity", dir: "desc" };
   var LOCAL_SILENCED_ALERTS_KEY = "sw_v4_locally_silenced_current_alerts";
   var locallySilencedCurrentAlerts = loadLocalSilencedCurrentAlerts();
@@ -130,6 +131,7 @@
   var pushStatus = document.getElementById("pushStatus");
   var testStatus = document.getElementById("testStatus");
   var TEST_SECRET_KEY = "sw_v4_alert_dispatch_secret_session";
+  var UTC_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
   function html(value) { return SeaweedV4.escapeHtml(value == null ? "" : String(value)); }
 
@@ -301,17 +303,18 @@
 
   function currentAlertIdentity(row) {
     row = row || {};
+    if (row.alert_identity) return String(row.alert_identity);
     var details = row.details_json || {};
+    var suffix = details.alert_detail_key || details.sensor_key || "";
     return [
       row.station_uid || "",
       row.alert_key || "",
-      row.slot_number == null ? "_" : String(row.slot_number),
-      details.alert_detail_key || details.sensor_key || ""
-    ].join("|");
+      row.slot_number == null ? "_" : String(row.slot_number)
+    ].join("|") + (suffix ? "|" + suffix : "");
   }
 
   function currentAlertNotifyLabel(row) {
-    return isCurrentAlertSilenced(row) ? "\uD83D\uDD15 Silenced" : "\uD83D\uDD14 Alerting";
+    return isCurrentAlertSilenced(row) ? "\uD83D\uDD15 Quiet" : "\uD83D\uDD14 Alerting";
   }
 
   function currentAlertNotifyAction(row) {
@@ -338,7 +341,12 @@
     if (silenced) {
       locallySilencedCurrentAlerts[key] = Object.assign({}, alert, {
         silenced: true,
-        silence_reason: "silenced"
+        silence_reason: "silenced",
+        silence_match: {
+          severity: alert && alert.severity,
+          value_text: alert && alert.value_text,
+          threshold_text: alert && alert.threshold_text
+        }
       });
     } else {
       delete locallySilencedCurrentAlerts[key];
@@ -349,13 +357,30 @@
 
   function mergeLocalCurrentAlertState(rows) {
     var out = Array.isArray(rows) ? rows.slice() : [];
+    var activeKeys = {};
     out = out.map(function(row) {
       var key = currentAlertIdentity(row);
-      if (locallySilencedCurrentAlerts[key]) {
+      activeKeys[key] = true;
+      var local = locallySilencedCurrentAlerts[key];
+      var match = local && local.silence_match;
+      if (local && match && (
+        match.severity !== row.severity ||
+        match.value_text !== row.value_text ||
+        match.threshold_text !== row.threshold_text
+      )) {
+        delete locallySilencedCurrentAlerts[key];
+        saveLocalSilencedCurrentAlerts();
+        return row;
+      }
+      if (local) {
         return Object.assign({}, row, { silenced: true, silence_reason: "silenced" });
       }
       return row;
     });
+    Object.keys(locallySilencedCurrentAlerts).forEach(function(key) {
+      if (!activeKeys[key]) delete locallySilencedCurrentAlerts[key];
+    });
+    saveLocalSilencedCurrentAlerts();
     return out;
   }
 
@@ -367,8 +392,8 @@
     if (key === "slot") return row.slot_number == null ? -1 : Number(row.slot_number);
     if (key === "value") return String(row.value_text || "").toLowerCase();
     if (key === "threshold") return String(row.threshold_text || "").toLowerCase();
-    if (key === "silenced") return isCurrentAlertSilenced(row) ? 1 : 0;
-    if (key === "next_notification") return nextNotificationSortValue(row);
+    if (key === "timing") return timingSortValue(row);
+    if (key === "next_checkin") return nextCheckinSortValue(row);
     return "";
   }
 
@@ -437,44 +462,244 @@
     });
   }
 
-  function nextNotificationText(row) {
-    var localSetting = localSettingForAlert(row);
-    if (isCurrentAlertSilenced(row)) {
-      if (localSetting && localSetting.suppress_until) {
-        var suppressUntil = new Date(localSetting.suppress_until);
-        if (!isNaN(suppressUntil.getTime()) && suppressUntil.getTime() > Date.now()) {
-          return "Suppressed until " + shortDateTime(suppressUntil);
-        }
-      }
-      return "Silenced";
-    }
-    if (!row.last_notified_at || !Number(row.notification_count || 0)) {
-      return "On next dispatch";
-    }
-    var basis = row.last_reminder_at || row.last_notified_at;
-    var next = new Date(new Date(basis).getTime() + 24 * 3600 * 1000);
-    if (isNaN(next.getTime())) return "On next dispatch";
-    if (next.getTime() <= Date.now()) return "Reminder due next dispatch";
-    return "Reminder " + shortDateTime(next);
+  function parseTime(value) {
+    if (!value) return null;
+    var d = new Date(value);
+    return isNaN(d.getTime()) ? null : d;
   }
 
-  function nextNotificationSortValue(row) {
-    if (isCurrentAlertSilenced(row)) return Number.MAX_SAFE_INTEGER;
-    if (!row.last_notified_at || !Number(row.notification_count || 0)) return 0;
-    var basis = row.last_reminder_at || row.last_notified_at;
-    var next = new Date(new Date(basis).getTime() + 24 * 3600 * 1000);
-    return isNaN(next.getTime()) ? 0 : next.getTime();
+  function detailTime(row, keys) {
+    var details = row && row.details_json ? row.details_json : {};
+    for (var i = 0; i < keys.length; i++) {
+      var d = parseTime(details[keys[i]]);
+      if (d) return d;
+    }
+    return null;
+  }
+
+  function compactDateTime(value) {
+    var d = value instanceof Date ? value : parseTime(value);
+    if (!d) return "--";
+    return d.getUTCDate() + " " +
+      UTC_MONTHS[d.getUTCMonth()] + ", " +
+      String(d.getUTCHours()).padStart(2, "0") + ":" +
+      String(d.getUTCMinutes()).padStart(2, "0") +
+      " UTC";
+  }
+
+  function compactUtcClock(value) {
+    var d = value instanceof Date ? value : new Date();
+    return d.getUTCFullYear() + "-" +
+      String(d.getUTCMonth() + 1).padStart(2, "0") + "-" +
+      String(d.getUTCDate()).padStart(2, "0") + " " +
+      String(d.getUTCHours()).padStart(2, "0") + ":" +
+      String(d.getUTCMinutes()).padStart(2, "0") + ":" +
+      String(d.getUTCSeconds()).padStart(2, "0") +
+      " UTC";
+  }
+
+  function updateUtcClock() {
+    var el = document.getElementById("utcClock");
+    if (el) el.textContent = compactUtcClock(new Date());
+  }
+
+  function currentValueObservedAt(row) {
+    if (!row) return null;
+    if (row.alert_key === "upload_freshness") return detailTime(row, ["last_upload_started_at"]);
+    if (row.alert_key === "gateway_battery") return detailTime(row, ["last_seen_at"]);
+    if (row.alert_key === "battery_voltage" || row.alert_key === "sensor_missing") return detailTime(row, ["sample_epoch"]);
+    if (row.alert_key === "satellite_sync") return detailTime(row, ["last_sync_started_at"]);
+    if (row.alert_key === "data_gap") return detailTime(row, ["gap_start_at"]);
+    return detailTime(row, ["observed_at", "sample_epoch", "last_seen_at", "last_upload_started_at"]);
+  }
+
+  function timingText(row) {
+    var details = row && row.details_json ? row.details_json : {};
+    var lines = [];
+    if (row.alert_key === "upload_freshness") {
+      lines.push("Last upload " + compactDateTime(details.last_upload_started_at));
+    } else if (row.alert_key === "data_gap" && details.gap_start_at && details.gap_end_at) {
+      lines.push("Gap " + compactDateTime(details.gap_start_at) + " to " + compactDateTime(new Date(new Date(details.gap_end_at).getTime() + 3600000)));
+    } else {
+      var observedAt = currentValueObservedAt(row);
+      lines.push("Last update " + compactDateTime(observedAt));
+    }
+    if (row.instance_opened_at) {
+      lines.push((row.severity === "critical" ? "Critical" : "Alert") + " since " + compactDateTime(row.instance_opened_at));
+    } else if (row.detected_at) {
+      lines.push("Detected " + compactDateTime(row.detected_at));
+    }
+    return lines;
+  }
+
+  function timingSortValue(row) {
+    var observedAt = currentValueObservedAt(row);
+    return observedAt ? observedAt.getTime() : 0;
+  }
+
+  function nextCheckinAt(row) {
+    var details = row && row.details_json ? row.details_json : {};
+    var expectedHours = Number(row && row.expected_upload_hours);
+    if (!isFinite(expectedHours) || expectedHours <= 0) expectedHours = Number(details.expected_upload_hours);
+    var hint = row && stationCheckinHints[row.station_uid];
+    if ((!isFinite(expectedHours) || expectedHours <= 0) && hint) expectedHours = hint.expected_upload_hours;
+    var anchorHour = Number(row && row.upload_anchor_hour_utc);
+    var anchorMinute = Number(row && row.upload_anchor_minute_utc);
+    if ((!isFinite(anchorHour) || anchorHour < 0) && details.upload_anchor_hour_utc != null) anchorHour = Number(details.upload_anchor_hour_utc);
+    if ((!isFinite(anchorMinute) || anchorMinute < 0) && details.upload_anchor_minute_utc != null) anchorMinute = Number(details.upload_anchor_minute_utc);
+    if (hint) {
+      if (!isFinite(anchorHour) || anchorHour < 0) anchorHour = Number(hint.upload_anchor_hour_utc);
+      if (!isFinite(anchorMinute) || anchorMinute < 0) anchorMinute = Number(hint.upload_anchor_minute_utc);
+    }
+    var anchoredDirect = anchoredNextUpload(expectedHours, anchorHour, anchorMinute);
+    if (anchoredDirect) return anchoredDirect;
+    var direct = parseTime(row && (row.next_check_in_at || row.next_check_in || row.next_upload_at)) ||
+      parseTime(details.next_check_in_at || details.next_check_in || details.next_upload_at);
+    if (direct) {
+      while (isFinite(expectedHours) && expectedHours > 0 && direct.getTime() < Date.now()) {
+        direct = new Date(direct.getTime() + expectedHours * 3600000);
+      }
+      return direct;
+    }
+    var lastUpload = parseTime(details.last_upload_started_at);
+    if (lastUpload && isFinite(expectedHours) && expectedHours > 0) {
+      var anchored = anchoredNextUpload(expectedHours, anchorHour, anchorMinute);
+      if (anchored) return anchored;
+      var next = new Date(lastUpload.getTime() + expectedHours * 3600000);
+      while (next.getTime() < Date.now() && expectedHours > 0) {
+        next = new Date(next.getTime() + expectedHours * 3600000);
+      }
+      return next;
+    }
+    if (hint && hint.last_upload_started_at && isFinite(expectedHours) && expectedHours > 0) {
+      var hintedAnchored = anchoredNextUpload(expectedHours, anchorHour, anchorMinute);
+      if (hintedAnchored) return hintedAnchored;
+      var hinted = new Date(hint.last_upload_started_at.getTime() + expectedHours * 3600000);
+      while (hinted.getTime() < Date.now() && expectedHours > 0) {
+        hinted = new Date(hinted.getTime() + expectedHours * 3600000);
+      }
+      return hinted;
+    }
+    return null;
+  }
+
+  function anchoredNextUpload(expectedHours, anchorHour, anchorMinute) {
+    if (!isFinite(expectedHours) || expectedHours <= 0) return null;
+    if (!isFinite(anchorHour) || anchorHour < 0 || anchorHour > 23) return null;
+    if (!isFinite(anchorMinute) || anchorMinute < 0 || anchorMinute > 59) anchorMinute = 0;
+    var now = new Date();
+    var anchor = new Date(Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+      anchorHour,
+      anchorMinute,
+      0,
+      0
+    ));
+    var intervalMs = expectedHours * 3600000;
+    if (anchor.getTime() <= now.getTime()) {
+      anchor = new Date(anchor.getTime() + (Math.floor((now.getTime() - anchor.getTime()) / intervalMs) + 1) * intervalMs);
+    }
+    return anchor;
+  }
+
+  function nextCheckinText(row) {
+    var next = nextCheckinAt(row);
+    if (!next) return ["--"];
+    return [compactDateTime(next)];
+  }
+
+  function nextCheckinSortValue(row) {
+    var next = nextCheckinAt(row);
+    return next ? next.getTime() : Number.MAX_SAFE_INTEGER;
+  }
+
+  function linesHtml(lines, plain) {
+    return (Array.isArray(lines) ? lines : [lines]).map(function(line, idx) {
+      var cls = plain ? (idx ? "cell-sub" : "cell-line") : (idx ? "cell-sub" : "cell-main");
+      return '<div class="' + cls + '">' + html(line || "--") + '</div>';
+    }).join("");
   }
 
   function visibleCurrentAlerts(rows) {
-    return (Array.isArray(rows) ? rows : []).filter(function(row) {
-      return !isCurrentAlertSilenced(row);
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  function rebuildStationCheckinHints(rows) {
+    stationCheckinHints = {};
+    (Array.isArray(rows) ? rows : []).forEach(function(row) {
+      var details = row && row.details_json ? row.details_json : {};
+      var lastUpload = parseTime(details.last_upload_started_at);
+      var expectedHours = Number(row && row.expected_upload_hours);
+      if (!isFinite(expectedHours) || expectedHours <= 0) expectedHours = Number(details.expected_upload_hours);
+      if (row && row.station_uid && lastUpload && isFinite(expectedHours) && expectedHours > 0) {
+        stationCheckinHints[row.station_uid] = {
+          last_upload_started_at: lastUpload,
+          expected_upload_hours: expectedHours,
+          upload_anchor_hour_utc: Number(row.upload_anchor_hour_utc != null ? row.upload_anchor_hour_utc : details.upload_anchor_hour_utc),
+          upload_anchor_minute_utc: Number(row.upload_anchor_minute_utc != null ? row.upload_anchor_minute_utc : details.upload_anchor_minute_utc)
+        };
+      }
     });
+  }
+
+  function alertStationUids(rows) {
+    var seen = {};
+    return (Array.isArray(rows) ? rows : []).map(function(row) {
+      return row && row.station_uid;
+    }).filter(function(uid) {
+      if (!uid || seen[uid]) return false;
+      seen[uid] = true;
+      return true;
+    });
+  }
+
+  async function enrichAlertsWithUploadHints(rows) {
+    if (!Array.isArray(rows) || !rows.length || !SeaweedV4.fetchV4LatestUploadHints) return rows || [];
+    try {
+      var hints = await SeaweedV4.fetchV4LatestUploadHints(alertStationUids(rows));
+      return rows.map(function(row) {
+        var hint = row && hints[row.station_uid];
+        if (!hint || !hint.last_upload_started_at) return row;
+        var details = Object.assign({}, row.details_json || {});
+        var expectedHours = Number(row.expected_upload_hours || details.expected_upload_hours || hint.expected_upload_hours || 24);
+        if (!isFinite(expectedHours) || expectedHours <= 0) expectedHours = 24;
+        if (!details.last_upload_started_at) details.last_upload_started_at = hint.last_upload_started_at;
+        if (details.upload_anchor_hour_utc == null && hint.upload_anchor_hour_utc != null) details.upload_anchor_hour_utc = hint.upload_anchor_hour_utc;
+        if (details.upload_anchor_minute_utc == null && hint.upload_anchor_minute_utc != null) details.upload_anchor_minute_utc = hint.upload_anchor_minute_utc;
+        var lastUpload = parseTime(hint.last_upload_started_at);
+        if (!lastUpload) return row;
+        var anchored = anchoredNextUpload(expectedHours, Number(hint.upload_anchor_hour_utc), Number(hint.upload_anchor_minute_utc));
+        return Object.assign({}, row, {
+          details_json: details,
+          expected_upload_hours: expectedHours,
+          upload_anchor_hour_utc: hint.upload_anchor_hour_utc,
+          upload_anchor_minute_utc: hint.upload_anchor_minute_utc,
+          next_check_in_at: (anchored || new Date(lastUpload.getTime() + expectedHours * 3600000)).toISOString()
+        });
+      });
+    } catch (_) {
+      return rows;
+    }
+  }
+
+  async function currentAlertRowsFromPayload(payload) {
+    var rows = payload && (payload.current_alerts || payload.alerts);
+    if ((!rows || !rows.length) && payload && payload.current_alert_error && SeaweedV4.fetchV4OpenAlertInstances) {
+      try {
+        rows = await SeaweedV4.fetchV4OpenAlertInstances();
+      } catch (_) {
+        rows = [];
+      }
+    }
+    return enrichAlertsWithUploadHints(rows || []);
   }
 
   function renderCurrentAlerts(rows) {
     if (Array.isArray(rows)) currentAlertSourceRows = rows;
-    currentAlerts = currentAlertSourceRows.map(applyLocalNotificationState);
+    currentAlerts = mergeLocalCurrentAlertState(currentAlertSourceRows).map(applyLocalNotificationState);
+    rebuildStationCheckinHints(currentAlerts);
     var visibleAlerts = visibleCurrentAlerts(currentAlerts);
     if (!visibleAlerts.length) {
       emptyCurrentAlertRow("No current alert conditions.");
@@ -494,17 +719,16 @@
         '<td>' + html(ALERT_LABELS[row.alert_key] || row.alert_key || "--") + '</td>' +
         '<td>' + html(row.value_text || "--") + '</td>' +
         '<td>' + html(row.threshold_text || "--") + '</td>' +
-        '<td><button class="btn btn-small ' + (silenced ? "" : "btn-danger") + '" type="button" data-alert-action="' + currentAlertNotifyAction(row) + '" data-alert-index="' + idx + '">' + currentAlertNotifyLabel(row) + '</button></td>' +
-        '<td>' + html(nextNotificationText(row)) + '</td>' +
+        '<td>' + linesHtml(timingText(row), true) + '</td>' +
+        '<td>' + linesHtml(nextCheckinText(row), true) + '</td>' +
         '<td><div class="actions">' +
-          '<button class="btn btn-small" type="button" data-alert-action="suppress24" data-alert-index="' + idx + '">Suppress 24h</button>' +
-          '<button class="btn btn-small" type="button" data-alert-action="suppressUntil" data-alert-index="' + idx + '">Until...</button>' +
+          '<button class="btn btn-small ' + (silenced ? "" : "btn-danger") + '" type="button" data-alert-action="' + currentAlertNotifyAction(row) + '" data-alert-index="' + idx + '">' + currentAlertNotifyLabel(row) + '</button>' +
         '</div></td>' +
       '</tr>';
     }).join("");
     currentAlertRowsEl.querySelectorAll("[data-alert-action]").forEach(function(btn) {
       btn.addEventListener("click", function() {
-        handleCurrentAlertAction(btn.getAttribute("data-alert-action"), displayRows[Number(btn.getAttribute("data-alert-index"))]);
+        handleCurrentAlertAction(btn.getAttribute("data-alert-action"), displayRows[Number(btn.getAttribute("data-alert-index"))], btn);
       });
     });
     var critical = visibleAlerts.filter(function(row) { return row.severity === "critical"; }).length;
@@ -560,56 +784,58 @@
     return isNaN(d.getTime()) ? "" : d.toISOString();
   }
 
-  function handleCurrentAlertAction(action, alert) {
+  function updateCurrentAlertSilenceState(alert, silenced) {
+    var identity = currentAlertIdentity(alert);
+    currentAlertSourceRows = (Array.isArray(currentAlertSourceRows) ? currentAlertSourceRows : []).map(function(row) {
+      if (currentAlertIdentity(row) !== identity) return row;
+      return Object.assign({}, row, {
+        silenced: silenced,
+        silence_reason: silenced ? "identity_silenced" : "",
+        silenced_at: silenced ? new Date().toISOString() : null
+      });
+    });
+    renderCurrentAlerts(currentAlertSourceRows);
+  }
+
+  async function handleCurrentAlertAction(action, alert, button) {
     if (!alert) return;
     var label = (alert.station_name || alert.station_uid || "station") + " / " + (ALERT_LABELS[alert.alert_key] || alert.alert_key);
-    if (action === "suppress24") {
-      var until = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-      return stageActionRows(mergeAlertOverride(alert, {
-        enabled: true,
-        delivery_channel: "slack",
-        suppress_until: until,
-        notes: "Suppressed for 24 hours from Current Alerts"
-      }), "Staged suppression for " + label + " for 24 hours.", alert);
+    var silenced = action === "silence";
+    if (action !== "silence" && action !== "unsilence") return;
+
+    if (typeof SeaweedV4.pushV4AlertSilence !== "function") {
+      pushStatus.textContent = "Alert silence helper is not available. Reload the dashboard.";
+      return;
     }
-    if (action === "suppressUntil") {
-      var raw = prompt("Suppress until local time (YYYY-MM-DDTHH:mm)", "");
-      var iso = localDateTimeToIso(raw);
-      if (!iso) {
-        pushStatus.textContent = raw ? "Suppress time was not valid." : "";
-        return;
-      }
-      return stageActionRows(mergeAlertOverride(alert, {
-        enabled: true,
-        delivery_channel: "slack",
-        suppress_until: iso,
-        notes: "Suppressed until " + iso + " from Current Alerts"
-      }), "Staged suppression for " + label + " until " + iso + ".", alert);
+
+    var password = SeaweedV4.sessionAdminPassword();
+    if (!password) {
+      password = prompt("Admin session password not available. Enter it once, or sign out and back in.");
+      if (!password) return;
+      SeaweedV4.rememberSessionAdminPassword(password);
     }
+
+    var originalText = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Saving...";
+    }
+    pushStatus.textContent = (silenced ? "Quieting" : "Re-enabling") + " this board alert in Supabase...";
     if (action === "silence") {
-      if (!confirm("Silence " + label + " until you manually unsilence it in Alert Settings?")) return;
-      return stageActionRows(mergeAlertOverride(alert, {
-        enabled: false,
-        warning_enabled: false,
-        critical_enabled: false,
-        delivery_channel: "disabled",
-        suppress_until: "",
-        notes: "Silenced from Current Alerts"
-      }), "Staged silence for " + label + ".", alert, function() {
-        updateCurrentAlertLocalSilence(alert, true);
-      });
+      updateCurrentAlertLocalSilence(alert, true);
     }
-    if (action === "unsilence") {
-      return stageActionRows(mergeAlertOverride(alert, {
-        enabled: true,
-        warning_enabled: true,
-        critical_enabled: true,
-        delivery_channel: "slack",
-        suppress_until: "",
-        notes: "Unsilenced from Current Alerts"
-      }), "Staged unsilence for " + label + ".", alert, function() {
-        updateCurrentAlertLocalSilence(alert, false);
-      });
+    try {
+      await SeaweedV4.pushV4AlertSilence(alert, silenced, password);
+      updateCurrentAlertLocalSilence(alert, silenced);
+      updateCurrentAlertSilenceState(alert, silenced);
+      pushStatus.textContent = (silenced ? "Quieted" : "Alerting restored for") + " this board alert: " + label + ".";
+    } catch (err) {
+      if (action === "silence") updateCurrentAlertLocalSilence(alert, false);
+      pushStatus.textContent = err.message || String(err);
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
     }
   }
 
@@ -722,21 +948,33 @@
 
   async function loadAlerts() {
     alertStatus.textContent = "Loading alert settings...";
-    currentAlertStatus.textContent = "Computing current alerts...";
+    currentAlertStatus.textContent = "Loading precomputed open alerts...";
     pushStatus.textContent = "";
-    try {
-      var payload = await SeaweedV4.fetchV4AlertOverview();
-      var settings = payload && payload.settings ? payload.settings : payload;
+    var settingsPromise = SeaweedV4.fetchV4AlertSettings();
+    var alertsPromise = SeaweedV4.fetchV4OpenAlertInstances ? SeaweedV4.fetchV4OpenAlertInstances() : Promise.resolve([]);
+
+    settingsPromise.then(function(settings) {
       stations = Array.isArray(settings && settings.stations) ? settings.stations.filter(function(row) { return row.active !== false; }) : [];
       renderRows(settings && settings.rows);
-      renderCurrentAlerts(mergeLocalCurrentAlertState(payload && (payload.current_alerts || payload.alerts)));
       alertStatus.textContent = "Loaded " + (settings && settings.rows ? settings.rows.length : 0) + " rows.";
-    } catch (err) {
+    }).catch(function(err) {
       emptyRow(err.message || String(err));
-      emptyCurrentAlertRow("Current alerts unavailable.");
       alertStatus.textContent = "Alert settings unavailable.";
-      currentAlertStatus.textContent = "Current alerts unavailable.";
-    }
+    });
+
+    alertsPromise.then(function(alertRows) {
+      alertRows = alertRows || [];
+      renderCurrentAlerts(alertRows);
+
+      enrichAlertsWithUploadHints(alertRows).then(function(enrichedRows) {
+        renderCurrentAlerts(enrichedRows);
+      }).catch(function() {});
+    }).catch(function(err) {
+      emptyCurrentAlertRow("Current alerts unavailable.");
+      currentAlertStatus.textContent = "Current alerts unavailable: " + (err.message || String(err));
+    });
+
+    await Promise.allSettled([settingsPromise, alertsPromise]);
   }
 
   async function pushAlerts() {
@@ -789,6 +1027,8 @@
   }
 
   SeaweedV4Page.ready(function() {
+    updateUtcClock();
+    setInterval(updateUtcClock, 1000);
     SeaweedV4Page.boot().then(loadAlerts);
     document.querySelectorAll("[data-current-sort]").forEach(function(btn) {
       btn.addEventListener("click", function() {
