@@ -133,6 +133,8 @@ a:hover { text-decoration: underline; }
 .data-table tr.dirty-row td { background: #fff8df; }
 .data-table tr.dirty-row:hover td { background: #fff1bf; }
 .data-table td { font-size: 0.82rem; }
+.alert-history-table { min-width: 1080px; }
+.alert-history-table td:nth-child(6) { min-width: 360px; }
 .cell-main { font-weight: 700; }
 .cell-line { font-weight: 400; }
 .cell-sub { color: var(--text-muted); font-size: 0.72rem; margin-top: 2px; }

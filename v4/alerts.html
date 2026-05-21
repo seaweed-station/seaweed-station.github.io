@@ -59,6 +59,11 @@
       <div class="notice">
         Fleet default rows apply to every station unless a station-specific override exists. Station-specific override rows can be removed.
       </div>
+      <div class="toolbar" style="margin-top:12px;align-items:center;gap:12px;flex-wrap:wrap">
+        <label class="status-line" for="reminderHoursInput">Reminder frequency (hours)</label>
+        <input id="reminderHoursInput" type="number" min="1" step="1" value="24" style="width:96px">
+        <span class="status-line">Applies globally to reminder notifications only.</span>
+      </div>
       <div class="toolbar" style="margin-top:12px">
         <button class="btn" id="reloadBtn" type="button">Reload</button>
         <button class="btn" id="addOverrideBtn" type="button">Add Station Override</button>
@@ -77,6 +82,7 @@
             <th>Enabled</th>
             <th>Warnings</th>
             <th>Critical</th>
+            <th>Reminder</th>
             <th>Suppress Until</th>
             <th>Thresholds JSON</th>
             <th>Notes</th>
@@ -87,8 +93,27 @@
       </table>
     </div>
   </section>
+
+  <section class="band">
+    <div class="band-head"><h2>Alert History</h2><span class="status-line" id="alertHistoryStatus">Latest 20 delivered statuses</span></div>
+    <div class="table-wrap">
+      <table class="data-table alert-history-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Status</th>
+            <th>Station</th>
+            <th>Scope</th>
+            <th>Alert</th>
+            <th>Phone Message</th>
+          </tr>
+        </thead>
+        <tbody id="alertHistoryRows"></tbody>
+      </table>
+    </div>
+  </section>
 </main>
-<script src="js/catalog_provider_v4.js?v=20260518alerts2"></script>
+<script src="js/catalog_provider_v4.js?v=20260521alertreminders"></script>
 <script src="js/nav_v4.js?v=20260507alerts"></script>
 <script src="js/page_bootstrap_v4.js?v=20260504b"></script>
 <script>
@@ -110,7 +135,7 @@
     gateway_battery: { warning_pct: 30, critical_pct: 10, clear_warning_pct: 33, clear_critical_pct: 12 },
     battery_voltage: { warning_v: 3.55, critical_v: 3.4, clear_warning_v: 3.6, clear_critical_v: 3.55 },
     satellite_sync: { warning_missed_windows: 1, critical_missed_windows: 2 },
-    data_gap: { lookback_hours: 24, warning_complete_pct: 100, critical_zero_hours: 1 },
+    data_gap: { lookback_hours: 72, warning_complete_pct: 100, critical_zero_hours: 1 },
     solar_missing: { daylight_min_v: 1.0, warning_days: 1, critical_days: 2 },
     temperature: { warning_c: 55, critical_c: 60 },
     sensor_missing: { expected_hub_sensors: [1, 2, 3], expected_satellite_sensors: [1, 2, 3], severity: "warning" }
@@ -126,8 +151,11 @@
   var pendingDeleteSettingRows = {};
   var alertRowsEl = document.getElementById("alertRows");
   var currentAlertRowsEl = document.getElementById("currentAlertRows");
+  var alertHistoryRowsEl = document.getElementById("alertHistoryRows");
+  var reminderHoursInputEl = document.getElementById("reminderHoursInput");
   var alertStatus = document.getElementById("alertStatus");
   var currentAlertStatus = document.getElementById("currentAlertStatus");
+  var alertHistoryStatus = document.getElementById("alertHistoryStatus");
   var pushStatus = document.getElementById("pushStatus");
   var testStatus = document.getElementById("testStatus");
   var TEST_SECRET_KEY = "sw_v4_alert_dispatch_secret_session";
@@ -136,11 +164,15 @@
   function html(value) { return SeaweedV4.escapeHtml(value == null ? "" : String(value)); }
 
   function emptyRow(message) {
-    alertRowsEl.innerHTML = '<tr><td colspan="9" class="muted">' + html(message) + '</td></tr>';
+    alertRowsEl.innerHTML = '<tr><td colspan="10" class="muted">' + html(message) + '</td></tr>';
   }
 
   function emptyCurrentAlertRow(message) {
     currentAlertRowsEl.innerHTML = '<tr><td colspan="9" class="muted">' + html(message) + '</td></tr>';
+  }
+
+  function emptyAlertHistoryRow(message) {
+    alertHistoryRowsEl.innerHTML = '<tr><td colspan="6" class="muted">' + html(message) + '</td></tr>';
   }
 
   function stationName(uid) {
@@ -163,6 +195,22 @@
     if (!value) return "";
     var d = new Date(value);
     return isNaN(d.getTime()) ? "" : d.toISOString();
+  }
+
+  function normalizeReminderHours(value) {
+    var hours = Math.floor(Number(value));
+    return isFinite(hours) && hours >= 1 ? hours : 24;
+  }
+
+  function setReminderHoursInput(value) {
+    if (!reminderHoursInputEl) return;
+    reminderHoursInputEl.value = String(normalizeReminderHours(value));
+  }
+
+  function collectReminderHours() {
+    var hours = normalizeReminderHours(reminderHoursInputEl && reminderHoursInputEl.value);
+    setReminderHoursInput(hours);
+    return hours;
   }
 
   function shortDateTime(value) {
@@ -234,6 +282,7 @@
         '<td><label class="inline-check"><input type="checkbox" data-field="enabled" ' + (row.enabled !== false ? "checked" : "") + '> Active</label></td>' +
         '<td><label class="inline-check"><input type="checkbox" data-field="warning_enabled" ' + (row.warning_enabled !== false ? "checked" : "") + '> Warnings</label></td>' +
         '<td><label class="inline-check"><input type="checkbox" data-field="critical_enabled" ' + (row.critical_enabled !== false ? "checked" : "") + '> Critical</label></td>' +
+        '<td><label class="inline-check"><input type="checkbox" data-field="reminder_enabled" ' + (row.reminder_enabled !== false ? "checked" : "") + '> Reminder</label></td>' +
         '<td><input type="datetime-local" data-field="suppress_until" value="' + html(toDateTimeLocal(row.suppress_until)) + '"></td>' +
         '<td><textarea data-field="thresholds" spellcheck="false">' + html(thresholdText(row)) + '</textarea></td>' +
         '<td><input type="text" data-field="notes" value="' + html(row.notes || "") + '" placeholder="Reason, owner, context"></td>' +
@@ -288,6 +337,7 @@
         enabled: true,
         warning_enabled: true,
         critical_enabled: true,
+        reminder_enabled: true,
         delivery_channel: "slack",
         suppress_until: "",
         thresholds: DEFAULT_THRESHOLDS[alertKey] || {},
@@ -406,6 +456,55 @@
     return "Hub";
   }
 
+  function alertHistoryKindLabel(kind, severity) {
+    kind = String(kind || "open");
+    severity = String(severity || "warning");
+    if (kind === "recovery") return "[RECOVERY]";
+    if (kind === "reminder") return "[REMINDER " + severity.toUpperCase() + "]";
+    if (kind === "escalation") return "[ESCALATED]";
+    if (kind === "test") return "[TEST]";
+    return "[" + severity.toUpperCase() + "]";
+  }
+
+  function alertHistoryPillClass(kind, severity, delivered) {
+    if (delivered === false) return "pill-muted";
+    if (kind === "recovery") return "pill-good";
+    if (severity === "critical" || kind === "escalation") return "pill-bad";
+    if (kind === "reminder" || severity === "warning") return "pill-warn";
+    return "pill-muted";
+  }
+
+  function alertHistoryMessage(row) {
+    var text = row && row.message_text ? String(row.message_text) : row && row.subject ? String(row.subject) : "";
+    return text.split(/\r?\n/).filter(Boolean).map(function(line, idx) {
+      return '<div class="' + (idx ? "cell-sub" : "cell-main") + '">' + html(line) + '</div>';
+    }).join("") || '<span class="muted">--</span>';
+  }
+
+  function renderAlertHistory(rows) {
+    rows = Array.isArray(rows) ? rows.slice(0, 20) : [];
+    if (!rows.length) {
+      emptyAlertHistoryRow("No delivered alert history yet.");
+      alertHistoryStatus.textContent = "No alert notification events found.";
+      return;
+    }
+    alertHistoryRowsEl.innerHTML = rows.map(function(row) {
+      var kind = row.notification_kind || "open";
+      var severity = row.severity || "warning";
+      var delivered = row.delivered !== false;
+      return '<tr>' +
+        '<td><div class="cell-main">' + html(SeaweedV4.timeAgo ? SeaweedV4.timeAgo(row.delivered_at || row.created_at) : shortDateTime(row.delivered_at || row.created_at)) + '</div><div class="cell-sub">' + html(compactDateTime(row.delivered_at || row.created_at)) + '</div></td>' +
+        '<td><span class="pill ' + alertHistoryPillClass(kind, severity, delivered) + '">' + html(alertHistoryKindLabel(kind, severity)) + '</span>' + (delivered ? '' : '<div class="cell-sub">Slack failed</div>') + '</td>' +
+        '<td><div class="cell-main">' + html(row.station_name || row.station_uid || "--") + '</div><div class="cell-sub">' + html(row.station_uid || "") + '</div></td>' +
+        '<td>' + html(boardLabel(row)) + '</td>' +
+        '<td>' + html(ALERT_LABELS[row.alert_key] || row.alert_key || "--") + '</td>' +
+        '<td>' + alertHistoryMessage(row) + (row.error_text ? '<div class="cell-sub">' + html(row.error_text) + '</div>' : '') + '</td>' +
+      '</tr>';
+    }).join("");
+    var fallback = rows.some(function(row) { return row.fallback_source; });
+    alertHistoryStatus.textContent = "Showing " + rows.length + " latest alert status" + (rows.length === 1 ? "" : "es") + (fallback ? " from alert instances until notification logging is applied." : ".");
+  }
+
   function boardSortValue(row) {
     if (row && row.slot_number != null) return Number(row.slot_number);
     return 0;
@@ -455,10 +554,10 @@
 
   function applyLocalNotificationState(alert) {
     var localSilenced = isAlertSilencedByLocalSettings(alert);
-    if (localSilenced === null) return alert;
+    if (localSilenced !== true) return alert;
     return Object.assign({}, alert, {
-      silenced: localSilenced,
-      silence_reason: localSilenced ? "silenced" : ""
+      silenced: true,
+      silence_reason: (alert && alert.silence_reason) || "settings_silenced"
     });
   }
 
@@ -758,6 +857,7 @@
         enabled: true,
         warning_enabled: true,
         critical_enabled: true,
+        reminder_enabled: true,
         delivery_channel: "slack",
         suppress_until: "",
         thresholds: baseThresholds,
@@ -846,12 +946,14 @@
     var enabled = tr.querySelector('[data-field="enabled"]');
     var warning = tr.querySelector('[data-field="warning_enabled"]');
     var critical = tr.querySelector('[data-field="critical_enabled"]');
+    var reminder = tr.querySelector('[data-field="reminder_enabled"]');
     var suppressUntil = tr.querySelector('[data-field="suppress_until"]');
     var notes = tr.querySelector('[data-field="notes"]');
     var shouldUnsilence = enabled && !enabled.checked;
     if (enabled) enabled.checked = shouldUnsilence;
     if (warning) warning.checked = shouldUnsilence;
     if (critical) critical.checked = shouldUnsilence;
+    if (reminder) reminder.checked = shouldUnsilence;
     if (suppressUntil && shouldUnsilence) suppressUntil.value = "";
     if (notes && !notes.value) notes.value = shouldUnsilence ? "Unsilenced in Alert Settings" : "Silenced in Alert Settings";
     markRenderedRowDirty(tr);
@@ -906,6 +1008,7 @@
         enabled: get("enabled").checked,
         warning_enabled: get("warning_enabled").checked,
         critical_enabled: get("critical_enabled").checked,
+        reminder_enabled: get("reminder_enabled").checked,
         delivery_channel: get("enabled").checked ? "slack" : "disabled",
         suppress_until: fromDateTimeLocal(get("suppress_until").value),
         thresholds: thresholds,
@@ -936,6 +1039,7 @@
       enabled: true,
       warning_enabled: true,
       critical_enabled: true,
+      reminder_enabled: true,
       delivery_channel: "slack",
       suppress_until: "",
       thresholds: DEFAULT_THRESHOLDS.upload_freshness,
@@ -949,12 +1053,15 @@
   async function loadAlerts() {
     alertStatus.textContent = "Loading alert settings...";
     currentAlertStatus.textContent = "Loading precomputed open alerts...";
+    alertHistoryStatus.textContent = "Loading latest alert statuses...";
     pushStatus.textContent = "";
     var settingsPromise = SeaweedV4.fetchV4AlertSettings();
     var alertsPromise = SeaweedV4.fetchV4OpenAlertInstances ? SeaweedV4.fetchV4OpenAlertInstances() : Promise.resolve([]);
+    var historyPromise = SeaweedV4.fetchV4AlertNotificationHistory ? SeaweedV4.fetchV4AlertNotificationHistory(20) : Promise.resolve([]);
 
     settingsPromise.then(function(settings) {
       stations = Array.isArray(settings && settings.stations) ? settings.stations.filter(function(row) { return row.active !== false; }) : [];
+      setReminderHoursInput(settings && settings.dispatch && settings.dispatch.reminder_hours);
       renderRows(settings && settings.rows);
       alertStatus.textContent = "Loaded " + (settings && settings.rows ? settings.rows.length : 0) + " rows.";
     }).catch(function(err) {
@@ -974,7 +1081,14 @@
       currentAlertStatus.textContent = "Current alerts unavailable: " + (err.message || String(err));
     });
 
-    await Promise.allSettled([settingsPromise, alertsPromise]);
+    historyPromise.then(function(rows) {
+      renderAlertHistory(rows || []);
+    }).catch(function(err) {
+      emptyAlertHistoryRow("Alert history unavailable.");
+      alertHistoryStatus.textContent = "Alert history unavailable: " + (err.message || String(err));
+    });
+
+    await Promise.allSettled([settingsPromise, alertsPromise, historyPromise]);
   }
 
   async function pushAlerts() {
@@ -992,10 +1106,11 @@
         if (typeof SeaweedV4.deleteV4AlertSetting !== "function") throw new Error("Alert delete helper is not available. Reload the dashboard.");
         await SeaweedV4.deleteV4AlertSetting(deleteRows[i].station_uid, deleteRows[i].alert_key, password);
       }
-      var payload = await SeaweedV4.pushV4AlertSettings(collectRows(), password);
+      var payload = await SeaweedV4.pushV4AlertSettings(collectRows(), password, collectReminderHours());
       dirtySettingRows = {};
       pendingDeleteSettingRows = {};
       stations = Array.isArray(payload && payload.stations) ? payload.stations.filter(function(row) { return row.active !== false; }) : stations;
+      setReminderHoursInput(payload && payload.dispatch && payload.dispatch.reminder_hours);
       renderRows(payload && payload.rows);
       pushStatus.textContent = "Alert settings pushed.";
       alertStatus.textContent = "Loaded " + (payload && payload.rows ? payload.rows.length : 0) + " rows.";
@@ -1046,6 +1161,12 @@
     document.getElementById("addOverrideBtn").addEventListener("click", addOverride);
     document.getElementById("testSlackBtn").addEventListener("click", sendTestAlert);
     document.getElementById("pushBtn").addEventListener("click", pushAlerts);
+    if (reminderHoursInputEl) {
+      reminderHoursInputEl.addEventListener("change", function() {
+        collectReminderHours();
+        pushStatus.textContent = "Reminder frequency changed. Push Alert Settings to save.";
+      });
+    }
   });
 })();
 </script>

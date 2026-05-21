@@ -385,14 +385,14 @@
     }
 
     var base = getOtaBaseUrl();
-    var primaryUrl = base + "/api/seaweed/station-catalog";
+    var primaryUrl = base + "/api/stations";
     try {
       var catalog = await pullStationMetadataForCatalog(normalizeCatalog(await fetchJson(primaryUrl, 15000), primaryUrl));
       writeCatalogCache(catalog);
       return catalog;
     } catch (primaryErr) {
       try {
-        var fallbackUrl = base + "/api/stations";
+        var fallbackUrl = base + "/api/seaweed/station-catalog";
         var fallback = await pullStationMetadataForCatalog(normalizeCatalog(await fetchJson(fallbackUrl, 15000), fallbackUrl));
         fallback.primary_error = primaryErr.message;
         writeCatalogCache(fallback);
@@ -772,6 +772,94 @@
     });
   }
 
+  function fallbackAlertHistoryRowsFromInstances(rows) {
+    return (Array.isArray(rows) ? rows : []).map(function(row) {
+      var status = text(row.status || "open");
+      var kind = status === "cleared" ? "recovery" :
+        row.last_reminder_at ? "reminder" :
+        row.severity === "critical" && Number(row.notification_count || 0) > 0 ? "escalation" :
+        "open";
+      var label = text(row.station_name || row.station_uid || "Unknown station");
+      var alertLabel = text((row.alert_key || "").replace(/_/g, " "));
+      var prefix = kind === "recovery" ? "[RECOVERY]" :
+        kind === "reminder" ? "[REMINDER " + text(row.severity || "warning").toUpperCase() + "]" :
+        kind === "escalation" ? "[ESCALATED]" :
+        "[" + text(row.severity || "warning").toUpperCase() + "]";
+      return {
+        id: text(row.id),
+        alert_identity: text(row.alert_identity),
+        alert_instance_id: text(row.id),
+        station_uid: text(row.station_uid),
+        station_name: label,
+        alert_key: text(row.alert_key),
+        slot_number: row.slot_number,
+        severity: text(row.severity || "warning"),
+        notification_kind: kind,
+        subject: prefix + " " + label + " - " + alertLabel,
+        message_text: [
+          prefix + " " + label + " - " + alertLabel,
+          "Station: " + label + " (" + text(row.station_uid) + ")",
+          "Scope: " + (row.slot_number == null ? "Hub" : "Slot " + row.slot_number),
+          "Current: " + text(row.value_text || "-"),
+          "Threshold: " + text(row.threshold_text || "-")
+        ].join("\n"),
+        delivery_channel: "instance",
+        delivered: Number(row.notification_count || 0) > 0 || status === "cleared",
+        delivered_at: row.last_notified_at || row.cleared_at || row.updated_at || row.opened_at,
+        fallback_source: "v4_alert_instances"
+      };
+    });
+  }
+
+  async function fetchV4AlertNotificationHistory(limit) {
+    var project = await getV4AuthProject();
+    var cappedLimit = Math.max(1, Math.min(20, Number(limit) || 20));
+    try {
+      var payload = await fetchJson(project.url + "/rest/v1/rpc/dashboard_get_v4_alert_notification_history", 10000, {
+        method: "POST",
+        headers: Object.assign({}, supabaseHeaders(project.key), { "Content-Type": "application/json" }),
+        body: JSON.stringify({ p_limit: cappedLimit })
+      });
+      return Array.isArray(payload && payload.rows) ? payload.rows : [];
+    } catch (err) {
+      var msg = String(err && err.message ? err.message : err || "").toLowerCase();
+      if (
+        msg.indexOf("dashboard_get_v4_alert_notification_history") === -1 &&
+        msg.indexOf("pgrst202") === -1 &&
+        msg.indexOf("could not find the function") === -1 &&
+        msg.indexOf("v4_alert_notification_log") === -1
+      ) {
+        throw err;
+      }
+      var fallbackUrl = project.url +
+        "/rest/v1/v4_alert_instances?select=" +
+        [
+          "id",
+          "alert_identity",
+          "station_uid",
+          "station_name",
+          "alert_key",
+          "slot_number",
+          "severity",
+          "status",
+          "opened_at",
+          "updated_at",
+          "cleared_at",
+          "last_notified_at",
+          "last_reminder_at",
+          "notification_count",
+          "value_text",
+          "threshold_text",
+          "details_json"
+        ].join(",") +
+        "&or=(notification_count.gt.0,status.eq.cleared)" +
+        "&order=updated_at.desc" +
+        "&limit=" + cappedLimit;
+      var fallbackRows = await fetchJson(fallbackUrl, 10000, { headers: supabaseHeaders(project.key) });
+      return fallbackAlertHistoryRowsFromInstances(fallbackRows).slice(0, cappedLimit);
+    }
+  }
+
   async function pushV4AlertSilence(alert, silenced, adminPassword) {
     var project = await getV4AuthProject();
     try {
@@ -793,7 +881,7 @@
     }
   }
 
-  async function pushV4AlertSettings(rows, adminPassword) {
+  async function pushV4AlertSettings(rows, adminPassword, reminderHours) {
     var project = await getV4AuthProject();
     try {
       return await fetchJson(project.url + "/rest/v1/rpc/dashboard_upsert_v4_alert_settings", 15000, {
@@ -802,7 +890,8 @@
         body: JSON.stringify({
           p_admin_password: text(adminPassword),
           p_rows: Array.isArray(rows) ? rows : [],
-          p_role: text(sessionStorage.getItem("sw_role") || "dashboard")
+          p_role: text(sessionStorage.getItem("sw_role") || "dashboard"),
+          p_reminder_hours: Math.max(1, Math.floor(Number(reminderHours) || 24))
         })
       });
     } catch (err) {
@@ -1078,6 +1167,7 @@
     escapeHtml: escapeHtml,
     fetchAccessRoleDefinitions: fetchAccessRoleDefinitions,
     fetchV4AlertOverview: fetchV4AlertOverview,
+    fetchV4AlertNotificationHistory: fetchV4AlertNotificationHistory,
     fetchV4AlertSettings: fetchV4AlertSettings,
     fetchV4AlertSilences: fetchV4AlertSilences,
     fetchV4LatestUploadHints: fetchV4LatestUploadHints,
