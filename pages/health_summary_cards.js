@@ -119,11 +119,25 @@ function renderSummaryCards(container, entries, stationId) {
   var e = entries;
   var latest = e[e.length - 1];
   var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(stationId) : null;
-  var slot1Enabled = isSatelliteVisible(stationId, e, 1);
-  var slot2Enabled = isSatelliteVisible(stationId, e, 2);
+  var uploadRows = Array.isArray(_stationUploadTimeline[stationId]) ? _stationUploadTimeline[stationId] : [];
+  var syncRows = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
+  var slotCtx = typeof getHealthSlotContext === 'function' ? getHealthSlotContext(stationId, e, syncRows) : null;
+  var slotNumbers = typeof healthSatelliteSlotNumbers === 'function' ? healthSatelliteSlotNumbers() : [1, 2, 3, 4, 5, 6, 7];
+  var slots = slotCtx && Array.isArray(slotCtx.slots)
+    ? slotCtx.slots.slice()
+    : slotNumbers.map(function(slotNumber) {
+        return {
+          slotNumber: slotNumber,
+          enabled: isSatelliteVisible(stationId, e, slotNumber),
+          label: satelliteDisplayName(stationId, slotNumber),
+          nodeLetter: satelliteNodeLetter(stationId, slotNumber)
+        };
+      }).filter(function(slot) { return !!slot.enabled; });
   var nextCheck = estimateStationNextCheckIn(e, stationId);
-  var slot1Label = satelliteDisplayName(stationId, 1);
-  var slot2Label = satelliteDisplayName(stationId, 2);
+
+  function slotPrefix(slot) {
+    return 'sat' + slot.slotNumber;
+  }
 
   function lastWith(key) {
     for (var i = e.length - 1; i >= 0; i--) {
@@ -140,8 +154,6 @@ function renderSummaryCards(container, entries, stationId) {
   }
 
   var t0 = lastWith('t0BatPct');
-  var slot1 = lastWith('sat1BatV');
-  var slot2 = lastWith('sat2BatV');
   var t0VoltEntry = lastWithPredicate(function(row) {
     return row && row.t0BatV !== null && row.t0BatV !== undefined && isFinite(row.t0BatV) && Number(row.t0BatV) > 0;
   });
@@ -172,14 +184,7 @@ function renderSummaryCards(container, entries, stationId) {
 
   // v2: satellite FW and RSSI/drift now come from sync_sessions
   var diag = _stationDiag[stationId] || { upload: null, sync: {} };
-  var slot1Node = satelliteNodeLetter(stationId, 1);
-  var slot2Node = satelliteNodeLetter(stationId, 2);
-  var syncA = diag.sync && slot1Node && diag.sync[slot1Node] ? diag.sync[slot1Node] : null;
-  var syncB = diag.sync && slot2Node && diag.sync[slot2Node] ? diag.sync[slot2Node] : null;
   var ulSess = diag.upload || null;
-
-  var slot1Fw = syncA && syncA.sat_fw_ver ? escHtml('v' + syncA.sat_fw_ver) : '--';
-  var slot2Fw = syncB && syncB.sat_fw_ver ? escHtml('v' + syncB.sat_fw_ver) : '--';
 
   var statusRow = _deviceStatusById && _deviceStatusById[stationId] ? _deviceStatusById[stationId] : null;
   var configRow = _deviceConfigById && _deviceConfigById[stationId] ? _deviceConfigById[stationId] : null;
@@ -207,8 +212,7 @@ function renderSummaryCards(container, entries, stationId) {
   var gaps = 0;
   var longestGapMs = 0;
   var t0SensorPct = null;
-  var slot1SensorPct = null;
-  var slot2SensorPct = null;
+  var slotSensorPctBySlot = {};
   if (e.length >= 2) {
     var intervals = [];
     for (var ii = 1; ii < e.length; ii++) {
@@ -235,16 +239,17 @@ function renderSummaryCards(container, entries, stationId) {
     }
 
     var t0SensorN = e.filter(function(x) { return x.t0Temp1 !== null || x.t0Temp2 !== null || x.t0Temp3 !== null; }).length;
-    var slot1SensorN = e.filter(function(x) { return x.sat1Temp1 !== null || x.sat1Temp2 !== null; }).length;
-    var slot2SensorN = e.filter(function(x) { return x.sat2Temp1 !== null || x.sat2Temp2 !== null; }).length;
     t0SensorPct = e.length ? (t0SensorN / e.length * 100) : null;
-    slot1SensorPct = e.length ? (slot1SensorN / e.length * 100) : null;
-    slot2SensorPct = e.length ? (slot2SensorN / e.length * 100) : null;
+    slots.forEach(function(slot) {
+      var p = slotPrefix(slot);
+      var sensorN = e.filter(function(x) {
+        return x[p + 'Temp1'] !== null || x[p + 'Temp2'] !== null;
+      }).length;
+      slotSensorPctBySlot[slot.slotNumber] = e.length ? (sensorN / e.length * 100) : null;
+    });
   }
 
   // Upload success rate in last 24h
-  var uploadRows = Array.isArray(_stationUploadTimeline[stationId]) ? _stationUploadTimeline[stationId] : [];
-  var syncRows = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
   var upload24Rows = uploadRows.filter(function(r) {
     var ts = r && r.upload_started_at ? new Date(ensureUTC(r.upload_started_at)) : null;
     return ts && !isNaN(ts.getTime()) && ts.getTime() >= (latest.timestamp.getTime() - 24 * 3600000);
@@ -317,17 +322,14 @@ function renderSummaryCards(container, entries, stationId) {
     ? healthSyncCadenceTimelineSignature(cadenceTimeline, defaultSyncPeriodMs)
     : Math.round(defaultSyncPeriodMs / 1000));
   if (!_syncWindowCache[cacheKey]) {
-    _syncWindowCache[cacheKey] = {
-      slot1: slot1Enabled
-        ? evaluateSyncWindows(e, 'sat1SampleId', 'sat1BatV', cutoff24h, latest.timestamp.getTime(), defaultSyncPeriodMs, 'sat1Installed', null, cadenceTimeline)
-        : { synced: 0, missed: 0, total: 0, slots: [] },
-      slot2: slot2Enabled
-        ? evaluateSyncWindows(e, 'sat2SampleId', 'sat2BatV', cutoff24h, latest.timestamp.getTime(), defaultSyncPeriodMs, 'sat2Installed', null, cadenceTimeline)
-        : { synced: 0, missed: 0, total: 0, slots: [] }
-    };
+    _syncWindowCache[cacheKey] = {};
   }
-  var slot1_24 = _syncWindowCache[cacheKey].slot1;
-  var slot2_24 = _syncWindowCache[cacheKey].slot2;
+  slots.forEach(function(slot) {
+    var p = slotPrefix(slot);
+    if (!_syncWindowCache[cacheKey][p]) {
+      _syncWindowCache[cacheKey][p] = evaluateSyncWindows(e, p + 'SampleId', p + 'BatV', cutoff24h, latest.timestamp.getTime(), defaultSyncPeriodMs, p + 'Installed', null, cadenceTimeline);
+    }
+  });
   function syncPctStr(stats) {
     if (!stats || !stats.total) return '--';
     var total = stats.total || 1;
@@ -349,13 +351,6 @@ function renderSummaryCards(container, entries, stationId) {
     return { last: sess.sat_drift_s, stale: stale };
   }
 
-  var driftA = syncSessionDrift(syncA);
-  var driftB = syncSessionDrift(syncB);
-  var syncAOutcome = syncOutcomeMeta(syncA);
-  var syncBOutcome = syncOutcomeMeta(syncB);
-  var syncATransfer = syncTransferSummary(syncA);
-  var syncBTransfer = syncTransferSummary(syncB);
-
   function driftStr(v) {
     if (v === null) return '--';
     var color = Math.abs(v) <= 5 ? 'var(--success)' : Math.abs(v) <= 20 ? 'var(--warning)' : 'var(--danger)';
@@ -375,33 +370,32 @@ function renderSummaryCards(container, entries, stationId) {
     return val.toFixed(decimals) + (suffix || '');
   }
 
-  var slot1Card = slot1Enabled
-    ? '<div class="sum-card">' +
-      '<h4>' + slot1Label + '</h4>' +
-      '<div class="sum-val" style="color:' + batColor(slot1 ? slot1.sat1BatPct : null) + '">' + (slot1 ? safeFixed(slot1.sat1BatPct, 0, '%') : '--') + '</div>' +
-      '<div class="sum-sub">Voltage: ' + (slot1 ? safeFixed(slot1.sat1BatV, 2, 'V') : '--') + ' &nbsp; RSSI: ' + (syncA && syncA.sat_rssi_avg !== null ? syncA.sat_rssi_avg : '--') + '</div>' +
-      '<div class="sum-sub">24h \u0394: ' + drain24('sat1BatPct') + '</div>' +
-      '<div class="sum-sub">Sync (24h): ' + syncPctStr(slot1_24) + '</div>' +
-      '<div class="sum-sub">Last sync: <span style="color:' + syncAOutcome.tone + '">' + syncAOutcome.label + '</span></div>' +
-      '<div class="sum-sub">Transfer: ' + syncATransfer + '</div>' +
-      '<div class="sum-sub">Drift: ' + driftCardLine(driftA) + '</div>' +
-      '<div class="sum-sub" style="margin-top:4px;color:var(--accent)">FW: ' + slot1Fw + '</div>' +
-    '</div>'
-    : '';
+  var slotCards = slots.map(function(slot) {
+    var p = slotPrefix(slot);
+    var slotEntry = lastWith(p + 'BatV');
+    var node = slot.nodeLetter || satelliteNodeLetter(stationId, slot.slotNumber);
+    var sync = diag.sync && node && diag.sync[node] ? diag.sync[node] : null;
+    var fwRaw = sync && sync.sat_fw_ver ? sync.sat_fw_ver : (slotEntry && slotEntry[p + 'FwVersion'] ? slotEntry[p + 'FwVersion'] : null);
+    var fw = fwRaw ? escHtml('v' + fwRaw) : '--';
+    var syncStats = _syncWindowCache[cacheKey][p] || { synced: 0, missed: 0, total: 0, slots: [] };
+    var syncOutcome = syncOutcomeMeta(sync);
+    return '<div class="sum-card">' +
+      '<h4>' + escHtml(slot.label) + '</h4>' +
+      '<div class="sum-val" style="color:' + batColor(slotEntry ? slotEntry[p + 'BatPct'] : null) + '">' + (slotEntry ? safeFixed(slotEntry[p + 'BatPct'], 0, '%') : '--') + '</div>' +
+      '<div class="sum-sub">Voltage: ' + (slotEntry ? safeFixed(slotEntry[p + 'BatV'], 2, 'V') : '--') + ' &nbsp; RSSI: ' + (sync && sync.sat_rssi_avg !== null ? sync.sat_rssi_avg : '--') + '</div>' +
+      '<div class="sum-sub">24h \u0394: ' + drain24(p + 'BatPct') + '</div>' +
+      '<div class="sum-sub">Sync (24h): ' + syncPctStr(syncStats) + '</div>' +
+      '<div class="sum-sub">Last sync: <span style="color:' + syncOutcome.tone + '">' + syncOutcome.label + '</span></div>' +
+      '<div class="sum-sub">Transfer: ' + syncTransferSummary(sync) + '</div>' +
+      '<div class="sum-sub">Drift: ' + driftCardLine(syncSessionDrift(sync)) + '</div>' +
+      '<div class="sum-sub" style="margin-top:4px;color:var(--accent)">FW: ' + fw + '</div>' +
+    '</div>';
+  }).join('');
 
-  var slot2Card = slot2Enabled
-    ? '<div class="sum-card">' +
-      '<h4>' + slot2Label + '</h4>' +
-      '<div class="sum-val" style="color:' + batColor(slot2 ? slot2.sat2BatPct : null) + '">' + (slot2 ? safeFixed(slot2.sat2BatPct, 0, '%') : '--') + '</div>' +
-      '<div class="sum-sub">Voltage: ' + (slot2 ? safeFixed(slot2.sat2BatV, 2, 'V') : '--') + ' &nbsp; RSSI: ' + (syncB && syncB.sat_rssi_avg !== null ? syncB.sat_rssi_avg : '--') + '</div>' +
-      '<div class="sum-sub">24h \u0394: ' + drain24('sat2BatPct') + '</div>' +
-      '<div class="sum-sub">Sync (24h): ' + syncPctStr(slot2_24) + '</div>' +
-      '<div class="sum-sub">Last sync: <span style="color:' + syncBOutcome.tone + '">' + syncBOutcome.label + '</span></div>' +
-      '<div class="sum-sub">Transfer: ' + syncBTransfer + '</div>' +
-      '<div class="sum-sub">Drift: ' + driftCardLine(driftB) + '</div>' +
-      '<div class="sum-sub" style="margin-top:4px;color:var(--accent)">FW: ' + slot2Fw + '</div>' +
-    '</div>'
-    : '';
+  var slotCoverageText = slots.map(function(slot) {
+    var pct = slotSensorPctBySlot[slot.slotNumber];
+    return ' &nbsp;|&nbsp; ' + escHtml(slot.label) + ' ' + (pct != null ? pct.toFixed(1) + '%' : '--');
+  }).join('');
 
   row.innerHTML =
     datasetCard +
@@ -414,14 +408,12 @@ function renderSummaryCards(container, entries, stationId) {
       '<div class="sum-sub">Storage used: ' + (storageUsedPct != null ? storageUsedPct.toFixed(1) + '%' : '--') + ' &nbsp; Free: ' + (latestSdFreeKB != null ? formatKB(latestSdFreeKB) : '--') + '</div>' +
       '<div class="sum-sub">FW: <span style="color:var(--accent)">' + t0Fw + '</span></div>' +
     '</div>' +
-    slot1Card +
-    slot2Card +
+    slotCards +
     '<div class="sum-card">' +
       '<h4>Data and Check-Ins</h4>' +
       '<div class="sum-val" style="color:' + pctTone(completeness) + '">' + (completeness != null ? completeness.toFixed(1) + '%' : '--') + ' <span style="font-size:.72rem;font-weight:500;color:var(--text-muted)">since commissioning</span></div>' +
       '<div class="sum-sub">24h Sensor coverage: T0 ' + (t0SensorPct != null ? t0SensorPct.toFixed(1) + '%' : '--') +
-        (slot1Enabled ? ' &nbsp;|&nbsp; ' + slot1Label + ' ' + (slot1SensorPct != null ? slot1SensorPct.toFixed(1) + '%' : '--') : '') +
-        (slot2Enabled ? ' &nbsp;|&nbsp; ' + slot2Label + ' ' + (slot2SensorPct != null ? slot2SensorPct.toFixed(1) + '%' : '--') : '') + '</div>' +
+        slotCoverageText + '</div>' +
       '<div class="sum-sub">24h Expected/Actual: ' + (expectedEntries != null ? expectedEntries.toLocaleString() : '--') + ' / ' + e.length.toLocaleString() + '</div>' +
       '<div class="sum-sub">Total entries: ' + e.length.toLocaleString() + ' &nbsp;|&nbsp; Days running: ' + totalDaysRunning.toFixed(1) + '</div>' +
       '<div class="sum-sub">Last config applied: ' + lastConfigAppliedText + '</div>' +

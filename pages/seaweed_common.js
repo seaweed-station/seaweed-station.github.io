@@ -610,6 +610,15 @@ function feedToEntry(f, discoveredSlots) {
   for (var i = 0; i < slots.length; i++) {
     var n = slots[i];
     var p = 'sat_' + n + '_';
+    var slotHasReading = (
+      f[p + 'temp_1'] != null ||
+      f[p + 'humidity_1'] != null ||
+      f[p + 'temp_2'] != null ||
+      f[p + 'humidity_2'] != null ||
+      f[p + 'battery_v'] != null ||
+      f[p + 'battery_pct'] != null ||
+      f[p + 'flash_pct'] != null
+    );
     entry['sat' + n + 'Temp1']    = numParse(f[p + 'temp_1']);
     entry['sat' + n + 'Hum1']     = numParse(f[p + 'humidity_1']);
     entry['sat' + n + 'Temp2']    = numParse(f[p + 'temp_2']);
@@ -617,7 +626,7 @@ function feedToEntry(f, discoveredSlots) {
     entry['sat' + n + 'BatV']     = numParse(f[p + 'battery_v']);
     entry['sat' + n + 'BatPct']   = numParse(f[p + 'battery_pct']);
     entry['sat' + n + 'FlashPct'] = numParse(f[p + 'flash_pct']);
-    entry['sat' + n + 'Installed'] = (f[p + 'battery_v'] != null || f[p + 'temp_1'] != null || f[p + 'temp_2'] != null);
+    entry['sat' + n + 'Installed'] = slotHasReading ? true : null;
   }
   return entry;
 }
@@ -1169,6 +1178,11 @@ function buildSamplesRawStationPayload(stationId, rows, meta) {
     if (slot) slotMap[node] = slot;
     satRows.push(row);
   });
+  var activeSlots = Object.keys(slotMap).map(function(node) {
+    return Number(slotMap[node]);
+  }).filter(function(slot, idx, arr) {
+    return isFinite(slot) && slot > 0 && arr.indexOf(slot) === idx;
+  }).sort(function(a, b) { return a - b; });
 
   hubRows.sort(function(a, b) { return new Date(a.sample_epoch).getTime() - new Date(b.sample_epoch).getTime(); });
   satRows.sort(function(a, b) { return new Date(a.sample_epoch).getTime() - new Date(b.sample_epoch).getTime(); });
@@ -1217,8 +1231,9 @@ function buildSamplesRawStationPayload(stationId, rows, meta) {
       battery_pct: hub.battery_pct,
       solar_v: hub.solar_v
     };
-    applySat(feed, nearestSat(hub, 1), 1);
-    applySat(feed, nearestSat(hub, 2), 2);
+    activeSlots.forEach(function(slotNumber) {
+      applySat(feed, nearestSat(hub, slotNumber), slotNumber);
+    });
     return feed;
   });
 

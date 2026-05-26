@@ -465,17 +465,40 @@ function renderDailyHealth(container, entries, stationId) {
         windowEndMs: visibleWindowEnd
       })
     : null;
-  var slot1Enabled = slotCtx ? slotCtx.slot1.enabled : isSatelliteVisible(stationId, entries, 1);
-  var slot2Enabled = slotCtx ? slotCtx.slot2.enabled : isSatelliteVisible(stationId, entries, 2);
-  var slot3Enabled = slotCtx ? (slotCtx.slot3 && slotCtx.slot3.enabled) : isSatelliteVisible(stationId, entries, 3);
-  var slot1Label = slotCtx ? slotCtx.slot1.label : satelliteDisplayName(stationId, 1);
-  var slot2Label = slotCtx ? slotCtx.slot2.label : satelliteDisplayName(stationId, 2);
-  var slot3Label = slotCtx && slotCtx.slot3 ? slotCtx.slot3.label : satelliteDisplayName(stationId, 3);
-  var slot1Node = slotCtx ? slotCtx.slot1.nodeLetter : satelliteNodeLetter(stationId, 1);
-  var slot2Node = slotCtx ? slotCtx.slot2.nodeLetter : satelliteNodeLetter(stationId, 2);
-  var slot3Node = slotCtx && slotCtx.slot3 ? slotCtx.slot3.nodeLetter : satelliteNodeLetter(stationId, 3);
+  var slots = slotCtx && Array.isArray(slotCtx.slots)
+    ? slotCtx.slots.slice()
+    : healthSatelliteSlotNumbers().map(function(slotNumber) {
+        return {
+          slotNumber: slotNumber,
+          enabled: isSatelliteVisible(stationId, entries, slotNumber),
+          label: satelliteDisplayName(stationId, slotNumber),
+          nodeLetter: satelliteNodeLetter(stationId, slotNumber)
+        };
+      }).filter(function(slot) { return !!slot.enabled; });
 
-  var enabledSlotCount = (slot1Enabled ? 1 : 0) + (slot2Enabled ? 1 : 0) + (slot3Enabled ? 1 : 0);
+  function slotPrefix(slot) {
+    return 'sat' + slot.slotNumber;
+  }
+
+  function slotNodeForDay(slot, daySlotMap) {
+    return (daySlotMap && daySlotMap[slot.slotNumber]) || slot.nodeLetter || null;
+  }
+
+  function syncRowsForSlot(daySyncRows, slot, nodeLetter) {
+    return daySyncRows.filter(function(r) {
+      var rowSlot = Number(r && r.slot_number);
+      if (isFinite(rowSlot) && rowSlot === Number(slot.slotNumber)) return true;
+      return nodeLetter && String((r && r.node_id) || '').toUpperCase() === String(nodeLetter).toUpperCase();
+    });
+  }
+
+  function slotHeaders(suffix, cls) {
+    return slots.map(function(slot) {
+      return '<th class="' + cls + '">' + slot.label + ' ' + suffix + '</th>';
+    }).join('');
+  }
+
+  var enabledSlotCount = slots.length;
   var configCols = 4 + enabledSlotCount * 2;
   var batteryCols = 1 + enabledSlotCount;
   var sampleCols = 1 + enabledSlotCount;
@@ -501,34 +524,20 @@ function renderDailyHealth(container, entries, stationId) {
     '</tr>' +
     '<tr>' +
       '<th class="grp-config">Sample Period<br><span style="font-weight:400">(min)</span></th><th class="grp-config">Upload Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">Sat Sync Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">T0 FW</th>' +
-      (slot1Enabled ? '<th class="grp-config">' + slot1Label + ' FW</th>' : '') +
-      (slot2Enabled ? '<th class="grp-config">' + slot2Label + ' FW</th>' : '') +
-      (slot3Enabled ? '<th class="grp-config">' + slot3Label + ' FW</th>' : '') +
-      (slot1Enabled ? '<th class="grp-config">' + slot1Label + ' Mapping</th>' : '') +
-      (slot2Enabled ? '<th class="grp-config">' + slot2Label + ' Mapping</th>' : '') +
-      (slot3Enabled ? '<th class="grp-config">' + slot3Label + ' Mapping</th>' : '') +
-      '<th class="grp-battery group-start">T0 Bat<br><span style="font-weight:400">(%)</span></th>' + (slot1Enabled ? '<th class="grp-battery">' + slot1Label + ' Bat<br><span style="font-weight:400">(%)</span></th>' : '') + (slot2Enabled ? '<th class="grp-battery">' + slot2Label + ' Bat<br><span style="font-weight:400">(%)</span></th>' : '') + (slot3Enabled ? '<th class="grp-battery">' + slot3Label + ' Bat<br><span style="font-weight:400">(%)</span></th>' : '') +
+      slotHeaders('FW', 'grp-config') +
+      slotHeaders('Mapping', 'grp-config') +
+      '<th class="grp-battery group-start">T0 Bat<br><span style="font-weight:400">(%)</span></th>' + slotHeaders('Bat<br><span style="font-weight:400">(%)</span>', 'grp-battery') +
       '<th class="grp-data group-start">T0 Samples<br><span style="font-weight:400">(sync rec/exp)</span></th>' +
-      (slot1Enabled ? '<th class="grp-data">' + slot1Label + ' Samples<br><span style="font-weight:400">(sync rec/exp)</span></th>' : '') +
-      (slot2Enabled ? '<th class="grp-data">' + slot2Label + ' Samples<br><span style="font-weight:400">(sync rec/exp)</span></th>' : '') +
-      (slot3Enabled ? '<th class="grp-data">' + slot3Label + ' Samples<br><span style="font-weight:400">(sync rec/exp)</span></th>' : '') +
+      slotHeaders('Samples<br><span style="font-weight:400">(sync rec/exp)</span>', 'grp-data') +
       '<th class="grp-data">T0 Lost Time<br><span style="font-weight:400">(period-based)</span></th>' +
-      (slot1Enabled ? '<th class="grp-data">' + slot1Label + ' Lost Time<br><span style="font-weight:400">(period-based)</span></th>' : '') +
-      (slot2Enabled ? '<th class="grp-data">' + slot2Label + ' Lost Time<br><span style="font-weight:400">(period-based)</span></th>' : '') +
-      (slot3Enabled ? '<th class="grp-data">' + slot3Label + ' Lost Time<br><span style="font-weight:400">(period-based)</span></th>' : '') +
+      slotHeaders('Lost Time<br><span style="font-weight:400">(period-based)</span>', 'grp-data') +
       '<th class="grp-radio group-start">T0 Uploads<br><span style="font-weight:400">(ok/attempts)</span></th>' +
-      (slot1Enabled ? '<th class="grp-radio">' + slot1Label + ' Syncs<br><span style="font-weight:400">(ok/attempts)</span></th>' : '') +
-      (slot2Enabled ? '<th class="grp-radio">' + slot2Label + ' Syncs<br><span style="font-weight:400">(ok/attempts)</span></th>' : '') +
-      (slot3Enabled ? '<th class="grp-radio">' + slot3Label + ' Syncs<br><span style="font-weight:400">(ok/attempts)</span></th>' : '') +
+      slotHeaders('Syncs<br><span style="font-weight:400">(ok/attempts)</span>', 'grp-radio') +
       '<th class="grp-radio">T0 CSQ<br><span style="font-weight:400">(avg/max)</span></th>' +
-      (slot1Enabled ? '<th class="grp-radio">' + slot1Label + ' RSSI<br><span style="font-weight:400">(avg/max)</span></th>' : '') +
-      (slot2Enabled ? '<th class="grp-radio">' + slot2Label + ' RSSI<br><span style="font-weight:400">(avg/max)</span></th>' : '') +
-      (slot3Enabled ? '<th class="grp-radio">' + slot3Label + ' RSSI<br><span style="font-weight:400">(avg/max)</span></th>' : '') +
+      slotHeaders('RSSI<br><span style="font-weight:400">(avg/max)</span>', 'grp-radio') +
       '<th class="grp-radio">T0 Drift<br><span style="font-weight:400">(avg/max)</span></th>' +
-      (slot1Enabled ? '<th class="grp-radio">' + slot1Label + ' Drift<br><span style="font-weight:400">(avg/max)</span></th>' : '') +
-      (slot2Enabled ? '<th class="grp-radio">' + slot2Label + ' Drift<br><span style="font-weight:400">(avg/max)</span></th>' : '') +
-      (slot3Enabled ? '<th class="grp-radio">' + slot3Label + ' Drift<br><span style="font-weight:400">(avg/max)</span></th>' : '') +
-      '<th class="grp-radio">T0 Upload Time</th>' + (slot1Enabled ? '<th class="grp-radio">' + slot1Label + ' Sync Time</th>' : '') + (slot2Enabled ? '<th class="grp-radio">' + slot2Label + ' Sync Time</th>' : '') + (slot3Enabled ? '<th class="grp-radio">' + slot3Label + ' Sync Time</th>' : '') +
+      slotHeaders('Drift<br><span style="font-weight:400">(avg/max)</span>', 'grp-radio') +
+      '<th class="grp-radio">T0 Upload Time</th>' + slotHeaders('Sync Time', 'grp-radio') +
     '</tr>' +
     '</thead><tbody>';
 
@@ -549,10 +558,7 @@ function renderDailyHealth(container, entries, stationId) {
     var dayEnd = dayStart + 24 * 3600000;
     var dayEvalEnd = Math.min(dayEnd, nowMs);
     var dayWindowMs = Math.max(0, dayEvalEnd - dayStart);
-    var daySlotMap = slotMapForWindow(dayStart, dayEnd, slot1Node, slot2Node);
-    var daySlot1Node = daySlotMap[1] || slot1Node;
-    var daySlot2Node = daySlotMap[2] || slot2Node;
-    var daySlot3Node = daySlotMap[3] || slot3Node;
+    var daySlotMap = slotMapForWindow(dayStart, dayEnd);
 
     var daySyncRows = syncRowsAll.filter(function(r) {
       var t = r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)).getTime() : NaN;
@@ -596,22 +602,6 @@ function renderDailyHealth(container, entries, stationId) {
       latestFwForDay(de, entries, 't0FwVersion', dayEnd) ||
       latestAppliedFwForDay(dayUploadRows, uploadRowsAll, dayEnd)
     );
-    var daySlot1Fw = fmtFwValue(
-      latestSyncFwForNode(daySyncRows, syncRowsAll, daySlot1Node, dayEnd) ||
-      latestFwForDay(de, entries, 'sat1FwVersion', dayEnd)
-    );
-    var daySlot2Fw = fmtFwValue(
-      latestSyncFwForNode(daySyncRows, syncRowsAll, daySlot2Node, dayEnd) ||
-      latestFwForDay(de, entries, 'sat2FwVersion', dayEnd)
-    );
-    var daySlot3Fw = fmtFwValue(
-      latestSyncFwForNode(daySyncRows, syncRowsAll, daySlot3Node, dayEnd) ||
-      latestFwForDay(de, entries, 'sat3FwVersion', dayEnd)
-    );
-    var daySlot1MapText = daySlot1Node ? ('Node ' + escHtml(daySlot1Node)) : '--';
-    var daySlot2MapText = daySlot2Node ? ('Node ' + escHtml(daySlot2Node)) : '--';
-    var daySlot3MapText = daySlot3Node ? ('Node ' + escHtml(daySlot3Node)) : '--';
-
     var t0SamplesActual = de.length;
     var dayT0IntervalMs = medianIntervalMs(de, function(r) { return r.timestamp ? r.timestamp.getTime() : null; });
     var effectiveSampleSec = cfgSampleSec || (dayT0IntervalMs ? Math.round(dayT0IntervalMs / 1000) : (globalT0IntervalMs ? Math.round(globalT0IntervalMs / 1000) : null));
@@ -620,80 +610,55 @@ function renderDailyHealth(container, entries, stationId) {
       t0SamplesExpected = expectedPerDayFromIntervalMs(effectiveSampleSec ? effectiveSampleSec * 1000 : (dayT0IntervalMs || globalT0IntervalMs));
     }
 
-    var nodeADay = daySyncRows.filter(function(r) {
-      return daySlot1Node && String((r && r.node_id) || '').toUpperCase() === daySlot1Node;
-    });
-    var nodeBDay = daySyncRows.filter(function(r) {
-      return daySlot2Node && String((r && r.node_id) || '').toUpperCase() === daySlot2Node;
-    });
-    var nodeCDay = daySyncRows.filter(function(r) {
-      return daySlot3Node && String((r && r.node_id) || '').toUpperCase() === daySlot3Node;
-    });
-    var nodeADayFirstCheckins = firstCheckinSyncRows(nodeADay);
-    var nodeBDayFirstCheckins = firstCheckinSyncRows(nodeBDay);
-    var nodeCDayFirstCheckins = firstCheckinSyncRows(nodeCDay);
-
-    var slot1SamplesActual = nodeADay.reduce(function(acc, r) {
-      var v = num(r.received_total);
-      if (v == null) v = num(r.persisted_sd);
-      if (v == null) v = (num(r.received_live) || 0) + (num(r.received_file_rows) || 0);
-      return acc + (v || 0);
-    }, 0);
-    var slot1SamplesExpected = nodeADay.reduce(function(acc, r) { return acc + (num(r.expected_samples) || 0); }, 0);
-
-    var slot2SamplesActual = nodeBDay.reduce(function(acc, r) {
-      var v = num(r.received_total);
-      if (v == null) v = num(r.persisted_sd);
-      if (v == null) v = (num(r.received_live) || 0) + (num(r.received_file_rows) || 0);
-      return acc + (v || 0);
-    }, 0);
-    var slot2SamplesExpected = nodeBDay.reduce(function(acc, r) { return acc + (num(r.expected_samples) || 0); }, 0);
-    var slot3SamplesActual = nodeCDay.reduce(function(acc, r) {
-      var v = num(r.received_total);
-      if (v == null) v = num(r.persisted_sd);
-      if (v == null) v = (num(r.received_live) || 0) + (num(r.received_file_rows) || 0);
-      return acc + (v || 0);
-    }, 0);
-    var slot3SamplesExpected = nodeCDay.reduce(function(acc, r) { return acc + (num(r.expected_samples) || 0); }, 0);
-
     var periodBasedExpected = expectedCountForWindow(effectiveSampleSec, dayWindowMs);
     var t0LostTime = fmtLostTime(t0SamplesActual, periodBasedExpected, effectiveSampleSec);
-    var slot1LostTime = fmtLostTime(slot1SamplesActual, periodBasedExpected, effectiveSampleSec);
-    var slot2LostTime = fmtLostTime(slot2SamplesActual, periodBasedExpected, effectiveSampleSec);
-    var slot3LostTime = fmtLostTime(slot3SamplesActual, periodBasedExpected, effectiveSampleSec);
 
     var t0UploadsActual = dayUploadRows.length;
     var t0UploadsOk = dayUploadRows.filter(isUploadSuccess).length;
-    var slot1SyncActual = nodeADay.length;
-    var slot1SyncOk = nodeADay.filter(isSyncSuccess).length;
-    var slot2SyncActual = nodeBDay.length;
-    var slot2SyncOk = nodeBDay.filter(isSyncSuccess).length;
-    var slot3SyncActual = nodeCDay.length;
-    var slot3SyncOk = nodeCDay.filter(isSyncSuccess).length;
 
     var csqVals = dayUploadRows.map(function(r) { return num(r.csq); }).filter(function(v) { return v != null && v >= 0; });
-    var slot1RssiVals = nodeADay.map(function(r) { return num(r.sat_rssi_avg); }).filter(function(v) { return v != null && v !== 0; });
-    var slot2RssiVals = nodeBDay.map(function(r) { return num(r.sat_rssi_avg); }).filter(function(v) { return v != null && v !== 0; });
-    var slot3RssiVals = nodeCDay.map(function(r) { return num(r.sat_rssi_avg); }).filter(function(v) { return v != null && v !== 0; });
 
     var t0DriftVals = dayUploadRows.map(t0ClockDriftS).filter(function(v) { return v != null; });
-    var slot1DriftVals = nodeADayFirstCheckins.map(function(r) {
-      var v = num(r.sat_drift_s);
-      return v == null ? null : Math.abs(v);
-    }).filter(function(v) { return v != null; });
-    var slot2DriftVals = nodeBDayFirstCheckins.map(function(r) {
-      var v = num(r.sat_drift_s);
-      return v == null ? null : Math.abs(v);
-    }).filter(function(v) { return v != null; });
-    var slot3DriftVals = nodeCDayFirstCheckins.map(function(r) {
-      var v = num(r.sat_drift_s);
-      return v == null ? null : Math.abs(v);
-    }).filter(function(v) { return v != null; });
 
     var t0UploadMs = dayUploadRows.reduce(function(acc, r) { return acc + (num(r.upload_duration_ms) || 0); }, 0);
-    var slot1SyncMs = nodeADay.reduce(function(acc, r) { return acc + (num(r.sync_duration_ms) || 0); }, 0);
-    var slot2SyncMs = nodeBDay.reduce(function(acc, r) { return acc + (num(r.sync_duration_ms) || 0); }, 0);
-    var slot3SyncMs = nodeCDay.reduce(function(acc, r) { return acc + (num(r.sync_duration_ms) || 0); }, 0);
+    var slotStats = slots.map(function(slot) {
+      var nodeLetter = slotNodeForDay(slot, daySlotMap);
+      var slotRows = syncRowsForSlot(daySyncRows, slot, nodeLetter);
+      var firstCheckins = firstCheckinSyncRows(slotRows);
+      var samplesActual = slotRows.reduce(function(acc, r) {
+        var v = num(r.received_total);
+        if (v == null) v = num(r.persisted_sd);
+        if (v == null) v = (num(r.received_live) || 0) + (num(r.received_file_rows) || 0);
+        return acc + (v || 0);
+      }, 0);
+      var samplesExpected = slotRows.reduce(function(acc, r) { return acc + (num(r.expected_samples) || 0); }, 0);
+      return {
+        slot: slot,
+        nodeLetter: nodeLetter,
+        fw: fmtFwValue(
+          latestSyncFwForNode(daySyncRows, syncRowsAll, nodeLetter, dayEnd) ||
+          latestFwForDay(de, entries, slotPrefix(slot) + 'FwVersion', dayEnd)
+        ),
+        mapText: nodeLetter ? ('Node ' + escHtml(nodeLetter)) : '--',
+        samplesActual: samplesActual,
+        samplesExpected: samplesExpected,
+        lostTime: fmtLostTime(samplesActual, periodBasedExpected, effectiveSampleSec),
+        syncActual: slotRows.length,
+        syncOk: slotRows.filter(isSyncSuccess).length,
+        rssiVals: slotRows.map(function(r) { return num(r.sat_rssi_avg); }).filter(function(v) { return v != null && v !== 0; }),
+        driftVals: firstCheckins.map(function(r) {
+          var v = num(r.sat_drift_s);
+          return v == null ? null : Math.abs(v);
+        }).filter(function(v) { return v != null; }),
+        syncMs: slotRows.reduce(function(acc, r) { return acc + (num(r.sync_duration_ms) || 0); }, 0)
+      };
+    });
+
+    function slotCells(cls, fn) {
+      return slotStats.map(function(stat) {
+        return '<td class="' + cls + '">' + fn(stat) + '</td>';
+      }).join('');
+    }
 
     html += '<tr>' +
       '<td>' + dateLabel + '</td>' +
@@ -701,40 +666,22 @@ function renderDailyHealth(container, entries, stationId) {
       '<td class="grp-config">' + fmtPeriodMs(cfgUploadMs) + '</td>' +
       '<td class="grp-config">' + fmtPeriodSeconds(cfgSyncSec) + '</td>' +
       '<td class="grp-config">' + dayT0Fw + '</td>' +
-      (slot1Enabled ? '<td class="grp-config">' + daySlot1Fw + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-config">' + daySlot2Fw + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-config">' + daySlot3Fw + '</td>' : '') +
-      (slot1Enabled ? '<td class="grp-config">' + daySlot1MapText + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-config">' + daySlot2MapText + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-config">' + daySlot3MapText + '</td>' : '') +
+      slotCells('grp-config', function(stat) { return stat.fw; }) +
+      slotCells('grp-config', function(stat) { return stat.mapText; }) +
       '<td class="grp-battery group-start">' + batteryTrend(de, 't0BatPct') + '</td>' +
-      (slot1Enabled ? '<td class="grp-battery">' + batteryTrend(de, 'sat1BatPct') + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-battery">' + batteryTrend(de, 'sat2BatPct') + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-battery">' + batteryTrend(de, 'sat3BatPct') + '</td>' : '') +
+      slotCells('grp-battery', function(stat) { return batteryTrend(de, slotPrefix(stat.slot) + 'BatPct'); }) +
       '<td class="grp-data group-start">' + fmtCount(t0SamplesActual, t0SamplesExpected) + '</td>' +
-      (slot1Enabled ? '<td class="grp-data">' + fmtCount(slot1SamplesActual, slot1SamplesExpected || null) + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-data">' + fmtCount(slot2SamplesActual, slot2SamplesExpected || null) + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-data">' + fmtCount(slot3SamplesActual, slot3SamplesExpected || null) + '</td>' : '') +
+      slotCells('grp-data', function(stat) { return fmtCount(stat.samplesActual, stat.samplesExpected || null); }) +
       '<td class="grp-data">' + t0LostTime + '</td>' +
-      (slot1Enabled ? '<td class="grp-data">' + slot1LostTime + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-data">' + slot2LostTime + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-data">' + slot3LostTime + '</td>' : '') +
+      slotCells('grp-data', function(stat) { return stat.lostTime; }) +
       '<td class="grp-radio group-start">' + fmtOkAttempts(t0UploadsOk, t0UploadsActual) + '</td>' +
-      (slot1Enabled ? '<td class="grp-radio">' + fmtOkAttempts(slot1SyncOk, slot1SyncActual) + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-radio">' + fmtOkAttempts(slot2SyncOk, slot2SyncActual) + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-radio">' + fmtOkAttempts(slot3SyncOk, slot3SyncActual) + '</td>' : '') +
+      slotCells('grp-radio', function(stat) { return fmtOkAttempts(stat.syncOk, stat.syncActual); }) +
       '<td class="grp-radio">' + fmtAvgMax(csqVals, '', false) + '</td>' +
-      (slot1Enabled ? '<td class="grp-radio">' + fmtAvgMax(slot1RssiVals, '', false) + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-radio">' + fmtAvgMax(slot2RssiVals, '', false) + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-radio">' + fmtAvgMax(slot3RssiVals, '', false) + '</td>' : '') +
+      slotCells('grp-radio', function(stat) { return fmtAvgMax(stat.rssiVals, '', false); }) +
       '<td class="grp-radio">' + fmtAvgMaxWithOutliers(t0DriftVals, 's', 3600) + '</td>' +
-      (slot1Enabled ? '<td class="grp-radio">' + fmtAvgMaxWithOutliers(slot1DriftVals, 's', 3600) + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-radio">' + fmtAvgMaxWithOutliers(slot2DriftVals, 's', 3600) + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-radio">' + fmtAvgMaxWithOutliers(slot3DriftVals, 's', 3600) + '</td>' : '') +
+      slotCells('grp-radio', function(stat) { return fmtAvgMaxWithOutliers(stat.driftVals, 's', 3600); }) +
       '<td class="grp-radio">' + fmtMs(t0UploadMs) + '</td>' +
-      (slot1Enabled ? '<td class="grp-radio">' + fmtMs(slot1SyncMs) + '</td>' : '') +
-      (slot2Enabled ? '<td class="grp-radio">' + fmtMs(slot2SyncMs) + '</td>' : '') +
-      (slot3Enabled ? '<td class="grp-radio">' + fmtMs(slot3SyncMs) + '</td>' : '') +
+      slotCells('grp-radio', function(stat) { return fmtMs(stat.syncMs); }) +
     '</tr>';
   }
 

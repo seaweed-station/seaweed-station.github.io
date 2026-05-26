@@ -69,6 +69,40 @@ function parseStationData(raw, station) {
       entry.sat2Temp2 = toNum(f.sat_2_temp_2);
       entry.sat2Hum2 = toNum(f.sat_2_humidity_2);
 
+      var structuredSlots = typeof healthSatelliteSlotNumbers === 'function' ? healthSatelliteSlotNumbers() : [1, 2];
+      for (var ss = 0; ss < structuredSlots.length; ss++) {
+        var sn = structuredSlots[ss];
+        var prefix = 'sat_' + sn + '_';
+        var p = 'sat' + sn;
+        var hasStructuredSlotField =
+          Object.prototype.hasOwnProperty.call(f, prefix + 'installed') ||
+          Object.prototype.hasOwnProperty.call(f, prefix + 'battery_v') ||
+          Object.prototype.hasOwnProperty.call(f, prefix + 'battery_pct') ||
+          Object.prototype.hasOwnProperty.call(f, prefix + 'flash_pct') ||
+          Object.prototype.hasOwnProperty.call(f, prefix + 'fw_ver') ||
+          Object.prototype.hasOwnProperty.call(f, prefix + 'temp_1') ||
+          Object.prototype.hasOwnProperty.call(f, prefix + 'humidity_1') ||
+          Object.prototype.hasOwnProperty.call(f, prefix + 'temp_2') ||
+          Object.prototype.hasOwnProperty.call(f, prefix + 'humidity_2');
+        if (!hasStructuredSlotField) continue;
+        entry[p + 'Installed'] = (f[prefix + 'installed'] === null || f[prefix + 'installed'] === undefined) ? entry[p + 'Installed'] : (Number(f[prefix + 'installed']) === 1);
+        entry[p + 'BatV'] = toNum(f[prefix + 'battery_v']);
+        entry[p + 'BatPct'] = toNum(f[prefix + 'battery_pct']);
+        entry[p + 'FlashPct'] = toNum(f[prefix + 'flash_pct']);
+        entry[p + 'Rssi'] = null;
+        entry[p + 'SampleId'] = null;
+        entry[p + 'SyncDrift'] = null;
+        var fwRaw = f[prefix + 'fw_ver'];
+        entry[p + 'FwVersion'] = fwRaw != null ? String(fwRaw) : null;
+        entry[p + 'Temp1'] = toNum(f[prefix + 'temp_1']);
+        entry[p + 'Hum1'] = toNum(f[prefix + 'humidity_1']);
+        entry[p + 'Temp2'] = toNum(f[prefix + 'temp_2']);
+        entry[p + 'Hum2'] = toNum(f[prefix + 'humidity_2']);
+        if (entry[p + 'Installed'] === null || entry[p + 'Installed'] === undefined) {
+          entry[p + 'Installed'] = (entry[p + 'BatV'] !== null || entry[p + 'Temp1'] !== null || entry[p + 'Temp2'] !== null);
+        }
+      }
+
       entry._rawField8 = null;
       entry.sdFreeKB = null;
       entry.csq = null;
@@ -312,6 +346,27 @@ function parseSupabaseData(rows, station) {
     var sat2InstalledRaw = r.sat_2_installed;
     entry.sat1Installed     = sat1InstalledRaw != null ? !!sat1InstalledRaw : null;
     entry.sat2Installed     = sat2InstalledRaw != null ? !!sat2InstalledRaw : null;
+
+    var parseSlots = typeof healthSatelliteSlotNumbers === 'function' ? healthSatelliteSlotNumbers() : [1, 2];
+    for (var ps = 0; ps < parseSlots.length; ps++) {
+      var sn = parseSlots[ps];
+      var prefix = 'sat_' + sn + '_';
+      var p = 'sat' + sn;
+      if (!(prefix + 'battery_v' in r) && !(prefix + 'temp_1' in r)) continue;
+      entry[p + 'BatV'] = r[prefix + 'battery_v'] !== null && r[prefix + 'battery_v'] !== undefined ? r[prefix + 'battery_v'] : null;
+      entry[p + 'BatPct'] = r[prefix + 'battery_pct'] !== null && r[prefix + 'battery_pct'] !== undefined ? r[prefix + 'battery_pct'] : null;
+      entry[p + 'FlashPct'] = r[prefix + 'flash_pct'] !== null && r[prefix + 'flash_pct'] !== undefined ? r[prefix + 'flash_pct'] : null;
+      entry[p + 'Rssi'] = null;
+      entry[p + 'SampleId'] = null;
+      entry[p + 'SyncDrift'] = null;
+      entry[p + 'FwVersion'] = null;
+      entry[p + 'Temp1'] = r[prefix + 'temp_1'] !== null && r[prefix + 'temp_1'] !== undefined ? r[prefix + 'temp_1'] : null;
+      entry[p + 'Hum1'] = r[prefix + 'humidity_1'] !== null && r[prefix + 'humidity_1'] !== undefined ? r[prefix + 'humidity_1'] : null;
+      entry[p + 'Temp2'] = r[prefix + 'temp_2'] !== null && r[prefix + 'temp_2'] !== undefined ? r[prefix + 'temp_2'] : null;
+      entry[p + 'Hum2'] = r[prefix + 'humidity_2'] !== null && r[prefix + 'humidity_2'] !== undefined ? r[prefix + 'humidity_2'] : null;
+      var installedRaw = r[prefix + 'installed'];
+      entry[p + 'Installed'] = installedRaw != null ? !!installedRaw : null;
+    }
 
     entries.push(entry);
   }

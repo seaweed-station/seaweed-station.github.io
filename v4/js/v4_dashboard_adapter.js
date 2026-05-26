@@ -740,13 +740,23 @@
 
   function payloadToEntries(payload) {
     if (!payload || !Array.isArray(payload.feeds) || typeof feedToEntry !== "function") return [];
-    var slots = [];
+    var seenSlots = {};
     if (payload.slot_map) {
       Object.keys(payload.slot_map).forEach(function(key) {
         var slot = Number(payload.slot_map[key]);
-        if (slot && slots.indexOf(slot) < 0) slots.push(slot);
+        if (isFinite(slot) && slot > 0) seenSlots[slot] = true;
       });
     }
+    payload.feeds.forEach(function(feed) {
+      Object.keys(feed || {}).forEach(function(key) {
+        var match = /^sat_(\d+)_/.exec(key);
+        if (match) {
+          var slot = Number(match[1]);
+          if (isFinite(slot) && slot > 0) seenSlots[slot] = true;
+        }
+      });
+    });
+    var slots = Object.keys(seenSlots).map(function(key) { return Number(key); }).sort(function(a, b) { return a - b; });
     if (!slots.length) slots = [1, 2];
     return payload.feeds.map(function(feed) {
       return feedToEntry(feed, feed._discovered_slots || slots);

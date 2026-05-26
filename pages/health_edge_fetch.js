@@ -52,9 +52,9 @@ var HEALTH_RAW_EGRESS_SAFE_MODE = typeof dashboardEgressSafeMode === 'function' 
 var HEALTH_RAW_HYDRATION_ENABLED = (function() {
   try {
     var stored = localStorage.getItem('seaweed_health_raw_hydration');
-    if (stored !== null) return /^(1|true|on|yes)$/i.test(String(stored).trim());
+    if (stored !== null) return !/^(0|false|off|no)$/i.test(String(stored).trim());
   } catch (_) {}
-  return !HEALTH_RAW_EGRESS_SAFE_MODE;
+  return true;
 })();
 var HEALTH_RAW_RECENT_WINDOW_DAYS = HEALTH_RAW_EGRESS_SAFE_MODE ? 14 : 45;
 var HEALTH_RAW_ALL_WINDOW_DAYS = HEALTH_RAW_EGRESS_SAFE_MODE ? 90 : 370;
@@ -91,6 +91,27 @@ function parseHealthWindowBounds(windowLike) {
   max = max instanceof Date ? max.getTime() : new Date(max).getTime();
   if (!isFinite(min) || !isFinite(max) || max < min) return null;
   return { min: min, max: max };
+}
+
+function discoverHealthFeedSlots(slotMap, feeds) {
+  var seen = {};
+  if (slotMap && typeof slotMap === 'object') {
+    Object.keys(slotMap).forEach(function(k) {
+      var sn = Number(slotMap[k]);
+      if (isFinite(sn) && sn > 0) seen[sn] = true;
+    });
+  }
+  (Array.isArray(feeds) ? feeds : []).forEach(function(feed) {
+    Object.keys(feed || {}).forEach(function(key) {
+      var match = /^sat_(\d+)_/.exec(key);
+      if (match) {
+        var sn = Number(match[1]);
+        if (isFinite(sn) && sn > 0) seen[sn] = true;
+      }
+    });
+  });
+  var slots = Object.keys(seen).map(function(k) { return Number(k); }).sort(function(a, b) { return a - b; });
+  return slots.length ? slots : [1, 2];
 }
 
 function mergeHealthStationRawWindow(stationId, windowLike) {
@@ -147,14 +168,7 @@ async function fetchHealthStationRawEntries(stationId, windowLike) {
       maxRows: HEALTH_RAW_FETCH_MAX_ROWS
     });
     if (!rawPayload || !Array.isArray(rawPayload.feeds) || !rawPayload.feeds.length) return [];
-    var rawSlots = [];
-    if (rawPayload.slot_map) {
-      Object.keys(rawPayload.slot_map).forEach(function(k) {
-        var sn = Number(rawPayload.slot_map[k]);
-        if (sn && rawSlots.indexOf(sn) < 0) rawSlots.push(sn);
-      });
-    }
-    if (!rawSlots.length) rawSlots = [1, 2];
+    var rawSlots = discoverHealthFeedSlots(rawPayload.slot_map, rawPayload.feeds);
     return rawPayload.feeds.map(function(feed) {
       return feedToEntry(feed, rawSlots);
     }).filter(function(entry) {
@@ -191,14 +205,7 @@ async function fetchHealthStationRawEntries(stationId, windowLike) {
           target: HEALTH_RAW_FETCH_MAX_ROWS,
           maxRows: HEALTH_RAW_FETCH_MAX_ROWS
         });
-        var slots = [];
-        if (payload && payload.slot_map) {
-          Object.keys(payload.slot_map).forEach(function(k) {
-            var sn = Number(payload.slot_map[k]);
-            if (sn && slots.indexOf(sn) < 0) slots.push(sn);
-          });
-        }
-        if (!slots.length) slots = [1, 2];
+        var slots = discoverHealthFeedSlots(payload && payload.slot_map, payload && payload.feeds);
         return (payload && Array.isArray(payload.feeds) ? payload.feeds : []).map(function(feed) {
           return feedToEntry(feed, slots);
         }).filter(function(entry) {
@@ -469,15 +476,7 @@ function applyEdgeHealthPayload(payload) {
     }
 
     // ── Feeds → entries via feedToEntry ───────────────────
-    var discoveredSlots = [];
-    if (st.slot_map) {
-      var slotKeys = Object.keys(st.slot_map);
-      for (var sk = 0; sk < slotKeys.length; sk++) {
-        var sn = Number(st.slot_map[slotKeys[sk]]);
-        if (sn && discoveredSlots.indexOf(sn) < 0) discoveredSlots.push(sn);
-      }
-    }
-    if (!discoveredSlots.length) discoveredSlots = [1, 2];
+    var discoveredSlots = discoverHealthFeedSlots(st.slot_map, st.feeds);
 
     var entries = [];
     if (Array.isArray(st.feeds)) {

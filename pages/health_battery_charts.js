@@ -8,8 +8,32 @@ function renderBatteryCharts(container, entries, stationId, range) {
   if (!entries || !entries.length) return;
   var syncRowsAll = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
   var slotCtx = typeof getHealthSlotContext === 'function' ? getHealthSlotContext(stationId, entries, syncRowsAll) : null;
-  var slot2Enabled = slotCtx ? slotCtx.slot2.enabled : isSatelliteVisible(stationId, entries, 2);
-  var slot3Enabled = slotCtx ? (slotCtx.slot3 && slotCtx.slot3.enabled) : isSatelliteVisible(stationId, entries, 3);
+  var slotList = slotCtx && Array.isArray(slotCtx.slots)
+    ? slotCtx.slots.slice()
+    : healthSatelliteSlotNumbers().map(function(slotNumber) {
+        return {
+          slotNumber: slotNumber,
+          enabled: isSatelliteVisible(stationId, entries, slotNumber),
+          label: satelliteDisplayName(stationId, slotNumber),
+          nodeLetter: satelliteNodeLetter(stationId, slotNumber)
+        };
+      }).filter(function(slot) { return !!slot.enabled; });
+  var SAT_SLOT_COLORS = ['#34d399', '#fbbf24', '#a78bfa', '#38bdf8', '#fb7185', '#84cc16', '#f97316'];
+  var SAT_SLOT_CALC_COLORS = ['#6ee7b7', '#fde68a', '#c4b5fd', '#7dd3fc', '#fda4af', '#bef264', '#fdba74'];
+  function slotColor(slot, calc) {
+    var idx = Math.max(0, Number(slot.slotNumber || 1) - 1) % SAT_SLOT_COLORS.length;
+    return calc ? SAT_SLOT_CALC_COLORS[idx] : SAT_SLOT_COLORS[idx];
+  }
+  function slotPrefix(slot) {
+    return 'sat' + slot.slotNumber;
+  }
+  function rowMatchesSlot(row, slot) {
+    if (!row || !slot) return false;
+    var rowSlot = Number(row.slot_number);
+    if (isFinite(rowSlot) && rowSlot === Number(slot.slotNumber)) return true;
+    var node = String(row.node_id || '').trim().toUpperCase();
+    return !!(slot.nodeLetter && node && node === String(slot.nodeLetter).toUpperCase());
+  }
   var firstTs = entries[0].timestamp;
   var lastTs = entries[entries.length - 1].timestamp;
   var CUTOFF_V = 3.3;
@@ -20,7 +44,7 @@ function renderBatteryCharts(container, entries, stationId, range) {
   var PLOT_MAX_PCT = 110;
 
   function resolvePlotMaxVoltage(data) {
-    var keys = ['t0BatV', 'sat1BatV', 'sat2BatV', 'sat3BatV'];
+    var keys = ['t0BatV'].concat(slotList.map(function(slot) { return slotPrefix(slot) + 'BatV'; }));
     var maxV = FULL_V;
     for (var i = 0; i < data.length; i++) {
       var entry = data[i];
@@ -252,7 +276,7 @@ function renderBatteryCharts(container, entries, stationId, range) {
     if (typeof BatteryModel === 'undefined' || typeof BatteryModel.projectVoltageCurve !== 'function') return [];
     var rawPts = pctSeries(data, pctKey);
     // For satellites, use an upper-envelope to ignore transient sync droops.
-    var useEnvelope = (pctKey === 'sat1BatPct' || pctKey === 'sat2BatPct' || pctKey === 'sat3BatPct');
+    var useEnvelope = /^sat\d+BatPct$/.test(pctKey);
     var fitPts = useEnvelope ? pctUpperEnvelope(rawPts, 3 * 3600000) : rawPts;
     if (fitPts.length < 2) fitPts = rawPts;
 
@@ -422,12 +446,6 @@ function renderBatteryCharts(container, entries, stationId, range) {
   var calcAnchorMs = rangeStartMs;
   var uploadRows = Array.isArray(_stationUploadTimeline[stationId]) ? _stationUploadTimeline[stationId] : [];
   var syncRows = Array.isArray(_stationSyncTimeline[stationId]) ? _stationSyncTimeline[stationId] : [];
-  var slot1Label = slotCtx ? slotCtx.slot1.label : satelliteDisplayName(stationId, 1);
-  var slot2Label = slotCtx ? slotCtx.slot2.label : satelliteDisplayName(stationId, 2);
-  var slot3Label = slotCtx && slotCtx.slot3 ? slotCtx.slot3.label : satelliteDisplayName(stationId, 3);
-  var slot1Node = slotCtx ? slotCtx.slot1.nodeLetter : satelliteNodeLetter(stationId, 1);
-  var slot2Node = slotCtx ? slotCtx.slot2.nodeLetter : satelliteNodeLetter(stationId, 2);
-  var slot3Node = slotCtx && slotCtx.slot3 ? slotCtx.slot3.nodeLetter : satelliteNodeLetter(stationId, 3);
   var uploadEventTimes = uniqSortedTimes(uploadRows.map(function(r) {
     return r && r.upload_started_at ? new Date(ensureUTC(r.upload_started_at)) : null;
   }).filter(function(d) {
@@ -439,27 +457,16 @@ function renderBatteryCharts(container, entries, stationId, range) {
   }).filter(function(d) {
     return d && !isNaN(d.getTime()) && d.getTime() >= rangeStartMs && d.getTime() <= rangeEndMs;
   }));
-  var syncEventTimesA = uniqSortedTimes(syncRows.filter(function(r) {
-    return slot1Node && String((r && r.node_id) || '').toUpperCase() === slot1Node;
-  }).map(function(r) {
-    return r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)) : null;
-  }).filter(function(d) {
-    return d && !isNaN(d.getTime()) && d.getTime() >= rangeStartMs && d.getTime() <= rangeEndMs;
-  }));
-  var syncEventTimesB = uniqSortedTimes(syncRows.filter(function(r) {
-    return slot2Node && String((r && r.node_id) || '').toUpperCase() === slot2Node;
-  }).map(function(r) {
-    return r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)) : null;
-  }).filter(function(d) {
-    return d && !isNaN(d.getTime()) && d.getTime() >= rangeStartMs && d.getTime() <= rangeEndMs;
-  }));
-  var syncEventTimesC = uniqSortedTimes(syncRows.filter(function(r) {
-    return slot3Node && String((r && r.node_id) || '').toUpperCase() === slot3Node;
-  }).map(function(r) {
-    return r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)) : null;
-  }).filter(function(d) {
-    return d && !isNaN(d.getTime()) && d.getTime() >= rangeStartMs && d.getTime() <= rangeEndMs;
-  }));
+  var syncEventTimesBySlot = {};
+  slotList.forEach(function(slot) {
+    syncEventTimesBySlot[slot.slotNumber] = uniqSortedTimes(syncRows.filter(function(r) {
+      return rowMatchesSlot(r, slot);
+    }).map(function(r) {
+      return r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)) : null;
+    }).filter(function(d) {
+      return d && !isNaN(d.getTime()) && d.getTime() >= rangeStartMs && d.getTime() <= rangeEndMs;
+    }));
+  });
   // Sample events come from the unified sensor_readings cadence (covers T0 + satellites).
   var sampleEventTimes = uniqSortedTimes(entries.map(function(e) {
     return e && e.timestamp ? e.timestamp : null;
@@ -495,26 +502,17 @@ function renderBatteryCharts(container, entries, stationId, range) {
       _isGuide: true
     },
     makeVoltDS(entries, 't0BatV', 'T0', '#60a5fa', false),
-    makeVoltDS(entries, 'sat1BatV', slot1Label, '#34d399', true),
-    calculatedDataset('T0 Calculated', '#93c5fd', 't0BatPct', 't0', calcAnchorMs, rangeStartMs, rangeEndMs, 't0BatV'),
-    calculatedDataset(slot1Label + ' Calculated', '#6ee7b7', 'sat1BatPct', 'te', calcAnchorMs, rangeStartMs, rangeEndMs, 'sat1BatV')
+    calculatedDataset('T0 Calculated', '#93c5fd', 't0BatPct', 't0', calcAnchorMs, rangeStartMs, rangeEndMs, 't0BatV')
   ];
-  if (slot2Enabled) {
-    voltDatasets.push(makeVoltDS(entries, 'sat2BatV', slot2Label, '#fbbf24', true));
-    voltDatasets.push(calculatedDataset(slot2Label + ' Calculated', '#fde68a', 'sat2BatPct', 'te', calcAnchorMs, rangeStartMs, rangeEndMs, 'sat2BatV'));
-  }
-  if (slot3Enabled) {
-    voltDatasets.push(makeVoltDS(entries, 'sat3BatV', slot3Label, '#a78bfa', true));
-    voltDatasets.push(calculatedDataset(slot3Label + ' Calculated', '#c4b5fd', 'sat3BatPct', 'te', calcAnchorMs, rangeStartMs, rangeEndMs, 'sat3BatV'));
-  }
+  slotList.forEach(function(slot) {
+    var p = slotPrefix(slot);
+    voltDatasets.push(makeVoltDS(entries, p + 'BatV', slot.label, slotColor(slot), true));
+    voltDatasets.push(calculatedDataset(slot.label + ' Calculated', slotColor(slot, true), p + 'BatPct', 'te', calcAnchorMs, rangeStartMs, rangeEndMs, p + 'BatV'));
+  });
   voltDatasets.push(verticalEventDataset('T0 Upload Events', 'rgba(96,165,250,0.85)', uploadEventTimes, true, [7, 5], 1.6, 'upload'));
-  voltDatasets.push(verticalEventDataset(slot1Label + ' Sync Events', 'rgba(52,211,153,0.85)', syncEventTimesA, true, [7, 5], 1.6, 'sync'));
-  if (slot2Enabled) {
-    voltDatasets.push(verticalEventDataset(slot2Label + ' Sync Events', 'rgba(251,191,36,0.85)', syncEventTimesB, true, [7, 5], 1.6, 'sync'));
-  }
-  if (slot3Enabled) {
-    voltDatasets.push(verticalEventDataset(slot3Label + ' Sync Events', 'rgba(167,139,250,0.85)', syncEventTimesC, true, [7, 5], 1.6, 'sync'));
-  }
+  slotList.forEach(function(slot) {
+    voltDatasets.push(verticalEventDataset(slot.label + ' Sync Events', slotColor(slot) + 'd9', syncEventTimesBySlot[slot.slotNumber] || [], true, [7, 5], 1.6, 'sync'));
+  });
   voltDatasets.push(verticalEventDataset('Config Events', 'rgba(239,68,68,0.85)', configEventTimes, true, [4, 4], 1.6, 'config'));
   // Keep sample events available but placed last and hidden by default.
   voltDatasets.push(verticalEventDataset('Sample Events', 'rgba(109,143,136,0.70)', sampleEventTimes, true, [2, 5], 1.4, 'sample'));
@@ -604,18 +602,10 @@ function renderBatteryCharts(container, entries, stationId, range) {
     var t0 = lifeSummary('t0BatPct', false, 't0');
     cards.push({ title: 'T0 Gateway', color: '#60a5fa', calcDays: t0.calcDays });
 
-    var sa = lifeSummary('sat1BatPct', true, 'te');
-    cards.push({ title: slot1Label, color: '#34d399', calcDays: sa.calcDays });
-
-    if (slot2Enabled) {
-      var sb = lifeSummary('sat2BatPct', true, 'te');
-      cards.push({ title: slot2Label, color: '#fbbf24', calcDays: sb.calcDays });
-    }
-
-    if (slot3Enabled) {
-      var sc = lifeSummary('sat3BatPct', true, 'te');
-      cards.push({ title: slot3Label, color: '#a78bfa', calcDays: sc.calcDays });
-    }
+    slotList.forEach(function(slot) {
+      var s = lifeSummary(slotPrefix(slot) + 'BatPct', true, 'te');
+      cards.push({ title: slot.label, color: slotColor(slot), calcDays: s.calcDays });
+    });
 
     calcDaysRow.innerHTML = cards.map(function(c) {
       return '<div class="calc-days-card" style="border-top:4px solid ' + c.color + '">' +
