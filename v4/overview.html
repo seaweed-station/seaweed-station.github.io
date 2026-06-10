@@ -539,15 +539,31 @@ function findLast(entries, key) {
   return null;
 }
 
-function formatDatasetUpdate(ts) {
+function stationDisplayTime(tableId) {
+  var station = (TABLES || []).filter(function(t) { return t.id === tableId; })[0];
+  return station && station.displayTime ? station.displayTime : '';
+}
+
+function formatStationDisplayTime(value, tableId, opts) {
+  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+    return SeaweedV4.formatWithUtcOffset(value, stationDisplayTime(tableId), opts || {});
+  }
+  var d = value instanceof Date ? value : new Date(value);
+  return d.toLocaleString('en-GB', {
+    year: opts && opts.year ? 'numeric' : undefined,
+    month: 'short', day: '2-digit',
+    hour: opts && opts.time === false ? undefined : '2-digit',
+    minute: opts && opts.time === false ? undefined : '2-digit',
+    hour12: false
+  });
+}
+
+function formatDatasetUpdate(ts, tableId) {
   if (!ts) return { value: '--', sub: 'No dataset timestamp', hoursSince: null };
   var d = ts instanceof Date ? ts : new Date(ts);
   if (isNaN(d.getTime())) return { value: '--', sub: 'Invalid timestamp', hoursSince: null };
 
-  var abs = d.toLocaleString('en-GB', {
-    year: 'numeric', month: 'short', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hour12: false
-  });
+  var abs = formatStationDisplayTime(d, tableId, { year: true });
 
   var mins = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
   var hoursSince = mins / 60;
@@ -631,7 +647,8 @@ function formatNextCheckIn(tableId, lastUpdate, dataHealth) {
       timeZone: 'UTC'
     });
     var authCls = authState === 'good' ? 'next-check-good' : (authState === 'warn' ? 'next-check-warn' : 'next-check-late');
-    var authText = 'Next check in: ' + authWhen + ' (' + authAbs + ' UTC)';
+    authAbs = formatStationDisplayTime(nextFromStatus, tableId, { time: true });
+    var authText = 'Next check in: ' + authWhen + ' (' + authAbs + ')';
     return { html: '<span class="next-check ' + authCls + '">' + authText + '</span>', text: authText };
   }
 
@@ -663,7 +680,8 @@ function formatNextCheckIn(tableId, lastUpdate, dataHealth) {
     timeZone: 'UTC'
   });
   var cls = state === 'good' ? 'next-check-good' : (state === 'warn' ? 'next-check-warn' : 'next-check-late');
-  var text = 'Next check in: ' + when + ' (' + nextAbs + ' UTC)';
+  nextAbs = formatStationDisplayTime(nextAt, tableId, { time: true });
+  var text = 'Next check in: ' + when + ' (' + nextAbs + ')';
   return { html: '<span class="next-check ' + cls + '">' + text + '</span>', text: text };
 }
 
@@ -730,8 +748,8 @@ function computeSummary(tableId, entries) {
   }
 
   // Compute across any available sensor values (T0 + satellite channels).
-  var tempKeys = ['t0Temp1', 't0Temp2', 't0Temp3', 'sat1Temp1', 'sat1Temp2', 'sat2Temp1', 'sat2Temp2', 'sat3Temp1', 'sat3Temp2'];
-  var humKeys = ['t0Hum1', 't0Hum2', 't0Hum3', 'sat1Hum1', 'sat1Hum2', 'sat2Hum1', 'sat2Hum2', 'sat3Hum1', 'sat3Hum2'];
+  var tempKeys = ['t0Temp1', 't0Temp2', 't0Temp3', 'sat1Temp1', 'sat1Temp2', 'sat2Temp1', 'sat2Temp2', 'sat3Temp1', 'sat3Temp2', 'sat4Temp1', 'sat4Temp2'];
+  var humKeys = ['t0Hum1', 't0Hum2', 't0Hum3', 'sat1Hum1', 'sat1Hum2', 'sat2Hum1', 'sat2Hum2', 'sat3Hum1', 'sat3Hum2', 'sat4Hum1', 'sat4Hum2'];
 
   // Freshness: online <=24h, stale 24-48h, offline >48h.
   var ageMins = (now - latest.timestamp.getTime()) / 60000;
@@ -742,6 +760,7 @@ function computeSummary(tableId, entries) {
   var lastSlot1 = findLast(entries, 'sat1BatPct');
   var lastSlot2 = findLast(entries, 'sat2BatPct');
   var lastSlot3 = findLast(entries, 'sat3BatPct');
+  var lastSlot4 = findLast(entries, 'sat4BatPct');
 
   function nodeHealth(lastEntry, batKey, fwKey) {
     if (!lastEntry) return { status: 'nc', bat: null, lastSeen: null, fw: null };
@@ -755,14 +774,21 @@ function computeSummary(tableId, entries) {
     return { status: status, bat: bat, lastSeen: lastEntry.timestamp, fw: lastEntry[fwKey] || null };
   }
 
+  var slot1Health = nodeHealth(lastSlot1, 'sat1BatPct', 'sat1FwVersion');
+  var slot2Health = nodeHealth(lastSlot2, 'sat2BatPct', 'sat2FwVersion');
+  var slot3Health = nodeHealth(lastSlot3, 'sat3BatPct', 'sat3FwVersion');
+  var slot4Health = nodeHealth(lastSlot4, 'sat4BatPct', 'sat4FwVersion');
+
   return {
     freshness: freshness,
     lastUpdate: latest.timestamp,
     entries: entries.length,
     t0: nodeHealth(lastT0, 't0BatPct', 't0FwVersion'),
-    slot1: nodeHealth(lastSlot1, 'sat1BatPct', 'sat1FwVersion'),
-    slot2: nodeHealth(lastSlot2, 'sat2BatPct', 'sat2FwVersion'),
-    slot3: nodeHealth(lastSlot3, 'sat3BatPct', 'sat3FwVersion'),
+    slots: { 1: slot1Health, 2: slot2Health, 3: slot3Health, 4: slot4Health },
+    slot1: slot1Health,
+    slot2: slot2Health,
+    slot3: slot3Health,
+    slot4: slot4Health,
     dataHealth: health,
     dayTempHigh:  peak(h24, tempKeys),
     dayTempLow:   minVal(h24, tempKeys),
@@ -790,9 +816,11 @@ function renderTableCard(table, summary) {
     summary = {
       freshness: 'nc', lastUpdate: null, entries: 0,
       t0:   { status: 'nc', bat: null, lastSeen: null, fw: null },
+      slots: {},
       slot1: { status: 'nc', bat: null, lastSeen: null, fw: null },
       slot2: { status: 'nc', bat: null, lastSeen: null, fw: null },
       slot3: { status: 'nc', bat: null, lastSeen: null, fw: null },
+      slot4: { status: 'nc', bat: null, lastSeen: null, fw: null },
       dataHealth: { actual: 0, expected: 0, pct: null },
       dayTempHigh: null, dayTempLow: null, dayHumHigh: null,
       weekTempHigh: null, weekHumHigh: null,
@@ -830,8 +858,12 @@ function renderTableCard(table, summary) {
   var satPctForTone = null;
   var satParts = [];
   var satPctVals = [];
-  [1, 2, 3].forEach(function(slotNumber) {
-    var slotSummary = summary['slot' + slotNumber];
+  var slotNumbers = summary.slots ? Object.keys(summary.slots).map(function(k) { return Number(k); }) : [];
+  [1, 2, 3, 4].forEach(function(slotNumber) {
+    if (slotNumbers.indexOf(slotNumber) < 0 && summary['slot' + slotNumber]) slotNumbers.push(slotNumber);
+  });
+  slotNumbers.sort(function(a, b) { return a - b; }).forEach(function(slotNumber) {
+    var slotSummary = summary.slots && summary.slots[slotNumber] ? summary.slots[slotNumber] : summary['slot' + slotNumber];
     if (!slotSummary || slotSummary.bat == null) return;
     var pct = Number(slotSummary.bat);
     if (!isFinite(pct)) return;
@@ -860,7 +892,7 @@ function renderTableCard(table, summary) {
     healthValue = datasetMeta.pillLabel;
     healthSub = datasetEndLabel + (datasetMeta.note ? ' | ' + datasetMeta.note : '');
   }
-  var updateInfo = formatDatasetUpdate(summary.lastUpdate);
+  var updateInfo = formatDatasetUpdate(summary.lastUpdate, table.id);
   var nextCheck = formatNextCheckIn(table.id, summary.lastUpdate, summary.dataHealth);
 
   var metrics =
@@ -983,23 +1015,25 @@ function edgeStationToSummary(st) {
   // T0 battery from root-level battery_pct (hub's latest sample)
   var t0Bat = st.battery_pct != null ? Number(st.battery_pct) : null;
 
-  // Satellite slot batteries from satellite_summary
-  var slot1 = { status: 'nc', bat: null, lastSeen: null, fw: null };
-  var slot2 = { status: 'nc', bat: null, lastSeen: null, fw: null };
+  // Satellite slot batteries from satellite_summary. Keep slot1/slot2 fields
+  // for older render paths, but expose the full dynamic slot map as well.
+  var slots = {};
   if (Array.isArray(st.satellite_summary)) {
     for (var i = 0; i < st.satellite_summary.length; i++) {
       var sl = st.satellite_summary[i];
-      var target = sl.slot_number === 1 ? slot1 : (sl.slot_number === 2 ? slot2 : null);
-      if (!target) continue;
+      var slotNumber = Number(sl.slot_number);
+      if (!isFinite(slotNumber) || slotNumber <= 0) continue;
       // Get battery from sensor_summary for this node rather than sync session
       var nodeKey = sl.node_id; // 'A' or 'B'
       var nodeSensor = st.sensor_summary && st.sensor_summary[nodeKey] ? st.sensor_summary[nodeKey] : null;
       var slotBat = nodeSensor && nodeSensor.battery_pct != null ? Number(nodeSensor.battery_pct) : null;
       var slotStatus = slotBat != null ? (slotBat > 80 ? 'green' : (slotBat < 30 ? 'red' : 'yellow')) : 'nc';
-      target.status = slotStatus;
-      target.bat = slotBat;
-      target.lastSeen = sl.last_sync ? new Date(sl.last_sync) : null;
-      target.fw = sl.fw_ver || null;
+      slots[slotNumber] = {
+        status: slotStatus,
+        bat: slotBat,
+        lastSeen: sl.last_sync ? new Date(sl.last_sync) : null,
+        fw: sl.fw_ver || null
+      };
     }
   }
 
@@ -1034,8 +1068,11 @@ function edgeStationToSummary(st) {
       lastSeen: lastUpdate,
       fw: st.fw_version || null
     },
-    slot1: slot1,
-    slot2: slot2,
+    slots: slots,
+    slot1: slots[1] || { status: 'nc', bat: null, lastSeen: null, fw: null },
+    slot2: slots[2] || { status: 'nc', bat: null, lastSeen: null, fw: null },
+    slot3: slots[3] || { status: 'nc', bat: null, lastSeen: null, fw: null },
+    slot4: slots[4] || { status: 'nc', bat: null, lastSeen: null, fw: null },
     dataHealth: { actual: actual, expected: expected, pct: healthPct },
     dayTempHigh: dayTempHigh,
     dayTempLow: null,   // RPC returns max; low is not shown on card

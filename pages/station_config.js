@@ -266,11 +266,17 @@ function setupAutoRefresh() {
 
 function fmtDate(d) {
   if (!d) return '--';
+  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+    return SeaweedV4.formatWithUtcOffset(d, window.__STATION && window.__STATION.displayTime, { year: true });
+  }
   return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
        + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
 function getTimezoneLabel() {
+  if (window.SeaweedV4 && typeof SeaweedV4.displayTimeLabel === 'function') {
+    return SeaweedV4.displayTimeLabel(window.__STATION && window.__STATION.displayTime);
+  }
   try {
     var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     var offset = new Date().getTimezoneOffset();
@@ -286,6 +292,12 @@ function timeRangeLabel() {
   var first = state.filteredEntries[0].timestamp;
   var last  = state.filteredEntries[state.filteredEntries.length - 1].timestamp;
   var rangeText = { day: 'Last 24 hours', week: 'Last 7 days', month: 'Last 30 days', all: 'All data' };
+  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+    return (rangeText[state.timeRange] || 'All data') + ' | ' +
+      SeaweedV4.formatWithUtcOffset(first, window.__STATION && window.__STATION.displayTime, { time: false, label: false }) + ' - ' +
+      SeaweedV4.formatWithUtcOffset(last, window.__STATION && window.__STATION.displayTime, { year: true, time: false }) +
+      ' (' + state.filteredEntries.length + ' points)';
+  }
   return (rangeText[state.timeRange] || 'All data') + ' | ' +
     first.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' - ' +
     last.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +

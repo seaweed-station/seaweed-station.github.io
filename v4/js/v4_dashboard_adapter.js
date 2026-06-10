@@ -32,13 +32,13 @@
     {
       id: "tb-02",
       station_uid: "ST-0102",
-      station_key: "tdb-02",
-      name: "TDB-02",
-      location: "V4 Superbase bench station",
+      station_key: "bati",
+      name: "Bati",
+      location: "Bati station",
       dataFolder: "data_tb-02",
       lat: -31.87,
       lon: 115.90,
-      weatherName: "TDB-02 / Perth bench",
+      weatherName: "Bati",
       tideStation: "perth",
       sensorMap: "perth",
       project_profile_id: "v4-clean-bench"
@@ -79,6 +79,14 @@
 
   function text(value) {
     return value == null ? "" : String(value).trim();
+  }
+
+  function normalizeDisplayTime(value) {
+    if (window.SeaweedV4 && typeof SeaweedV4.displayTimeLabel === "function") {
+      var raw = text(value);
+      return raw ? SeaweedV4.displayTimeLabel(raw) : "";
+    }
+    return text(value);
   }
 
   function v4EgressSafeMode() {
@@ -148,7 +156,8 @@
         datasetEndUtc: text(row.datasetEndUtc),
         datasetEndNote: text(row.datasetEndNote),
         lat: row.lat === "" || row.lat == null ? null : Number(row.lat),
-        lon: row.lon === "" || row.lon == null ? null : Number(row.lon)
+        lon: row.lon === "" || row.lon == null ? null : Number(row.lon),
+        displayTime: normalizeDisplayTime(row.displayTime || row.display_time)
       };
     });
     try { localStorage.setItem(STATION_META_KEY, JSON.stringify(map)); } catch (_) {}
@@ -171,7 +180,8 @@
         datasetEndUtc: text(row.datasetEndUtc),
         datasetEndNote: text(row.datasetEndNote),
         lat: row.lat === "" || row.lat == null ? null : Number(row.lat),
-        lon: row.lon === "" || row.lon == null ? null : Number(row.lon)
+        lon: row.lon === "" || row.lon == null ? null : Number(row.lon),
+        displayTime: normalizeDisplayTime(row.displayTime || row.display_time)
       };
     }).filter(function(row) {
       return row.station_uid || row.station_key;
@@ -201,6 +211,7 @@
           datasetEndNote: meta.datasetEndNote,
           lat: meta.lat,
           lon: meta.lon,
+          displayTime: normalizeDisplayTime(meta.displayTime),
           shared_station_metadata_at: new Date().toISOString()
         });
       });
@@ -267,6 +278,7 @@
     var presentation = station.presentation || {};
     var latValue = meta.lat !== undefined ? meta.lat : station.lat;
     var lonValue = meta.lon !== undefined ? meta.lon : station.lon;
+    var displayTimeValue = meta.displayTime !== undefined ? meta.displayTime : (station.displayTime || station.display_time);
     return {
       id: id,
       station_uid: text(station.station_uid),
@@ -287,7 +299,8 @@
       displayOrder: displayOrderValue(meta.displayOrder != null ? meta.displayOrder : station.displayOrder),
       datasetStatus: text(meta.datasetStatus || "active"),
       datasetEndUtc: text(meta.datasetEndUtc),
-      datasetEndNote: text(meta.datasetEndNote)
+      datasetEndNote: text(meta.datasetEndNote),
+      displayTime: normalizeDisplayTime(displayTimeValue)
     };
   }
 
@@ -311,6 +324,7 @@
       if (meta.enabled !== undefined) station.enabled = meta.enabled !== false;
       if (meta.lat !== undefined && meta.lat !== null && meta.lat !== "") station.lat = Number(meta.lat);
       if (meta.lon !== undefined && meta.lon !== null && meta.lon !== "") station.lon = Number(meta.lon);
+      station.displayTime = normalizeDisplayTime(meta.displayTime || station.displayTime);
       station.displayOrder = displayOrderValue(meta.displayOrder != null ? meta.displayOrder : station.displayOrder);
       return station;
     })).filter(function(station) {
@@ -337,6 +351,7 @@
         projectProfileId: station.project_profile_id,
         supabaseUrl: station.supabase_url || V4_SUPABASE_URL,
         supabaseAnonKey: station.supabase_anon_key || V4_SUPABASE_ANON_KEY,
+        displayTime: normalizeDisplayTime(station.displayTime),
         datasetStatus: "active"
       };
     });
@@ -381,7 +396,8 @@
         station_uid: station.station_uid,
         station_key: station.station_key,
         project_profile_id: station.project_profile_id,
-        displayOrder: station.displayOrder
+        displayOrder: station.displayOrder,
+        displayTime: normalizeDisplayTime(station.displayTime)
       };
     });
 
@@ -409,7 +425,7 @@
 
   function metadataSnapshotKey() {
     return JSON.stringify(stations().map(function(station) {
-      return [station.id, station.station_uid, station.station_key, station.enabled !== false, station.displayOrder];
+      return [station.id, station.station_uid, station.station_key, station.enabled !== false, station.displayOrder, normalizeDisplayTime(station.displayTime)];
     }));
   }
 
@@ -426,6 +442,12 @@
       var payload = bodyText ? JSON.parse(bodyText) : null;
       var rows = stationMetadataRows(payload);
       if (!rows.length) return { changed: false };
+      var localMap = stationMetadataMap();
+      rows = rows.map(function(row) {
+        if (row.displayTime) return row;
+        var local = localMap[row.station_uid] || localMap[row.station_key];
+        return local && local.displayTime ? Object.assign({}, row, { displayTime: local.displayTime }) : row;
+      });
       writeStationMetadataMap(rows);
       updateCachedCatalogStationMetadata(rows);
       applyRegistry();

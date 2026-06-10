@@ -6,22 +6,47 @@ function stationTz(stationId) {
   return s && s.tz ? s.tz : Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
 function stationTzShort(stationId) {
+  if (window.SeaweedV4 && typeof SeaweedV4.displayTimeLabel === 'function') {
+    return SeaweedV4.displayTimeLabel((STATIONS.find(function(st) { return st.id === stationId; }) || {}).displayTime);
+  }
   return 'UTC';
 }
 // Format a Date in UTC
 function fmtStationTime(date, stationId, opts) {
   if (!date || isNaN(date.getTime())) return '--';
+  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+    return SeaweedV4.formatWithUtcOffset(date, (STATIONS.find(function(st) { return st.id === stationId; }) || {}).displayTime, opts || {});
+  }
   var defaults = { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: false };
-  if (opts) { for (var k in opts) defaults[k] = opts[k]; }
+  opts = opts || {};
+  if (opts.weekday === true) defaults.weekday = 'short';
+  else if (typeof opts.weekday === 'string') defaults.weekday = opts.weekday;
+  if (opts.year === true) defaults.year = 'numeric';
+  else if (typeof opts.year === 'string') defaults.year = opts.year;
+  if (typeof opts.day === 'string') defaults.day = opts.day;
+  if (typeof opts.month === 'string') defaults.month = opts.month;
+  if (opts.time === false) {
+    delete defaults.hour;
+    delete defaults.minute;
+    delete defaults.hour12;
+  } else {
+    if (typeof opts.hour === 'string') defaults.hour = opts.hour;
+    if (typeof opts.minute === 'string') defaults.minute = opts.minute;
+    if (typeof opts.hour12 === 'boolean') defaults.hour12 = opts.hour12;
+  }
   return date.toLocaleString('en-GB', defaults);
 }
 // Get hour (0-23) in UTC
 function stationLocalHour(date, stationId) {
-  return date.getUTCHours();
+  var displayTime = (STATIONS.find(function(st) { return st.id === stationId; }) || {}).displayTime;
+  var offsetMin = window.SeaweedV4 && typeof SeaweedV4.parseUtcOffsetMinutes === 'function' ? SeaweedV4.parseUtcOffsetMinutes(displayTime) : 0;
+  return new Date(date.getTime() + offsetMin * 60000).getUTCHours();
 }
 // Get YYYY-MM-DD string in UTC
 function stationLocalDay(date, stationId) {
-  return date.toISOString().slice(0, 10);
+  var displayTime = (STATIONS.find(function(st) { return st.id === stationId; }) || {}).displayTime;
+  var offsetMin = window.SeaweedV4 && typeof SeaweedV4.parseUtcOffsetMinutes === 'function' ? SeaweedV4.parseUtcOffsetMinutes(displayTime) : 0;
+  return new Date(date.getTime() + offsetMin * 60000).toISOString().slice(0, 10);
 }
 
 
@@ -647,9 +672,10 @@ function estimateStationNextCheckIn(entries, stationId) {
       hour: '2-digit', minute: '2-digit', hour12: false,
       timeZone: 'UTC'
     });
+    statusAbs = fmtStationTime(nextFromStatus, stationId);
     return {
-      text: 'Next: ' + statusWhen + ' (' + statusAbs + ' UTC)',
-      summaryText: 'Next check in: ' + statusWhen + ' (' + statusAbs + ' UTC)',
+      text: 'Next: ' + statusWhen + ' (' + statusAbs + ')',
+      summaryText: 'Next check in: ' + statusWhen + ' (' + statusAbs + ')',
       cls: statusCls
     };
   }
@@ -717,9 +743,10 @@ function estimateStationNextCheckIn(entries, stationId) {
     hour: '2-digit', minute: '2-digit', hour12: false,
     timeZone: 'UTC'
   });
+  nextAbs = fmtStationTime(nextAt, stationId);
   return {
-    text: 'Next: ' + when + ' (' + nextAbs + ' UTC)',
-    summaryText: 'Next check in: ' + when + ' (' + nextAbs + ' UTC)',
+    text: 'Next: ' + when + ' (' + nextAbs + ')',
+    summaryText: 'Next check in: ' + when + ' (' + nextAbs + ')',
     cls: cls
   };
 }

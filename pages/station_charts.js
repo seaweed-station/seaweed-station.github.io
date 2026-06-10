@@ -395,6 +395,14 @@ function onSensorModalOptsChange() {
 }
 
 function baseChartOptions(yLabel, yMin, yMax) {
+  function displayChartTime(ms, opts) {
+    if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+      return SeaweedV4.formatWithUtcOffset(new Date(ms), window.__STATION && window.__STATION.displayTime, opts || {});
+    }
+    var d = new Date(ms);
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+      + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  }
   return {
     responsive: true, maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
@@ -408,16 +416,14 @@ function baseChartOptions(yLabel, yMin, yMax) {
         callbacks: {
           title: function (items) {
             if (!items.length) return '';
-            var d = new Date(items[0].parsed.x);
-            return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-                 + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+            return displayChartTime(items[0].parsed.x, { weekday: true, year: true });
           },
           label: function (ctx) { var v = ctx.parsed.y; return ' ' + ctx.dataset.label.split(' (')[0] + ': ' + (v !== null ? v.toFixed(2) : 'NC'); },
         },
       }
     },
     scales: {
-      x: { type: 'time', grid: { color: '#d6e3df', lineWidth: 0.7 }, ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 10 } }, time: getTimeAxisConfig() },
+      x: { type: 'time', adapters: { date: { zone: 'UTC' } }, grid: { color: '#d6e3df', lineWidth: 0.7 }, ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 10 }, callback: function(value) { return displayChartTime(value, { time: state.timeRange === 'day', label: false }); } }, time: getTimeAxisConfig() },
       y: { title: { display: true, text: yLabel, color: '#94a3b8', font: { size: 11 } }, grid: { color: '#d6e3df', lineWidth: 0.7 }, ticks: { color: '#64748b', font: { size: 10 } }, min: yMin, max: yMax },
     },
   };
@@ -597,11 +603,12 @@ function openSensorChartModal(chartKey) {
       scales: {
         x: {
           type: 'time',
+          adapters: { date: { zone: 'UTC' } },
           time: getTimeAxisConfig(),
           min: win.min,
           max: win.max,
           grid: { color: '#d6e3df', lineWidth: 0.7 },
-          ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 10 } }
+          ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 10 }, callback: function(value) { return displayChartTime(value, { time: _sensorModalRange === 'day', label: false }); } }
         },
         y: {
           title: { display: !!yTitle, text: yTitle, color: '#94a3b8', font: { size: 11 } },

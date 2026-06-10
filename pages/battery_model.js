@@ -73,6 +73,21 @@ window.BatteryModel = (function () {
     batteryCapacity_mAh: 3000,
   };
 
+  var HW_FIREBEETLE = {
+    sleepCurrent_mA:      0.5,    // INA260 near-zero band averaged ~0.27 mA; use conservative estimator default
+    sampleCurrent_mA:     60.2,   // measured N0008 routine sample pulse across extended capture
+    sampleDuration_s:     3.0,    // measured N0008 routine sample pulse across extended capture
+    sensorMs:             0,
+    sensorCurrent_mA:     0,
+    sensorCount:          1,      // intended FireBeetle deployment: single T/H sensor, no mux
+    rfCurrent_mA:         108.5,  // measured N0008 long RF/listen plateau
+    rfWindowDuration_s:   180,    // extended capture from 2026-05-28 onward averaged ~182 s
+    rfWindowsPerDay:      7,      // extended capture from 2026-05-28 onward: ~6.8 long windows/day
+    otherMahPerDay:       0,
+    batteryDerating:      0.85,
+    batteryCapacity_mAh:  3000,
+  };
+
   // ========================================================================
   // DRIFT + LISTEN-WINDOW HELPERS (mirror SatelliteProtocol.h computeXxx)
   // ========================================================================
@@ -351,6 +366,62 @@ window.BatteryModel = (function () {
   }
 
   // ========================================================================
+  // FIREBEETLE SATELLITE ENERGY MODEL
+  // ========================================================================
+  // cfg = { samplePeriod_s, sleepEnable, rfWindowsPerDay }
+  // N0008 INA260 reference: firmware 3.1.0+46/+48, capture 2026-05-26..31.
+  function calcFireBeetleDaily(cfg, hwOverrides) {
+    var hw = Object.assign({}, HW_FIREBEETLE, hwOverrides || {});
+
+    var samplePeriod = Math.max(10, cfg.samplePeriod_s || 600);
+    var sleepEn      = cfg.sleepEnable !== undefined ? !!cfg.sleepEnable : true;
+    var battCap      = hw.batteryCapacity_mAh;
+    var derating     = hw.batteryDerating;
+    var usable_mAh   = battCap * derating;
+    var samplesPerDay = Math.floor(86400 / samplePeriod);
+    var rfWindowsPerDay = Math.max(0, cfg.rfWindowsPerDay != null ? cfg.rfWindowsPerDay : hw.rfWindowsPerDay);
+
+    var sensorCount = hw.sensorCount || 0;
+    var sensor_s = (sensorCount * (hw.sensorMs || 0)) / 1000.0;
+    var sample_s = Math.max(0, hw.sampleDuration_s || 0) + sensor_s;
+    var sampleActivePerDay_s = samplesPerDay * sample_s;
+    var sampleMah =
+      (sampleActivePerDay_s * (hw.sampleCurrent_mA || 0)) / 3600.0 +
+      (samplesPerDay * sensor_s * (hw.sensorCurrent_mA || 0)) / 3600.0;
+
+    var rfActivePerDay_s = rfWindowsPerDay * Math.max(0, hw.rfWindowDuration_s || 0);
+    var rfMah = (rfActivePerDay_s * (hw.rfCurrent_mA || 0)) / 3600.0;
+
+    var totalActivePerDay_s = sampleActivePerDay_s + rfActivePerDay_s;
+    var idleTime_s = Math.max(0, 86400 - totalActivePerDay_s);
+    var sleepMah = sleepEn
+      ? (idleTime_s * (hw.sleepCurrent_mA || 0)) / 3600.0
+      : (idleTime_s * (hw.sampleCurrent_mA || 0)) / 3600.0;
+
+    var otherMah = Math.max(0, hw.otherMahPerDay || 0);
+    var dailyTotal_mAh = sleepMah + sampleMah + rfMah + otherMah;
+    var lifetimeDays = dailyTotal_mAh > 0 ? usable_mAh / dailyTotal_mAh : 0;
+
+    return {
+      dailyTotal_mAh: dailyTotal_mAh,
+      lifetimeDays: lifetimeDays,
+      usable_mAh: usable_mAh,
+      batteryCapacity: battCap,
+      derating: derating,
+      sleepMah: sleepMah,
+      sampleMah: sampleMah,
+      espNowMah: rfMah,
+      otherMah: otherMah,
+      rfActive_s: rfActivePerDay_s,
+      sampleActive_s: sampleActivePerDay_s,
+      samplePeriod_s: samplePeriod,
+      samplesPerDay: samplesPerDay,
+      rfWindowsPerDay: rfWindowsPerDay,
+      sleepEnabled: sleepEn,
+    };
+  }
+
+  // ========================================================================
   // PROJECTION: Generate predicted battery % curve from an anchor point
   // ========================================================================
   // startPct:   battery % at anchor (e.g. 91.8)
@@ -536,6 +607,7 @@ window.BatteryModel = (function () {
   return {
     calcT0Daily:              calcT0Daily,
     calcTEDaily:              calcTEDaily,
+    calcFireBeetleDaily:      calcFireBeetleDaily,
     projectCurve:             projectCurve,
     socToVoltage:             socToVoltage,
     estimateSagVoltage:       estimateSagVoltage,
@@ -550,6 +622,7 @@ window.BatteryModel = (function () {
     computeExpectedDriftSec:  computeExpectedDriftSec,
     HW_T0:                    HW_T0,
     HW_TE:                    HW_TE,
+    HW_FIREBEETLE:            HW_FIREBEETLE,
   };
 
 })();

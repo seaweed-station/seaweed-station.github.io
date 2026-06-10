@@ -301,7 +301,7 @@ if (typeof requireFeature === 'function') requireFeature('stationHealth', 'overv
 // Station configurations — derived from STATION_REGISTRY (seaweed_common.js)
 var _HEALTH_TZ = { perth: 'Australia/Perth', perth_table: 'Australia/Perth', shangani: 'Africa/Nairobi', funzi: 'Africa/Nairobi', spare: 'UTC' };
 var STATIONS_DEFAULT = STATION_REGISTRY.map(function(s) {
-  return { id: s.id, name: s.name, defaultFolder: s.dataFolder, configKey: s.id, type: 'gateway', tz: _HEALTH_TZ[s.id] || 'UTC' };
+  return { id: s.id, name: s.name, defaultFolder: s.dataFolder, configKey: s.id, type: 'gateway', tz: _HEALTH_TZ[s.id] || 'UTC', displayTime: s.displayTime || '' };
 });
 
 function buildConfiguredStations() {
@@ -331,6 +331,7 @@ function buildConfiguredStations() {
       out.name = p.name || base.name || p.id;
       out.configKey = p.id;
       out.defaultFolder = p.dataFolder || base.defaultFolder || ('data_' + p.id);
+      out.displayTime = p.displayTime || base.displayTime || '';
       return out;
     });
 }
@@ -741,7 +742,7 @@ function rebuildHealthStations(openStationIds, viewState) {
 </script>
 
 <!-- Sprint 6: Extracted health page modules -->
-<script src="../pages/health_station_utils.js?v=20260523dynslots"></script>
+<script src="../pages/health_station_utils.js?v=20260528plots"></script>
 <script src="../pages/health_chart_utils.js"></script>
 <script src="../pages/health_edge_fetch.js?v=20260523dynslots"></script>
 <script>
@@ -822,6 +823,7 @@ function renderStationSection(station, data) {
 
   function formatDatasetEndLabel(endMs) {
     if (!isFinite(endMs)) return '--';
+    if (typeof fmtStationTime === 'function') return fmtStationTime(new Date(endMs), stationId);
     return new Date(endMs).toLocaleString('en-GB', {
       timeZone: 'UTC',
       day: 'numeric', month: 'short',
@@ -836,7 +838,9 @@ function renderStationSection(station, data) {
     freshnessText = datasetMeta.statusLabel + ' (' + formatDatasetEndLabel(datasetMeta.endMs) + ')';
   } else if (hasData) {
     var ageHrs = Math.abs(Date.now() - e[e.length-1].timestamp.getTime()) / 3600000;
-    var latestStr = e[e.length-1].timestamp.toLocaleString('en-GB', { timeZone:'UTC', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) + ' UTC';
+    var latestStr = typeof fmtStationTime === 'function'
+      ? fmtStationTime(e[e.length-1].timestamp, stationId)
+      : e[e.length-1].timestamp.toLocaleString('en-GB', { timeZone:'UTC', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) + ' UTC';
     if (ageHrs <= 24) { freshnessClass = 'fresh-ok'; freshnessText = 'Online (' + timeAgo(e[e.length-1].timestamp) + ', ' + latestStr + ')'; }
     else if (ageHrs <= 48) { freshnessClass = 'fresh-stale'; freshnessText = 'Stale (' + timeAgo(e[e.length-1].timestamp) + ', ' + latestStr + ')'; }
     else { freshnessClass = 'fresh-old'; freshnessText = 'Offline (' + timeAgo(e[e.length-1].timestamp) + ', ' + latestStr + ')'; }

@@ -239,6 +239,12 @@ function chartOpts(yLabel, yMin, yMax, range, stationId, xMinMs, xMaxMs) {
     if (!d || isNaN(d.getTime())) d = new Date(v);
     return (d && !isNaN(d.getTime())) ? d : null;
   }
+  function tickLabel(v, includeTime) {
+    var d = tickDate(v);
+    if (!d) return this && typeof this.getLabelForValue === 'function' ? this.getLabelForValue(v) : '';
+    if (typeof fmtStationTime === 'function') return fmtStationTime(d, stationId, { time: includeTime !== false, label: false });
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+  }
   // UTC timezone for Luxon adapter
   var adapters = { date: { zone: 'UTC' } };
   return {
@@ -248,7 +254,15 @@ function chartOpts(yLabel, yMin, yMax, range, stationId, xMinMs, xMaxMs) {
     interaction: { mode: 'nearest', axis: 'x', intersect: false },
     plugins: {
       legend: { display: true, position: 'top', labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 12, padding: 8, filter: defaultLegendDatasetFilter } },
-      tooltip: { backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8', borderColor: '#334155', borderWidth: 1 },
+      tooltip: {
+        backgroundColor: '#1e293b', titleColor: '#f1f5f9', bodyColor: '#94a3b8', borderColor: '#334155', borderWidth: 1,
+        callbacks: {
+          title: function(items) {
+            if (!items || !items.length) return '';
+            return tickLabel(items[0].parsed.x, true);
+          }
+        }
+      },
     },
     scales: {
       x: { type: 'time', time: xTime, adapters: adapters,
@@ -262,14 +276,12 @@ function chartOpts(yLabel, yMin, yMax, range, stationId, xMinMs, xMaxMs) {
           major: { enabled: range === 'week' || range === 'month' },
           callback: function(value, index, ticks) {
             if (range === 'week') {
-              var dayTick = tickDate(value);
-              return dayTick ? dayTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);
+              return tickLabel.call(this, value, false);
             }
             if (range === 'month') {
-              var monthTick = tickDate(value);
-              return monthTick ? monthTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);
+              return tickLabel.call(this, value, false);
             }
-            return this.getLabelForValue(value);
+            return range === 'day' ? tickLabel.call(this, value, true) : this.getLabelForValue(value);
           }
         },
         grid: {

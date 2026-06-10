@@ -54,6 +54,7 @@ function renderDailyHealth(container, entries, stationId) {
 
   function formatDatasetEndLabel(endMs) {
     if (!isFinite(endMs)) return '--';
+    if (typeof fmtStationTime === 'function') return fmtStationTime(new Date(endMs), stationId);
     return new Date(endMs).toLocaleString('en-GB', {
       day: '2-digit', month: 'short',
       hour: '2-digit', minute: '2-digit', hour12: false,
@@ -550,6 +551,9 @@ function renderDailyHealth(container, entries, stationId) {
     var dl  = new Date(day + 'T12:00:00Z'); // noon UTC avoids day-boundary shifts
     var tz  = stationId ? stationTz(stationId) : undefined;
     var dateLabel = dl.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', weekday: 'short' });
+    if (typeof fmtStationTime === 'function') {
+      dateLabel = fmtStationTime(dl, stationId, { weekday: true, time: false, label: false });
+    }
     if (datasetEndDayKey && day === datasetEndDayKey) {
       dateLabel += ' <span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:var(--warning-dim);color:var(--warning);font-size:0.68rem;font-weight:700">' + escHtml(datasetMeta.pillLabel) + '</span>';
     }

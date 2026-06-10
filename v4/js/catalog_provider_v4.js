@@ -17,6 +17,52 @@
     return String(value == null ? "" : value).trim();
   }
 
+  function parseUtcOffsetMinutes(value) {
+    var raw = text(value);
+    if (!raw || /^(utc|gmt|z)$/i.test(raw)) return 0;
+    var compact = raw.replace(/\s+/g, "").replace(/^GMT/i, "UTC");
+    var match = /^(?:UTC)?([+-])(\d{1,2})(?::?(\d{2}))?$/i.exec(compact);
+    if (!match) return 0;
+    var hours = Number(match[2]);
+    var minutes = match[3] == null ? 0 : Number(match[3]);
+    if (!isFinite(hours) || !isFinite(minutes) || hours > 14 || minutes >= 60) return 0;
+    var total = hours * 60 + minutes;
+    return match[1] === "-" ? -total : total;
+  }
+
+  function normalizeDisplayTime(value) {
+    var raw = text(value);
+    if (!raw) return "";
+    var minutes = parseUtcOffsetMinutes(raw);
+    if (!minutes) return "UTC +0";
+    var sign = minutes < 0 ? "-" : "+";
+    var abs = Math.abs(minutes);
+    var hours = Math.floor(abs / 60);
+    var mins = abs % 60;
+    return "UTC " + sign + hours + (mins ? ":" + String(mins).padStart(2, "0") : "");
+  }
+
+  function displayTimeLabel(value) {
+    return normalizeDisplayTime(value) || "UTC +0";
+  }
+
+  function formatWithUtcOffset(value, displayTime, options) {
+    if (!value) return "--";
+    var d = value instanceof Date ? value : new Date(value);
+    if (isNaN(d.getTime())) return text(value) || "--";
+    options = options || {};
+    var shifted = new Date(d.getTime() + parseUtcOffsetMinutes(displayTime) * 60000);
+    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    var datePart = String(shifted.getUTCDate()).padStart(2, "0") + " " + months[shifted.getUTCMonth()];
+    if (options.year) datePart += " " + shifted.getUTCFullYear();
+    if (options.weekday) datePart = weekdays[shifted.getUTCDay()] + " " + datePart;
+    if (options.time === false) return datePart + (options.label === false ? "" : " " + displayTimeLabel(displayTime));
+    return datePart + " " + String(shifted.getUTCHours()).padStart(2, "0") + ":" +
+      String(shifted.getUTCMinutes()).padStart(2, "0") +
+      (options.label === false ? "" : " " + displayTimeLabel(displayTime));
+  }
+
   function escapeHtml(value) {
     return text(value)
       .replace(/&/g, "&amp;")
@@ -86,7 +132,8 @@
         datasetEndUtc: text(row.datasetEndUtc),
         datasetEndNote: text(row.datasetEndNote),
         lat: row.lat === "" || row.lat == null ? null : Number(row.lat),
-        lon: row.lon === "" || row.lon == null ? null : Number(row.lon)
+        lon: row.lon === "" || row.lon == null ? null : Number(row.lon),
+        displayTime: normalizeDisplayTime(row.displayTime || row.display_time)
       };
     });
     localStorage.setItem(STATION_META_KEY, JSON.stringify(map));
@@ -116,7 +163,8 @@
       datasetEndUtc: text(row.datasetEndUtc),
       datasetEndNote: text(row.datasetEndNote),
       lat: row.lat === "" || row.lat == null ? null : Number(row.lat),
-      lon: row.lon === "" || row.lon == null ? null : Number(row.lon)
+      lon: row.lon === "" || row.lon == null ? null : Number(row.lon),
+      displayTime: normalizeDisplayTime(row.displayTime || row.display_time)
     };
   }
 
@@ -160,7 +208,8 @@
         datasetEndUtc: meta.datasetEndUtc,
         datasetEndNote: meta.datasetEndNote,
         lat: meta.lat,
-        lon: meta.lon
+        lon: meta.lon,
+        displayTime: normalizeDisplayTime(meta.displayTime)
       });
     });
     catalog.shared_station_metadata_at = new Date().toISOString();
@@ -195,6 +244,14 @@
       body: "{}"
     });
     var rows = stationMetadataRows(res);
+    if (rows.length) {
+      var localMap = readStationMetadataMap();
+      rows = rows.map(function(row) {
+        if (row.displayTime) return row;
+        var local = localMap[row.station_uid] || localMap[row.station_key];
+        return local && local.displayTime ? Object.assign({}, row, { displayTime: local.displayTime }) : row;
+      });
+    }
     if (rows.length) writeStationMetadataMap(rows);
     return rows;
   }
@@ -299,6 +356,7 @@
     var meta = metadataForStation(row, stationUid, stationKey, legacyId);
     var latValue = meta.lat !== undefined ? meta.lat : row.lat;
     var lonValue = meta.lon !== undefined ? meta.lon : row.lon;
+    var displayTimeValue = meta.displayTime !== undefined ? meta.displayTime : (row.displayTime || row.display_time);
     return Object.assign({}, row, {
       station_uid: stationUid,
       station_key: stationKey,
@@ -323,6 +381,7 @@
       datasetEndNote: text(meta.datasetEndNote),
       lat: latValue === "" || latValue == null ? null : Number(latValue),
       lon: lonValue === "" || lonValue == null ? null : Number(lonValue),
+      displayTime: normalizeDisplayTime(displayTimeValue),
       data_folder: text(row.data_folder)
     });
   }
@@ -617,6 +676,18 @@
       throw err;
     }
     var savedRows = stationMetadataRows(res);
+    if (savedRows.length) {
+      var submittedByKey = {};
+      sanitized.forEach(function(row) {
+        if (row.station_uid) submittedByKey[row.station_uid] = row;
+        if (row.station_key) submittedByKey[row.station_key] = row;
+      });
+      savedRows = savedRows.map(function(row) {
+        if (row.displayTime) return row;
+        var submitted = submittedByKey[row.station_uid] || submittedByKey[row.station_key];
+        return submitted && submitted.displayTime ? Object.assign({}, row, { displayTime: submitted.displayTime }) : row;
+      });
+    }
     writeStationMetadataMap(savedRows.length ? savedRows : sanitized);
     return savedRows.length ? savedRows : sanitized;
   }
@@ -1178,6 +1249,7 @@
     fetchStationReview: fetchStationReview,
     fetchStationSamples: fetchStationSamples,
     formatTime: formatTime,
+    formatWithUtcOffset: formatWithUtcOffset,
     getOtaBaseUrl: getOtaBaseUrl,
     isAuthenticated: isAuthenticated,
     loadCatalog: loadCatalog,
@@ -1197,6 +1269,8 @@
     pushV4AlertSettings: pushV4AlertSettings,
     pushStationMetadataToSupabase: pushStationMetadataToSupabase,
     pushTableConfigRows: pushTableConfigRows,
+    parseUtcOffsetMinutes: parseUtcOffsetMinutes,
+    displayTimeLabel: displayTimeLabel,
     text: text,
     timeAgo: timeAgo,
     value: value

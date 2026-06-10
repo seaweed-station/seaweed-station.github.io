@@ -839,6 +839,15 @@ function hasSlotData(entries, slotNumber) {
 function getStationSlotAssignments(stationId, entries, deviceSlotsById) {
   var stationKey = String(stationId || '').trim().toLowerCase();
   var slotMap = deviceSlotsById && stationKey ? deviceSlotsById[stationKey] : null;
+  if (!slotMap && deviceSlotsById && typeof deviceSlotsById === 'object') {
+    var flatKeys = Object.keys(deviceSlotsById);
+    var flatNumericSlots = flatKeys.filter(function(key) {
+      return isFinite(Number(deviceSlotsById[key]));
+    });
+    if (flatNumericSlots.length === flatKeys.length && flatKeys.length) {
+      slotMap = deviceSlotsById;
+    }
+  }
   var assignments = [];
   var seenSlots = {};
 
@@ -887,6 +896,11 @@ function getStationSlotDisplayName(stationId, slotNumberOrNodeLetter, deviceSlot
   return 'Satellite';
 }
 
+function isPerthTestBedStation(stationId) {
+  var key = String(stationId || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return key === 'perth_table' || key === 'perth_test_bed' || key === 'st_0103';
+}
+
 function buildStationSensorDefinitions(stationId, entries, deviceSlotsById, sensorColors) {
   sensorColors = sensorColors || {};
   var definitions = [
@@ -909,6 +923,44 @@ function buildStationSensorDefinitions(stationId, entries, deviceSlotsById, sens
       color: sensorColors.t0s3, nodeLetter: 'H'
     }
   ];
+
+  if (isPerthTestBedStation(stationId)) {
+    definitions.push(
+      {
+        sensorIndex: 4, sensorId: 'S4',
+        legendLabel: 'S4 (Virtual.S1)', shortLabel: 'Virtual.S1',
+        tempKey: 'sat1Temp1', humKey: 'sat1Hum1',
+        color: sensorColors.slot1s1,
+        slotNumber: 1, satelliteNumber: 1,
+        displayName: 'Virtual Satellite (Slot 1)'
+      },
+      {
+        sensorIndex: 5, sensorId: 'S5',
+        legendLabel: 'S5 (Virtual.S2)', shortLabel: 'Virtual.S2',
+        tempKey: 'sat1Temp2', humKey: 'sat1Hum2',
+        color: sensorColors.slot1s2,
+        slotNumber: 1, satelliteNumber: 1,
+        displayName: 'Virtual Satellite (Slot 1)'
+      },
+      {
+        sensorIndex: 6, sensorId: 'S6',
+        legendLabel: 'S6 (Light board)', shortLabel: 'Light board',
+        tempKey: 'sat2Temp1', humKey: 'sat2Hum1',
+        color: sensorColors.slot2s1,
+        slotNumber: 2, satelliteNumber: 2,
+        displayName: 'Light Satellite (Slot 2)'
+      },
+      {
+        sensorIndex: 7, sensorId: 'S7',
+        legendLabel: 'S7 (Anemometer)', shortLabel: 'Anemometer',
+        tempKey: 'sat3Temp1', humKey: 'sat3Hum1',
+        color: sensorColors.slot3s1,
+        slotNumber: 3, satelliteNumber: 3,
+        displayName: 'Anemometer Satellite (Slot 3)'
+      }
+    );
+    return definitions;
+  }
 
   var slots = getStationSlotAssignments(stationId, entries, deviceSlotsById);
   for (var i = 0; i < slots.length; i++) {

@@ -192,6 +192,11 @@ function applyModalLineRange(range, observedBounds) {
   xScale.ticks.autoSkip = axisCfg.autoSkip;
   xScale.ticks.major = { enabled: range === 'week' || range === 'month' };
   xScale.ticks.callback = function(value) {
+    var stationId = _modalSource && _modalSource.stationId ? _modalSource.stationId : null;
+    var d = tickDate(value);
+    if (d && typeof fmtStationTime === 'function' && (range === 'day' || range === 'week' || range === 'month')) {
+      return fmtStationTime(d, stationId, { time: range === 'day', label: false });
+    }
     if (range === 'week' || range === 'month') {
       var dayTick = tickDate(value);
       return dayTick ? dayTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);
@@ -321,6 +326,11 @@ function openChartModal(title, srcCanvas) {
                  autoSkip: axisCfg.autoSkip,
                  major: { enabled: mRange === 'week' || mRange === 'month' },
                  callback: function(value, index, ticks) {
+                   var stationId = _modalSource && _modalSource.stationId ? _modalSource.stationId : null;
+                   var localTick = tickDate(value);
+                   if (localTick && typeof fmtStationTime === 'function' && (mRange === 'day' || mRange === 'week' || mRange === 'month')) {
+                     return fmtStationTime(localTick, stationId, { time: mRange === 'day', label: false });
+                   }
                    if (mRange === 'week') {
                      var dayTick = tickDate(value);
                      return dayTick ? dayTick.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' }) : this.getLabelForValue(value);

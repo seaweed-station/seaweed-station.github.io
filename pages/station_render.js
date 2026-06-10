@@ -8,6 +8,9 @@
 var _renderTimer = null;
 function formatDatasetEndUtcLabel(endMs) {
   if (!isFinite(endMs)) return '--';
+  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+    return SeaweedV4.formatWithUtcOffset(new Date(endMs), window.__STATION && window.__STATION.displayTime);
+  }
   return new Date(endMs).toLocaleString('en-GB', {
     day: '2-digit', month: 'short',
     hour: '2-digit', minute: '2-digit', hour12: false,
@@ -193,7 +196,12 @@ function estimateNextCheckIn(entries, preferredNextAt) {
       hour: '2-digit', minute: '2-digit', hour12: false,
       timeZone: 'UTC'
     });
-    return { text: 'Next check in: ' + statusWhen + ' (' + statusAbs + ' UTC)', state: statusState };
+    if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+      statusAbs = SeaweedV4.formatWithUtcOffset(preferredNextAt, window.__STATION && window.__STATION.displayTime);
+    } else {
+      statusAbs += ' UTC';
+    }
+    return { text: 'Next check in: ' + statusWhen + ' (' + statusAbs + ')', state: statusState };
   }
 
   if (!entries || entries.length < 2) {
@@ -239,7 +247,12 @@ function estimateNextCheckIn(entries, preferredNextAt) {
     hour: '2-digit', minute: '2-digit', hour12: false,
     timeZone: 'UTC'
   });
-  return { text: 'Next check in: ' + when + ' (' + nextAbs + ' UTC)', state: state };
+  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+    nextAbs = SeaweedV4.formatWithUtcOffset(nextAt, window.__STATION && window.__STATION.displayTime);
+  } else {
+    nextAbs += ' UTC';
+  }
+  return { text: 'Next check in: ' + when + ' (' + nextAbs + ')', state: state };
 }
 
 // =====================================================================
@@ -314,7 +327,14 @@ function updatePeaksTable() {
   var datasetEndDayKey = datasetMeta ? datasetMeta.endDayKey : null;
 
   var byDay = {};
-  entries.forEach(function (e) { var day = e.timestamp.toISOString().slice(0, 10); if (!byDay[day]) byDay[day] = []; byDay[day].push(e); });
+  entries.forEach(function (e) {
+    var day = e.timestamp.toISOString().slice(0, 10);
+    if (window.SeaweedV4 && typeof SeaweedV4.parseUtcOffsetMinutes === 'function') {
+      day = new Date(e.timestamp.getTime() + SeaweedV4.parseUtcOffsetMinutes(window.__STATION && window.__STATION.displayTime) * 60000).toISOString().slice(0, 10);
+    }
+    if (!byDay[day]) byDay[day] = [];
+    byDay[day].push(e);
+  });
 
   function fieldStats(dayEntries, key) {
     var vals = dayEntries.map(function (e) { return e[key]; }).filter(function (v) { return v !== null && v !== undefined; });
@@ -412,6 +432,9 @@ function updatePeaksTable() {
     var de2    = byDay[day2];
     var dl2    = new Date(day2 + 'T00:00:00Z');
     var dateLabel2 = dl2.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', weekday: 'short' });
+    if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+      dateLabel2 = SeaweedV4.formatWithUtcOffset(dl2, '', { weekday: true, time: false, label: false });
+    }
     if (datasetEndDayKey && day2 === datasetEndDayKey) {
       dateLabel2 += ' <span style="display:inline-block;margin-left:6px;padding:2px 8px;border-radius:999px;background:var(--warning-dim);color:var(--warning);font-size:0.68rem;font-weight:700">' + escHtml(datasetMeta.pillLabel) + '</span>';
     }

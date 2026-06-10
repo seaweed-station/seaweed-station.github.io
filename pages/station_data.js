@@ -571,13 +571,24 @@ async function fetchSamplesRawStationDetailFallback(reason) {
 function edgePayloadToEntries(payload) {
   if (!payload || !Array.isArray(payload.feeds)) return [];
   var discoveredSlots = [];
+  function addDiscoveredSlot(slotLike) {
+    var sn = Number(slotLike);
+    if (sn && discoveredSlots.indexOf(sn) < 0) discoveredSlots.push(sn);
+  }
   if (payload.slot_map) {
     var keys = Object.keys(payload.slot_map);
     for (var i = 0; i < keys.length; i++) {
-      var sn = Number(payload.slot_map[keys[i]]);
-      if (sn && discoveredSlots.indexOf(sn) < 0) discoveredSlots.push(sn);
+      addDiscoveredSlot(payload.slot_map[keys[i]]);
     }
   }
+  for (var fi = 0; fi < payload.feeds.length; fi++) {
+    var feed = payload.feeds[fi] || {};
+    Object.keys(feed).forEach(function(key) {
+      var match = /^sat_(\d+)_/.exec(key);
+      if (match) addDiscoveredSlot(match[1]);
+    });
+  }
+  discoveredSlots.sort(function(a, b) { return a - b; });
   if (!discoveredSlots.length) discoveredSlots = [1, 2];
 
   return payload.feeds.map(function(f) {
@@ -873,7 +884,9 @@ function exportCSV() {
     function v(x) { return (x === null || x === undefined) ? '' : x; }
     var row = [
       e.timestamp.toISOString(),
-      e.timestamp.toLocaleString('en-GB'),
+      (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function')
+        ? SeaweedV4.formatWithUtcOffset(e.timestamp, window.__STATION && window.__STATION.displayTime, { year: true })
+        : e.timestamp.toLocaleString('en-GB'),
       e.entryId,
       v(e.t0BatPct), v(e.t0BatV), v(e.t0Rssi), v(e.t0Boot), v(e.t0Heap),
       v(e.t0Temp1), v(e.t0Hum1), v(e.t0Temp2), v(e.t0Hum2), v(e.t0Temp3), v(e.t0Hum3),

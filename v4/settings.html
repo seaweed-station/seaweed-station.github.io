@@ -48,7 +48,7 @@
     <div class="band-head"><h2>Station Visibility &amp; Metadata</h2><span class="status-line">Access roles use this same enabled V4 station list.</span></div>
     <div class="band-body">
       <div class="notice">
-        Display order, install date, dataset pause status, end date, note, and coordinates are pulled from V4 Supabase when available, with this browser's local copy used as fallback.
+        Display order, install date, dataset pause status, end date, note, coordinates, and display time are pulled from V4 Supabase when available, with this browser's local copy used as fallback.
       </div>
       <div class="toolbar" style="margin-top:12px">
         <button class="btn" id="refreshStationsBtn" type="button">Refresh from V4 Catalog</button>
@@ -56,7 +56,7 @@
         <span class="status-line" id="stationMetaStatus"></span>
       </div>
     </div>
-    <div class="table-wrap"><table class="data-table station-meta-table"><thead><tr><th>Order</th><th>Enabled</th><th>Station</th><th>Install Date</th><th>Dataset</th><th>End Date</th><th>Note</th><th>Lat</th><th>Lon</th></tr></thead><tbody id="stationRows"></tbody></table></div>
+    <div class="table-wrap"><table class="data-table station-meta-table"><thead><tr><th>Order</th><th>Enabled</th><th>Station</th><th>Install Date</th><th>Dataset</th><th>End Date</th><th>Note</th><th>Lat</th><th>Lon</th><th>Display Time</th></tr></thead><tbody id="stationRows"></tbody></table></div>
   </section>
 
   <section class="band" id="accessRolesSection">
@@ -152,8 +152,9 @@
         '<td><input type="text" data-role="datasetNote" placeholder="Units shipped, paused" value="' + SeaweedV4.escapeHtml(row.datasetEndNote || '') + '"></td>' +
         '<td><input type="text" data-role="lat" value="' + SeaweedV4.escapeHtml(row.lat == null ? '' : row.lat) + '"></td>' +
         '<td><input type="text" data-role="lon" value="' + SeaweedV4.escapeHtml(row.lon == null ? '' : row.lon) + '"></td>' +
+        '<td><input type="text" data-role="displayTime" placeholder="UTC +6" value="' + SeaweedV4.escapeHtml(row.displayTime || '') + '"></td>' +
       '</tr>';
-    }).join('') : emptyRow(9, 'No V4 stations returned.');
+    }).join('') : emptyRow(10, 'No V4 stations returned.');
     updateStationOrderControls();
     stationRows.querySelectorAll('[data-order-move]').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -204,7 +205,8 @@
         datasetEndUtc: dateInputToUtc(get('datasetEnd'), true),
         datasetEndNote: get('datasetNote'),
         lat: get('lat'),
-        lon: get('lon')
+        lon: get('lon'),
+        displayTime: get('displayTime')
       });
     });
     return rows;
@@ -354,7 +356,7 @@
         (catalog.shared_station_metadata_error ? ' Shared metadata fallback: ' + catalog.shared_station_metadata_error : ' Shared metadata loaded when available.');
     } catch (err) {
       profileRows.innerHTML = emptyRow(6, 'Catalog failed.');
-      stationRows.innerHTML = emptyRow(9, 'Catalog failed.');
+      stationRows.innerHTML = emptyRow(10, 'Catalog failed.');
       statusEl.textContent = 'Catalog failed: ' + (err.message || 'unknown error');
     }
   }

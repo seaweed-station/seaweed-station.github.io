@@ -1072,6 +1072,7 @@ body {
       mapLat: s.lat,
       mapLon: s.lon,
       weather: buildWeatherLocation(s.weatherName || s.name, s.lat, s.lon),
+      displayTime: s.displayTime || '',
       tideStation: s.tideStation || 'kenya',
       satellites: 2,
       sensorMap: s.sensorMap || 'funzi'
@@ -1135,6 +1136,7 @@ body {
         }
         var weatherLabel = (base.weather && base.weather.name) ? base.weather.name : merged.title;
         merged.weather = buildWeatherLocation(weatherLabel, merged.mapLat, merged.mapLon);
+        merged.displayTime = p.displayTime || base.displayTime || '';
         out[id] = merged;
       });
     }
