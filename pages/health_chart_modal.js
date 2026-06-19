@@ -373,6 +373,11 @@ function openChartModal(title, srcCanvas) {
     options: modalOpts
   });
   applyModalZoomLimits(_modalSource.allBounds || _modalSource.observedBounds);
+  requestAnimationFrame(function() {
+    if (!_modalChart) return;
+    _modalChart.resize();
+    _modalChart.update('none');
+  });
   updateModalToggleControls();
 }
 
@@ -546,6 +551,7 @@ async function setModalRange(range) {
     }
     applyModalLineRange(range, _modalSource.observedBounds);
     applyModalZoomLimits(_modalSource.allBounds || _modalSource.observedBounds);
+    _modalChart.resize();
     _modalChart.update('none');
     updateModalRangeControls();
     updateModalToggleControls();
@@ -569,7 +575,10 @@ async function setModalRange(range) {
   if (_modalSource) _modalSource.modalRange = range;
   updateModalTitleForRange(range);
   applyModalDatasetVisibilityState(visibilityState);
-  if (_modalChart) _modalChart.update('none');
+  if (_modalChart) {
+    _modalChart.resize();
+    _modalChart.update('none');
+  }
   updateModalRangeControls();
   updateModalToggleControls();
 }

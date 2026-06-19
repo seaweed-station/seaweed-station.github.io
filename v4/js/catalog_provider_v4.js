@@ -14,6 +14,14 @@
   var ROOT_COMPAT_PASSWORD = "k";
   var CATALOG_TTL_MS = 2 * 60 * 1000;
 
+  var CANONICAL_BATI_STATION = {
+    station_uid: "ST-0102",
+    station_key: "bati",
+    station_name: "Bati",
+    legacy_device_id: "tb-02",
+    data_folder: "data_tb-02"
+  };
+
   function text(value) {
     return String(value == null ? "" : value).trim();
   }
@@ -77,6 +85,30 @@
     var raw = text(value) || text(fallback) || "station";
     var out = raw.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
     return out || "station";
+  }
+
+  function isBatiCatalogRow(row) {
+    if (!row) return false;
+    var keys = [
+      text(row.station_uid).toLowerCase(),
+      text(row.station_key).toLowerCase(),
+      text(row.legacy_device_id).toLowerCase(),
+      text(row.station_name).toLowerCase()
+    ];
+    (Array.isArray(row.historical_source_keys) ? row.historical_source_keys : []).forEach(function(item) {
+      keys.push(text(item).toLowerCase());
+    });
+    return keys.indexOf("st-0102") !== -1 || keys.indexOf("tb-02") !== -1 || keys.indexOf("bati") !== -1;
+  }
+
+  function applyCanonicalBatiStation(row) {
+    if (!isBatiCatalogRow(row)) return row;
+    var historical = Array.isArray(row.historical_source_keys) ? row.historical_source_keys.slice() : [];
+    if (historical.indexOf(CANONICAL_BATI_STATION.legacy_device_id) === -1) historical.unshift(CANONICAL_BATI_STATION.legacy_device_id);
+    return Object.assign({}, row, CANONICAL_BATI_STATION, {
+      historical_source_keys: historical,
+      catalog_aliases: ["st-0102", "bati", "tb-02"].concat(historical.map(function(item) { return text(item).toLowerCase(); }))
+    });
   }
 
   function uniqueKey(base, used) {
@@ -359,7 +391,7 @@
     var latValue = meta.lat !== undefined ? meta.lat : row.lat;
     var lonValue = meta.lon !== undefined ? meta.lon : row.lon;
     var displayTimeValue = meta.displayTime !== undefined ? meta.displayTime : (row.displayTime || row.display_time);
-    return Object.assign({}, row, {
+    return applyCanonicalBatiStation(Object.assign({}, row, {
       station_uid: stationUid,
       station_key: stationKey,
       station_name: stationName,
@@ -385,7 +417,7 @@
       lon: lonValue === "" || lonValue == null ? null : Number(lonValue),
       displayTime: normalizeDisplayTime(displayTimeValue),
       data_folder: text(row.data_folder)
-    });
+    }));
   }
 
   function transformStationInventory(payload) {

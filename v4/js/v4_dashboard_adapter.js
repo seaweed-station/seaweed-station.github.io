@@ -5,13 +5,13 @@
   var V4_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5b2lobHd0dmRzaHRsempkb2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MTA4MTksImV4cCI6MjA5MjI4NjgxOX0.i3jy8WlSF72v7Ypb2ulkL12EJaDfGcDYbdiC--PgjOc";
   var CATALOG_CACHE_KEY = "sw_v4_local_station_catalog";
   var STATION_META_KEY = "sw_v4_local_station_metadata";
-  var V4_SAFE_POINT_CAP = 300;
-  var V4_NORMAL_POINT_CAP = 1000;
-  var V4_SAFE_ROW_CAP = 1500;
-  var V4_NORMAL_ROW_CAP = 6000;
-  var V4_HISTORY_SAFE_ROW_CAP = 6000;
-  var V4_HISTORY_NORMAL_ROW_CAP = 20000;
-  var V4_HISTORY_PAGE_SIZE = 500;
+  var V4_SAFE_POINT_CAP = 6000;
+  var V4_NORMAL_POINT_CAP = 9000;
+  var V4_SAFE_ROW_CAP = 12000;
+  var V4_NORMAL_ROW_CAP = 24000;
+  var V4_HISTORY_SAFE_ROW_CAP = 60000;
+  var V4_HISTORY_NORMAL_ROW_CAP = 90000;
+  var V4_HISTORY_PAGE_SIZE = 1000;
   var V4_HISTORY_WINDOW_DAYS = 14;
 
   var STATIC_V4_STATIONS = [
@@ -72,6 +72,20 @@
       project_profile_id: "v4-clean-bench"
     }
   ];
+
+  var CANONICAL_V4_STATION_PATCHES = {
+    "st-0102": {
+      id: "tb-02",
+      station_key: "bati",
+      name: "Bati",
+      location: "Bati station",
+      dataFolder: "data_tb-02",
+      weatherName: "Bati",
+      tideStation: "perth",
+      sensorMap: "bati",
+      project_profile_id: "v4-clean-bench"
+    }
+  };
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -270,6 +284,25 @@
     return !!text(station.station_uid);
   }
 
+  function canonicalV4StationPatch(station) {
+    if (!station) return null;
+    var keys = [
+      text(station.station_uid).toLowerCase(),
+      text(station.id).toLowerCase(),
+      text(station.station_key).toLowerCase(),
+      text(station.name).toLowerCase()
+    ];
+    if (keys.indexOf("st-0102") !== -1 || keys.indexOf("tb-02") !== -1 || keys.indexOf("bati") !== -1) {
+      return CANONICAL_V4_STATION_PATCHES["st-0102"];
+    }
+    return null;
+  }
+
+  function applyCanonicalV4Station(station) {
+    var patch = canonicalV4StationPatch(station);
+    return patch ? Object.assign({}, station, patch) : station;
+  }
+
   function stationFromCatalog(station) {
     var stationKey = slug(station.station_key || station.station_name || station.station_uid);
     var legacyId = text(station.legacy_device_id || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -279,7 +312,7 @@
     var latValue = meta.lat !== undefined ? meta.lat : station.lat;
     var lonValue = meta.lon !== undefined ? meta.lon : station.lon;
     var displayTimeValue = meta.displayTime !== undefined ? meta.displayTime : (station.displayTime || station.display_time);
-    return {
+    return applyCanonicalV4Station({
       id: id,
       station_uid: text(station.station_uid),
       station_key: stationKey,
@@ -301,7 +334,7 @@
       datasetEndUtc: text(meta.datasetEndUtc),
       datasetEndNote: text(meta.datasetEndNote),
       displayTime: normalizeDisplayTime(displayTimeValue)
-    };
+    });
   }
 
   function catalogStations() {
@@ -326,7 +359,7 @@
       if (meta.lon !== undefined && meta.lon !== null && meta.lon !== "") station.lon = Number(meta.lon);
       station.displayTime = normalizeDisplayTime(meta.displayTime || station.displayTime);
       station.displayOrder = displayOrderValue(meta.displayOrder != null ? meta.displayOrder : station.displayOrder);
-      return station;
+      return applyCanonicalV4Station(station);
     })).filter(function(station) {
       return station.enabled !== false && roleAllowsStation(station);
     });
@@ -542,6 +575,30 @@
     if (value !== null && value !== undefined) target[key] = value;
   }
 
+  function isBatiStation(station) {
+    var keys = [
+      text(station && station.id).toLowerCase(),
+      text(station && station.station_uid).toLowerCase(),
+      text(station && station.station_key).toLowerCase(),
+      text(station && station.name).toLowerCase()
+    ];
+    return keys.indexOf("tb-02") !== -1 || keys.indexOf("st-0102") !== -1 || keys.indexOf("bati") !== -1;
+  }
+
+  function filterBatiCurrentSlotRows(rows, station) {
+    if (!isBatiStation(station)) return rows;
+    var expectedBySlot = { 1: "N0008", 2: "N0009", 3: "N0011" };
+    return (Array.isArray(rows) ? rows : []).filter(function(row) {
+      var role = text(row && row.sample_role).toLowerCase();
+      var slot = Number(row && row.slot_number);
+      if (!isFinite(slot) || slot <= 0 || role === "hub") return true;
+      var expected = expectedBySlot[slot];
+      if (!expected) return true;
+      var source = text(row && row.source_board_id).toUpperCase();
+      return !source || source === expected;
+    });
+  }
+
   function rowsToFeeds(rows, slots) {
     var byTime = {};
     rows.forEach(function(row) {
@@ -620,24 +677,19 @@
       order: "sample_epoch.desc",
       limit: String(effectiveLimit)
     };
-    var rows;
-    if (isHistoryWindow(win)) {
-      rows = [];
-      var offset = 0;
-      while (rows.length < effectiveLimit) {
-        var pageParams = Object.assign({}, params, {
-          order: "sample_epoch.desc",
-          limit: String(Math.min(V4_HISTORY_PAGE_SIZE, effectiveLimit - rows.length)),
-          offset: String(offset)
-        });
-        var batch = await getPostgrest("sensor_readings", pageParams, 30000);
-        if (!Array.isArray(batch) || !batch.length) break;
-        rows = rows.concat(batch);
-        if (batch.length < Number(pageParams.limit)) break;
-        offset += batch.length;
-      }
-    } else {
-      rows = await getPostgrest("sensor_readings", params, 30000);
+    var rows = [];
+    var offset = 0;
+    while (rows.length < effectiveLimit) {
+      var pageParams = Object.assign({}, params, {
+        order: "sample_epoch.desc",
+        limit: String(Math.min(V4_HISTORY_PAGE_SIZE, effectiveLimit - rows.length)),
+        offset: String(offset)
+      });
+      var batch = await getPostgrest("sensor_readings", pageParams, 30000);
+      if (!Array.isArray(batch) || !batch.length) break;
+      rows = rows.concat(batch);
+      if (batch.length < Number(pageParams.limit)) break;
+      offset += batch.length;
     }
     rows = Array.isArray(rows) ? rows.filter(function(row) {
       var ts = Date.parse(rowTime(row));
@@ -719,8 +771,9 @@
     var slotRows = await fetchSlotRowsForStation(result.station);
     var syncRows = await fetchSyncRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 200 : 800);
     var uploadRows = await fetchUploadRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 120 : 400);
-    var slots = discoverSlots(result.rows, slotRows);
-    var feeds = rowsToFeeds(result.rows, slots);
+    var stationRows = filterBatiCurrentSlotRows(result.rows, result.station);
+    var slots = discoverSlots(stationRows, slotRows);
+    var feeds = rowsToFeeds(stationRows, slots);
     var latestUpload = uploadRows.length ? uploadRows[uploadRows.length - 1] : null;
     return {
       source: "v4_sensor_readings",
@@ -731,6 +784,10 @@
       station_id: result.station.id,
       station_uid: result.station.station_uid,
       station_name: result.station.name,
+      time_range: {
+        from: win.from.toISOString(),
+        to: win.to.toISOString()
+      },
       slot_map: nodeSlotMap(slotRows, slots),
       slot_history: slotHistoryFromRows(slotRows),
       feeds: feeds,
@@ -752,6 +809,7 @@
       upload_sessions: uploadRows,
       downsampling: {
         total_rows: result.rows.length,
+        filtered_rows: stationRows.length,
         returned: feeds.length,
         target: pointTarget,
         row_limit: rowLimit,

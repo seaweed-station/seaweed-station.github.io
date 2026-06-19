@@ -178,6 +178,7 @@ var _edgeDetailPayload = null;   // last successful Edge payload
 var _edgeDetailPayloadAt = 0;    // Date.now() when fetched
 var _stationLoadedWindow = null; // { min, max } for the current in-memory allEntries set
 var _stationDiagMeta = { source: 'idle' };
+var _stationFetchSeq = 0;
 var STATION_SUMMARY_SAFE_MODE = typeof dashboardEgressSafeMode === 'function' ? dashboardEgressSafeMode() : true;
 var STATION_SUMMARY_HISTORY_DAYS = STATION_SUMMARY_SAFE_MODE ? 90 : 370;
 var STATION_SUMMARY_PAGE_SIZE = STATION_SUMMARY_SAFE_MODE ? 500 : 1000;
@@ -460,11 +461,11 @@ function getEdgeTimeWindow() {
  */
 function getEdgePointsTarget() {
   switch (state.timeRange) {
-    case 'day':   return 200;
-    case 'week':  return 500;
-    case 'month': return 800;
-    case 'all':   return 1500;
-    default:      return 500;
+    case 'day':   return 1500;
+    case 'week':  return 2500;
+    case 'month': return 6000;
+    case 'all':   return 8000;
+    default:      return 2500;
   }
 }
 
@@ -637,6 +638,8 @@ function applyEdgeSideData(payload) {
  * Edge-path fetch (sole data path for station detail).
  */
 async function fetchLiveDataEdge(silent) {
+  var fetchSeq = ++_stationFetchSeq;
+  var fetchRange = state.timeRange;
   var btn = document.getElementById('btnFetch');
   btn.innerHTML = '<span class="spinner"></span> Fetching...';
   btn.disabled  = true;
@@ -651,6 +654,10 @@ async function fetchLiveDataEdge(silent) {
       if (msg.indexOf('Station not found or inactive') === -1) throw edgeErr;
       console.warn('[Dashboard] Station registry missing for ' + TABLE_ID + ', using samples_raw fallback');
       payload = await fetchSamplesRawStationDetailFallback(msg);
+    }
+    if (fetchSeq !== _stationFetchSeq || fetchRange !== state.timeRange) {
+      console.log('[Dashboard] Discarding stale station fetch for ' + fetchRange + '; current range is ' + state.timeRange);
+      return null;
     }
     _edgeDetailPayload = payload;
     _edgeDetailPayloadAt = Date.now();
@@ -672,6 +679,9 @@ async function fetchLiveDataEdge(silent) {
 
     // Apply time range filter + render
     applyTimeRange();
+    if (typeof createOrUpdateCharts === 'function') createOrUpdateCharts();
+    if (typeof updateChartSubheads === 'function') updateChartSubheads();
+    if (typeof updateTimeButtons === 'function') updateTimeButtons();
     renderDashboard();
 
     // Cache for cross-tab sharing
@@ -709,6 +719,10 @@ async function fetchLiveDataEdge(silent) {
     });
 
   } catch (err) {
+    if (fetchSeq !== _stationFetchSeq || fetchRange !== state.timeRange) {
+      console.log('[Dashboard] Ignoring stale station fetch error for ' + fetchRange + '; current range is ' + state.timeRange);
+      return null;
+    }
     console.error('[Dashboard] Edge Function fetch failed:', err);
 
     // Stale-while-revalidate: re-use cached payload if available
@@ -723,6 +737,9 @@ async function fetchLiveDataEdge(silent) {
       if (!state.summaryEntries || !state.summaryEntries.length) restoreStationSummaryCache();
       ensureStationSummaryHistory(false).catch(function() {});
       applyTimeRange();
+      if (typeof createOrUpdateCharts === 'function') createOrUpdateCharts();
+      if (typeof updateChartSubheads === 'function') updateChartSubheads();
+      if (typeof updateTimeButtons === 'function') updateTimeButtons();
       renderDashboard();
       var cachedDs = _edgeDetailPayload.downsampling || {};
       updateStationDiagnostics({
@@ -994,11 +1011,11 @@ function getTimeAxisConfig() {
   var range = state.timeRange;
   switch (range) {
     case 'day':
-      return { unit: 'hour', displayFormats: { hour: 'HH:mm' }, tooltipFormat: 'd LLL HH:mm' };
+      return { unit: 'hour', stepSize: 2, displayFormats: { hour: 'HH:mm', minute: 'HH:mm' }, tooltipFormat: 'd LLL HH:mm' };
     case 'week':
-      return { unit: 'day', displayFormats: { day: 'd LLL' }, tooltipFormat: 'd LLL HH:mm' };
+      return { unit: 'hour', stepSize: 12, displayFormats: { hour: 'HH:mm', day: 'd LLL' }, tooltipFormat: 'd LLL HH:mm' };
     case 'month':
-      return { unit: 'day', displayFormats: { day: 'd LLL' }, tooltipFormat: 'd LLL HH:mm' };
+      return { unit: 'day', stepSize: 1, displayFormats: { day: 'd LLL' }, tooltipFormat: 'd LLL HH:mm' };
     default:
       return { unit: 'week', displayFormats: { week: 'd LLL' }, tooltipFormat: 'd LLL HH:mm' };
   }

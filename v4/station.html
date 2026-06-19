@@ -14,7 +14,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2/dist/chartjs-plugin-zoom.min.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="../pages/plot_core.js"></script>
+<script src="../pages/plot_core.js?v=20260619plots2"></script>
 <script src="../pages/plot_overlays.js"></script>
 <script src="../pages/chart_manager.js"></script>
 
@@ -1037,9 +1037,9 @@ body {
      BOOT LOADER: resolves station config + weather_data.js
      =================================================================== -->
 <!-- seaweed_common.js must load before bootLoader — STATION_REGISTRY is defined there -->
-<script src="js/catalog_provider_v4.js?v=20260506sharedmeta"></script>
-<script src="../pages/seaweed_common.js?v=20260504v4"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260506sharedmeta"></script>
+<script src="js/catalog_provider_v4.js?v=20260619plots2"></script>
+<script src="../pages/seaweed_common.js?v=20260619plots2"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260619plots2"></script>
 <script id="bootLoader">
 // Boot loader: reads ?table= param, injects data scripts
 (function(){
@@ -1054,10 +1054,16 @@ body {
     };
   }
 
+  function isBatiStationId(id) {
+    var key = String(id || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+    return key === 'tb_02' || key === 'bati' || key === 'st_0102';
+  }
+
   var params = new URLSearchParams(window.location.search);
   var v4StationKey = params.get('station') || params.get('table') || '';
-  var v4Station = window.SW_V4_DASHBOARD ? window.SW_V4_DASHBOARD.findStation(v4StationKey) : null;
-  var tableId = (v4Station && v4Station.id) || params.get('table') || v4StationKey || 'tb-01';
+  var isBatiRoute = isBatiStationId(v4StationKey);
+  var v4Station = (!isBatiRoute && window.SW_V4_DASHBOARD) ? window.SW_V4_DASHBOARD.findStation(v4StationKey) : null;
+  var tableId = isBatiRoute ? 'tb-02' : ((v4Station && v4Station.id) || params.get('table') || v4StationKey || 'tb-01');
   window.__TABLE_ID = tableId;
 
   // Station definitions — derived from STATION_REGISTRY (seaweed_common.js)
@@ -1084,6 +1090,21 @@ body {
     return String(id || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
   }
 
+  function applyCanonicalStationConfig(id, cfg) {
+    if (!isBatiStationId(id) && !(cfg && isBatiStationId(cfg.id))) return cfg;
+    var out = Object.assign({}, cfg || {});
+    out.id = 'tb-02';
+    out.title = 'Bati';
+    out.subtitle = 'Bati station -- Seaweed Table T/H Monitoring';
+    out.dataFolder = 'data_tb-02';
+    if (!isFinite(Number(out.mapLat))) out.mapLat = -31.87;
+    if (!isFinite(Number(out.mapLon))) out.mapLon = 115.90;
+    out.weather = buildWeatherLocation('Bati', out.mapLat, out.mapLon);
+    out.tideStation = 'perth';
+    out.sensorMap = 'bati';
+    return out;
+  }
+
   function buildStationsFromConfig() {
     var out = {};
     var configured = null;
@@ -1093,7 +1114,7 @@ body {
     } catch(e) {}
 
     Object.keys(STATIONS_DEFAULT).forEach(function(id) {
-      out[id] = Object.assign({}, STATIONS_DEFAULT[id]);
+      out[id] = applyCanonicalStationConfig(id, Object.assign({}, STATIONS_DEFAULT[id]));
     });
 
     if (configured && configured.length) {
@@ -1138,7 +1159,7 @@ body {
         var weatherLabel = (base.weather && base.weather.name) ? base.weather.name : merged.title;
         merged.weather = buildWeatherLocation(weatherLabel, merged.mapLat, merged.mapLon);
         merged.displayTime = p.displayTime || base.displayTime || '';
-        out[id] = merged;
+        out[id] = applyCanonicalStationConfig(id, merged);
       });
     }
 
@@ -1146,6 +1167,9 @@ body {
   }
 
   var STATIONS = buildStationsFromConfig();
+  if (isBatiRoute) {
+    STATIONS['tb-02'] = applyCanonicalStationConfig('tb-02', STATIONS['tb-02'] || {});
+  }
 
   // Role-based station filtering: remove stations the current role cannot see
   if (typeof filterStationsForRole === 'function') {
@@ -1154,6 +1178,9 @@ body {
       if (allowedIds.indexOf(id) === -1) delete STATIONS[id];
     });
   }
+  if (isBatiRoute) {
+    STATIONS['tb-02'] = applyCanonicalStationConfig('tb-02', STATIONS['tb-02'] || {});
+  }
 
   var stationIds = Object.keys(STATIONS);
   if (!STATIONS[tableId]) {
@@ -1161,7 +1188,7 @@ body {
     tableId = fallbackId;
     window.__TABLE_ID = fallbackId;
   }
-  var cfg = STATIONS[tableId] || STATIONS_DEFAULT.perth;
+  var cfg = applyCanonicalStationConfig(tableId, STATIONS[tableId] || STATIONS_DEFAULT.perth);
 
   window.__STATIONS = STATIONS;
   window.__STATION = cfg;
@@ -1207,12 +1234,12 @@ body {
 <!-- ================================================================= -->
 <!--     SECTION 3: CONFIGURATION, STATE, UTILITIES                    -->
 <!-- ================================================================= -->
-<script src="../pages/station_config.js"></script>
+<script src="../pages/station_config.js?v=20260619plots2"></script>
 
 <!-- ================================================================= -->
 <!--     SECTION 4: DATA PARSING + LOADING                             -->
 <!-- ================================================================= -->
-<script src="../pages/station_data.js?v=20260504v4d"></script>
+<script src="../pages/station_data.js?v=20260619plots2"></script>
 <script>
 if (window.SW_V4_DASHBOARD) window.SW_V4_DASHBOARD.installStationDataAdapter();
 </script>
@@ -1220,12 +1247,12 @@ if (window.SW_V4_DASHBOARD) window.SW_V4_DASHBOARD.installStationDataAdapter();
 <!-- ================================================================= -->
 <!--     SECTION 5: RENDERING (status cards, network bar, header)      -->
 <!-- ================================================================= -->
-<script src="../pages/station_render.js"></script>
+<script src="../pages/station_render.js?v=20260619plots2"></script>
 
 <!-- ================================================================= -->
 <!--     SECTION 6: CHARTS + PLUGINS                                  -->
 <!-- ================================================================= -->
-<script src="../pages/station_charts.js"></script>
+<script src="../pages/station_charts.js?v=20260619plots2"></script>
 
 <!-- ================================================================= -->
 <!--     SECTION 7: SYNC / DRIFT / WEATHER                            -->
@@ -1240,7 +1267,7 @@ if (window.SW_V4_DASHBOARD) window.SW_V4_DASHBOARD.installStationDataAdapter();
 <!-- ================================================================= -->
 <!--     SECTION 8: INITIALIZATION + TIDES                             -->
 <!-- ================================================================= -->
-<script src="../pages/station_setup.js?v=20260504v4d"></script>
+<script src="../pages/station_setup.js?v=20260619plots2"></script>
 
 <div style="text-align:center;padding:18px 20px 24px;color:#475569;font-size:.8rem;border-top:1px solid #1e293b;margin-top:8px">
   For battery, sync reliability and data health metrics see

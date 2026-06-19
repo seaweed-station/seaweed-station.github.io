@@ -901,8 +901,137 @@ function isPerthTestBedStation(stationId) {
   return key === 'perth_table' || key === 'perth_test_bed' || key === 'st_0103';
 }
 
+function isBatiDirectSensorStation(stationId) {
+  var key = String(stationId || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return key === 'tb_02' || key === 'bati' || key === 'st_0102';
+}
+
+function getSlotMapForStation(stationId, deviceSlotsById) {
+  var stationKey = String(stationId || '').trim().toLowerCase();
+  var slotMap = deviceSlotsById && stationKey ? deviceSlotsById[stationKey] : null;
+  if (!slotMap && deviceSlotsById && typeof deviceSlotsById === 'object') {
+    var flatKeys = Object.keys(deviceSlotsById);
+    var flatNumericSlots = flatKeys.filter(function(key) {
+      return isFinite(Number(deviceSlotsById[key]));
+    });
+    if (flatNumericSlots.length === flatKeys.length && flatKeys.length) {
+      slotMap = deviceSlotsById;
+    }
+  }
+  return slotMap || null;
+}
+
+function sensorColorByIndex(sensorColors, sensorIndex) {
+  var keys = ['t0s1', 't0s2', 't0s3', 'slot1s1', 'slot1s2', 'slot2s1', 'slot2s2', 'slot3s1', 'slot3s2', 'slot4s1'];
+  var fallback = ['#38bdf8', '#22c55e', '#eab308', '#a855f7', '#ef4444', '#f97316', '#06b6d4', '#84cc16', '#ec4899', '#64748b'];
+  return sensorColors[keys[sensorIndex - 1]] || fallback[(sensorIndex - 1) % fallback.length];
+}
+
+function getLatestEntryTimeMs(entries) {
+  if (!Array.isArray(entries) || !entries.length) return NaN;
+  for (var i = entries.length - 1; i >= 0; i--) {
+    var ts = entries[i] && entries[i].timestamp;
+    var ms = ts instanceof Date ? ts.getTime() : new Date(ts).getTime();
+    if (isFinite(ms)) return ms;
+  }
+  return NaN;
+}
+
+function hasRecentBatiSlotReadings(entries, slotNumber, cutoffMs) {
+  if (!Array.isArray(entries) || !entries.length || !isFinite(slotNumber) || !isFinite(cutoffMs)) return false;
+  var prefix = 'sat' + slotNumber;
+  for (var i = entries.length - 1; i >= 0; i--) {
+    var entry = entries[i];
+    if (!entry) continue;
+    var ts = entry.timestamp instanceof Date ? entry.timestamp.getTime() : new Date(entry.timestamp).getTime();
+    if (!isFinite(ts)) continue;
+    if (ts < cutoffMs) break;
+    if (entry[prefix + 'Temp1'] != null || entry[prefix + 'Hum1'] != null) return true;
+  }
+  return false;
+}
+
+function buildBatiDirectSensorDefinitions(stationId, entries, deviceSlotsById, sensorColors) {
+  var expectedNodes = { 1: 'N0008', 2: 'N0009', 3: 'N0011' };
+  var slots = getStationSlotAssignments(stationId, entries, deviceSlotsById);
+  var activeSlotNumbers = {};
+  var slotMap = getSlotMapForStation(stationId, deviceSlotsById);
+  if (slotMap) {
+    Object.keys(slotMap).forEach(function(nodeLetter) {
+      var slotNumber = Number(slotMap[nodeLetter]);
+      if (isFinite(slotNumber) && slotNumber > 0) activeSlotNumbers[slotNumber] = true;
+    });
+  }
+  var bySlot = {};
+  slots.forEach(function(slot) {
+    if (slot && isFinite(Number(slot.slotNumber))) bySlot[Number(slot.slotNumber)] = slot;
+  });
+  Object.keys(expectedNodes).forEach(function(slotNumber) {
+    var n = Number(slotNumber);
+    if (!bySlot[n]) {
+      bySlot[n] = {
+        nodeLetter: expectedNodes[n],
+        slotNumber: n,
+        satelliteNumber: n,
+        displayName: 'Slot ' + n + ' Satellite (' + expectedNodes[n] + ')'
+      };
+    }
+  });
+
+  var latestMs = getLatestEntryTimeMs(entries);
+  var recentCutoffMs = latestMs - 36 * 3600000;
+  slots = Object.keys(bySlot).map(function(slotNumber) {
+    return bySlot[slotNumber];
+  }).filter(function(slot) {
+    var slotNumber = Number(slot && slot.slotNumber);
+    if (!isFinite(slotNumber) || slotNumber <= 0) return false;
+    if (expectedNodes[slotNumber] || activeSlotNumbers[slotNumber]) return true;
+    return hasRecentBatiSlotReadings(entries, slotNumber, recentCutoffMs);
+  }).sort(function(a, b) {
+    return Number(a.slotNumber) - Number(b.slotNumber);
+  });
+
+  var definitions = [{
+    sensorIndex: 1, sensorId: 'S1',
+    legendLabel: 'S1 - Hub T/H', summaryLabel: 'S1 Hub T/H', shortLabel: 'Hub T/H',
+    tempKey: 't0Temp1', humKey: 't0Hum1',
+    color: sensorColorByIndex(sensorColors, 1), nodeLetter: 'H',
+    displayName: 'Hub T/H'
+  }];
+
+  slots.forEach(function(slot) {
+    var slotNumber = Number(slot.slotNumber);
+    if (!isFinite(slotNumber) || slotNumber <= 0) return;
+    var sensorIndex = definitions.length + 1;
+    var rawNode = String(slot.nodeLetter || '').trim().toUpperCase();
+    var nodeLabel = /^\d+$/.test(rawNode) ? '' : rawNode;
+    if (!nodeLabel && expectedNodes[slotNumber]) nodeLabel = expectedNodes[slotNumber];
+    var slotLabel = 'Slot ' + slotNumber + ' Satellite' + (nodeLabel ? ' (' + nodeLabel + ')' : '');
+    definitions.push({
+      sensorIndex: sensorIndex,
+      sensorId: 'S' + sensorIndex,
+      legendLabel: 'S' + sensorIndex + ' - ' + slotLabel,
+      summaryLabel: 'S' + sensorIndex + ' ' + slotLabel,
+      shortLabel: slotLabel,
+      tempKey: 'sat' + slotNumber + 'Temp1',
+      humKey: 'sat' + slotNumber + 'Hum1',
+      color: sensorColorByIndex(sensorColors, sensorIndex),
+      nodeLetter: nodeLabel || slot.nodeLetter,
+      slotNumber: slotNumber,
+      satelliteNumber: slot.satelliteNumber,
+      displayName: slotLabel
+    });
+  });
+
+  return definitions;
+}
+
 function buildStationSensorDefinitions(stationId, entries, deviceSlotsById, sensorColors) {
   sensorColors = sensorColors || {};
+  if (isBatiDirectSensorStation(stationId)) {
+    return buildBatiDirectSensorDefinitions(stationId, entries, deviceSlotsById, sensorColors);
+  }
+
   var definitions = [
     {
       sensorIndex: 1, sensorId: 'S1',
@@ -992,6 +1121,7 @@ function buildStationSensorDefinitions(stationId, entries, deviceSlotsById, sens
 // =====================================================================
 // SHARED CACHE + CROSS-WINDOW SYNC
 // =====================================================================
+var STATION_CACHE_SCHEMA_VERSION = '20260619plots2';
 
 /**
  * Persist parsed station entries in shared localStorage cache.
@@ -1026,6 +1156,7 @@ function saveStationCache(stationId, entries, meta) {
   function persistEntries(entriesSubset) {
     var bounds = deriveWindow(entriesSubset);
     localStorage.setItem('seaweed_cache_' + stationId, JSON.stringify({
+      schemaVersion: STATION_CACHE_SCHEMA_VERSION,
       allEntries: entriesSubset,
       channelInfo: meta.channelInfo || null,
       source: meta.source || 'live',
@@ -1100,6 +1231,7 @@ function getStationCacheWindow(cached) {
 
 function stationCacheCanPrimeRange(cached, requestedWindow, requestedRange) {
   if (!cached || !requestedWindow) return false;
+  if (cached.schemaVersion !== STATION_CACHE_SCHEMA_VERSION) return false;
 
   var cacheWindow = getStationCacheWindow(cached);
   if (!cacheWindow) return false;
@@ -1121,6 +1253,23 @@ function stationCacheCanPrimeRange(cached, requestedWindow, requestedRange) {
   var toleranceMs = Math.min(6 * 3600000, Math.round(spanMs * 0.1));
 
   return cacheWindow.min <= (reqFrom + toleranceMs);
+}
+
+function clearSeaweedStationCaches(stationId) {
+  var suffix = stationId ? String(stationId) : '';
+  try {
+    Object.keys(localStorage).forEach(function(key) {
+      var isStationCache = key.indexOf('seaweed_cache_') === 0;
+      var isSummaryCache = key.indexOf('seaweed_summary_cache_') === 0;
+      if (!isStationCache && !isSummaryCache) return;
+      if (suffix && key.slice(-suffix.length) !== suffix) return;
+      localStorage.removeItem(key);
+    });
+  } catch (_) {}
+}
+
+if (typeof window !== 'undefined') {
+  window.clearSeaweedStationCaches = clearSeaweedStationCaches;
 }
 
 /**

@@ -348,8 +348,9 @@ function updatePeaksTable() {
   var tempKeys = {};
   var humKeys = {};
   sensorDefs.forEach(function(def) {
-    if (def.tempKey) tempKeys[def.tempKey] = def.sensorId;
-    if (def.humKey) humKeys[def.humKey] = def.sensorId;
+    var summaryLabel = def.summaryLabel || def.legendLabel || def.sensorId;
+    if (def.tempKey) tempKeys[def.tempKey] = summaryLabel;
+    if (def.humKey) humKeys[def.humKey] = summaryLabel;
   });
 
   var activeTempKeys = {};

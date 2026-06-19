@@ -6,6 +6,9 @@ var COLORS = {
   t0s1: '#3b82f6', t0s2: '#93c5fd', t0s3: '#60a5fa',
   slot1s1: '#10b981', slot1s2: '#6ee7b7',
   slot2s1: '#f59e0b', slot2s2: '#fcd34d',
+  slot3s1: '#a855f7', slot3s2: '#c084fc',
+  slot4s1: '#ef4444', slot4s2: '#fca5a5',
+  slot5s1: '#f97316', slot5s2: '#fdba74',
   t0Bat: '#3b82f6', slot1Bat: '#10b981', slot2Bat: '#f59e0b',
   t0V: '#60a5fa', slot1V: '#34d399', slot2V: '#fbbf24',
 };
@@ -19,19 +22,22 @@ function resolveSensorColors() {
     slot1s2: COLORS.slot1s2,
     slot2s1: COLORS.slot2s1,
     slot2s2: COLORS.slot2s2,
+    slot3s1: COLORS.slot3s1,
+    slot3s2: COLORS.slot3s2,
+    slot4s1: COLORS.slot4s1,
+    slot4s2: COLORS.slot4s2,
+    slot5s1: COLORS.slot5s1,
+    slot5s2: COLORS.slot5s2,
   };
   var mapKey = STATION ? STATION.sensorMap : null;
   var legend = (mapKey && SENSOR_MAPS[mapKey]) ? SENSOR_MAPS[mapKey].legend : null;
   if (!legend || !legend.length) return c;
 
   // Legend index maps to Sensor 1..N on cards/charts.
-  if (legend[0] && legend[0].color) c.t0s1 = legend[0].color;
-  if (legend[1] && legend[1].color) c.t0s2 = legend[1].color;
-  if (legend[2] && legend[2].color) c.t0s3 = legend[2].color;
-  if (legend[3] && legend[3].color) c.slot1s1 = legend[3].color;
-  if (legend[4] && legend[4].color) c.slot1s2 = legend[4].color;
-  if (legend[5] && legend[5].color) c.slot2s1 = legend[5].color;
-  if (legend[6] && legend[6].color) c.slot2s2 = legend[6].color;
+  var colorKeys = ['t0s1', 't0s2', 't0s3', 'slot1s1', 'slot1s2', 'slot2s1', 'slot2s2', 'slot3s1', 'slot3s2', 'slot4s1', 'slot4s2', 'slot5s1'];
+  for (var i = 0; i < legend.length && i < colorKeys.length; i++) {
+    if (legend[i] && legend[i].color) c[colorKeys[i]] = legend[i].color;
+  }
   return c;
 }
 
@@ -72,6 +78,235 @@ function memoizedDownsampleSeries(cacheKey, points, kind, range, overrideMaxPts)
   });
 }
 
+function pointTimeMs(point) {
+  if (!point) return NaN;
+  var x = point.x instanceof Date ? point.x.getTime() : new Date(point.x).getTime();
+  return isFinite(x) ? x : NaN;
+}
+
+function medianNumber(values) {
+  var nums = values.filter(function(v) { return isFinite(v); }).sort(function(a, b) { return a - b; });
+  if (!nums.length) return NaN;
+  var mid = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+}
+
+function groupMedian(group) {
+  return medianNumber(group.values);
+}
+
+function collapseDuplicateSensorPoints(points) {
+  if (!Array.isArray(points) || points.length <= 1) return Array.isArray(points) ? points.slice() : [];
+  var groups = [];
+  points.forEach(function(point) {
+    var ms = pointTimeMs(point);
+    var y = Number(point && point.y);
+    if (!isFinite(ms) || !isFinite(y)) return;
+    var last = groups.length ? groups[groups.length - 1] : null;
+    if (!last || last.ms !== ms) {
+      last = { ms: ms, values: [] };
+      groups.push(last);
+    }
+    last.values.push(y);
+  });
+
+  return groups.map(function(group, index) {
+    var y = groupMedian(group);
+    if (group.values.length > 1) {
+      var prev = index > 0 ? groupMedian(groups[index - 1]) : NaN;
+      var next = index < groups.length - 1 ? groupMedian(groups[index + 1]) : NaN;
+      var reference = isFinite(prev) && isFinite(next) ? (prev + next) / 2 : (isFinite(prev) ? prev : next);
+      if (isFinite(reference)) {
+        y = group.values.reduce(function(best, value) {
+          return Math.abs(value - reference) < Math.abs(best - reference) ? value : best;
+        }, group.values[0]);
+      }
+    }
+    return { x: new Date(group.ms), y: y };
+  });
+}
+
+function suppressIsolatedSensorJumps(points, key) {
+  if (!Array.isArray(points) || points.length < 3) return Array.isArray(points) ? points.slice() : [];
+  var isHumidity = /hum/i.test(String(key || ''));
+  var threshold = isHumidity ? 10 : 3.0;
+  var neighborTolerance = isHumidity ? 5 : 2.0;
+  var maxNeighborGapMs = 90 * 60 * 1000;
+  var cleaned = [points[0]];
+  for (var i = 1; i < points.length - 1; i++) {
+    var prev = points[i - 1];
+    var cur = points[i];
+    var next = points[i + 1];
+    var prevMs = pointTimeMs(prev);
+    var curMs = pointTimeMs(cur);
+    var nextMs = pointTimeMs(next);
+    var closeNeighbors = isFinite(prevMs) && isFinite(curMs) && isFinite(nextMs) &&
+      (curMs - prevMs) <= maxNeighborGapMs && (nextMs - curMs) <= maxNeighborGapMs;
+    var isolated = closeNeighbors &&
+      Math.abs(cur.y - prev.y) >= threshold &&
+      Math.abs(cur.y - next.y) >= threshold &&
+      Math.abs(prev.y - next.y) <= neighborTolerance;
+    if (!isolated) cleaned.push(cur);
+  }
+  cleaned.push(points[points.length - 1]);
+  return cleaned;
+}
+
+function cleanSensorPlotSeries(points, key) {
+  return suppressIsolatedSensorJumps(collapseDuplicateSensorPoints(points), key);
+}
+
+function chartLocalDayStartMs(ms) {
+  var offsetMs = getStationOffsetMinutesForCharts() * 60000;
+  return Math.floor((ms + offsetMs) / 86400000) * 86400000 - offsetMs;
+}
+
+function chartLocalIntervalCeilMs(ms, intervalMs) {
+  var offsetMs = getStationOffsetMinutesForCharts() * 60000;
+  return Math.ceil((ms + offsetMs) / intervalMs) * intervalMs - offsetMs;
+}
+
+function getSensorDisplayWindow(bounds, range) {
+  if (!bounds || !isFinite(bounds.min) || !isFinite(bounds.max)) return { min: undefined, max: undefined };
+  if (range === 'all') return { min: bounds.min, max: bounds.max };
+  var days = range === 'day' ? 1 : (range === 'week' ? 7 : 30);
+  var max = bounds.max;
+  var min = max - days * 86400000;
+  if (range === 'week' || range === 'month') min = chartLocalDayStartMs(min);
+  return { min: min, max: max };
+}
+
+function buildSensorAxisTicks(min, max, range) {
+  if (!isFinite(min) || !isFinite(max) || max <= min || range === 'all') return null;
+  var ticks = [];
+  var hourMs = 3600000;
+  var dayMs = 86400000;
+  var stepMs = range === 'day' ? 2 * hourMs : (range === 'week' ? 12 * hourMs : dayMs);
+  var start = range === 'day'
+    ? chartLocalIntervalCeilMs(min, stepMs)
+    : chartLocalDayStartMs(min);
+
+  if (range === 'day') ticks.push({ value: min });
+  if (start < min) start += stepMs;
+
+  var guard = 0;
+  for (var t = start; t <= max && guard < 100; t += stepMs, guard++) {
+    if (range === 'day' && Math.abs(t - min) < 60000) continue;
+    ticks.push({ value: t });
+  }
+  return ticks.length ? ticks : null;
+}
+
+function getStationOffsetMinutesForCharts() {
+  if (window.SeaweedV4 && typeof SeaweedV4.parseUtcOffsetMinutes === 'function') {
+    return SeaweedV4.parseUtcOffsetMinutes(window.__STATION && window.__STATION.displayTime);
+  }
+  return 0;
+}
+
+var CHART_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function shiftedChartDate(ms) {
+  var n = Number(ms);
+  if (!isFinite(n)) n = new Date(ms).getTime();
+  return isFinite(n) ? new Date(n + getStationOffsetMinutesForCharts() * 60000) : null;
+}
+
+function formatAxisDate(ms) {
+  var d = shiftedChartDate(ms);
+  if (!d || isNaN(d.getTime())) return '';
+  return String(d.getUTCDate()).padStart(2, '0') + ' ' + CHART_MONTHS[d.getUTCMonth()];
+}
+
+function formatAxisTime(ms) {
+  var d = shiftedChartDate(ms);
+  if (!d || isNaN(d.getTime())) return '';
+  return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+}
+
+function axisLocalHour(ms) {
+  var d = shiftedChartDate(ms);
+  return d && !isNaN(d.getTime()) ? d.getUTCHours() : NaN;
+}
+
+function axisLocalDay(ms) {
+  var d = shiftedChartDate(ms);
+  return d && !isNaN(d.getTime()) ? d.getUTCDate() : NaN;
+}
+
+function sensorAxisLabel(value, index, range) {
+  var ms = Number(value);
+  if (!isFinite(ms)) ms = new Date(value).getTime();
+  if (!isFinite(ms)) return '';
+  if (range === 'day') return index === 0 ? formatAxisDate(ms) : formatAxisTime(ms);
+  if (range === 'week') {
+    var hour = axisLocalHour(ms);
+    if (hour === 0) return formatAxisDate(ms);
+    if (hour === 12) return '12:00';
+    return '';
+  }
+  if (range === 'month') {
+    var day = axisLocalDay(ms);
+    if (index === 0 || day === 1 || day % 5 === 0) return formatAxisDate(ms);
+    return '';
+  }
+  return formatAxisDate(ms);
+}
+
+function sensorAxisGridColor(ctx, range) {
+  if (!ctx || !ctx.tick) return '#d6e3df';
+  var ms = Number(ctx.tick.value);
+  if (!isFinite(ms)) return '#d6e3df';
+  if (range === 'day') return axisLocalHour(ms) === 0 ? 'rgba(148, 163, 184, 0.48)' : '#d6e3df';
+  if (range === 'week') return axisLocalHour(ms) === 0 ? 'rgba(100, 116, 139, 0.55)' : 'rgba(214, 227, 223, 0.72)';
+  if (range === 'month') {
+    var day = axisLocalDay(ms);
+    return (day === 1 || day % 5 === 0) ? 'rgba(100, 116, 139, 0.50)' : 'rgba(214, 227, 223, 0.68)';
+  }
+  return '#d6e3df';
+}
+
+function sensorAxisGridWidth(ctx, range) {
+  if (!ctx || !ctx.tick) return 0.7;
+  var ms = Number(ctx.tick.value);
+  if (!isFinite(ms)) return 0.7;
+  if ((range === 'day' || range === 'week') && axisLocalHour(ms) === 0) return 1.2;
+  if (range === 'month') {
+    var day = axisLocalDay(ms);
+    return (day === 1 || day % 5 === 0) ? 1.1 : 0.7;
+  }
+  return 0.7;
+}
+
+function sensorAxisTickLimit(range) {
+  if (range === 'day') return 14;
+  if (range === 'week') return 18;
+  if (range === 'month') return 32;
+  return 12;
+}
+
+function sensorTimeAxisConfig(range) {
+  if (range === 'day') {
+    return { unit: 'hour', stepSize: 2, displayFormats: { hour: 'HH:mm', minute: 'HH:mm' }, tooltipFormat: 'd LLL HH:mm' };
+  }
+  if (range === 'week') {
+    return { unit: 'hour', stepSize: 12, displayFormats: { hour: 'HH:mm', day: 'd LLL' }, tooltipFormat: 'd LLL HH:mm' };
+  }
+  if (range === 'month') {
+    return { unit: 'day', stepSize: 1, displayFormats: { day: 'd LLL' }, tooltipFormat: 'd LLL HH:mm' };
+  }
+  return { unit: 'week', displayFormats: { week: 'd LLL' }, tooltipFormat: 'd LLL HH:mm' };
+}
+
+function displayChartTime(ms, opts) {
+  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+    return SeaweedV4.formatWithUtcOffset(new Date(ms), window.__STATION && window.__STATION.displayTime, opts || {});
+  }
+  var d = new Date(ms);
+  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
 function buildSensorChartOverlays() {
   return [
     {
@@ -98,15 +333,29 @@ function buildSensorChartOverlays() {
 
 function makeDataset(entries, key, label, color, dashed) {
   var rawData = [];
-  entries.forEach(function (e) { if (e[key] !== null) rawData.push({ x: e.timestamp, y: e[key] }); });
-  var data = memoizedDownsampleSeries(buildStationSeriesCacheKey('sensor', key, state.timeRange), rawData, 'station-sensor', state.timeRange);
+  var zeroCount = 0;
+  var nonZeroCount = 0;
+  entries.forEach(function (e) {
+    var value = e ? Number(e[key]) : NaN;
+    if (isFinite(value)) {
+      if (value === 0) zeroCount++;
+      else nonZeroCount++;
+      rawData.push({ x: e.timestamp, y: value });
+    }
+  });
+  if (/temp|hum/i.test(String(key || '')) && nonZeroCount > 0 && zeroCount > Math.max(3, rawData.length * 0.05)) {
+    rawData = rawData.filter(function(point) { return point.y !== 0; });
+  }
+  var cleanData = cleanSensorPlotSeries(rawData, key);
+  var data = memoizedDownsampleSeries(buildStationSeriesCacheKey('sensor', key, state.timeRange), cleanData, 'station-sensor', state.timeRange);
   return {
     label: label + (rawData.length === 0 ? ' (No Data)' : ' (' + rawData.length + ')'),
     data: data, borderColor: color, backgroundColor: color + '22',
     borderWidth: data.length > 0 ? 1.5 : 0, borderDash: dashed ? [5, 3] : [],
     pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: color,
     tension: 0.3, fill: false, hidden: data.length === 0, spanGaps: false,
-    _rawData: rawData,
+    _rawData: cleanData,
+    _rawPointCount: rawData.length,
     segment: {
       borderColor: function(ctx) {
         return shouldBreakTrendSegment(ctx, SENSOR_TRENDLINE_GAP_MS) ? 'rgba(0, 0, 0, 0)' : color;
@@ -395,14 +644,6 @@ function onSensorModalOptsChange() {
 }
 
 function baseChartOptions(yLabel, yMin, yMax) {
-  function displayChartTime(ms, opts) {
-    if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
-      return SeaweedV4.formatWithUtcOffset(new Date(ms), window.__STATION && window.__STATION.displayTime, opts || {});
-    }
-    var d = new Date(ms);
-    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })
-      + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-  }
   return {
     responsive: true, maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
@@ -423,18 +664,60 @@ function baseChartOptions(yLabel, yMin, yMax) {
       }
     },
     scales: {
-      x: { type: 'time', adapters: { date: { zone: 'UTC' } }, grid: { color: '#d6e3df', lineWidth: 0.7 }, ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 10 }, callback: function(value) { return displayChartTime(value, { time: state.timeRange === 'day', label: false }); } }, time: getTimeAxisConfig() },
+      x: {
+        type: 'time',
+        adapters: { date: { zone: 'UTC' } },
+        grid: {
+          color: function(ctx) { return sensorAxisGridColor(ctx, state.timeRange); },
+          lineWidth: function(ctx) { return sensorAxisGridWidth(ctx, state.timeRange); }
+        },
+        ticks: {
+          color: '#64748b',
+          maxTicksLimit: sensorAxisTickLimit(state.timeRange),
+          autoSkip: state.timeRange === 'all',
+          font: { size: 10 },
+          callback: function(value, index) { return sensorAxisLabel(value, index, state.timeRange); }
+        },
+        afterBuildTicks: function(axis) {
+          var ticks = buildSensorAxisTicks(axis.min, axis.max, state.timeRange);
+          if (ticks) axis.ticks = ticks;
+        },
+        time: sensorTimeAxisConfig(state.timeRange)
+      },
       y: { title: { display: true, text: yLabel, color: '#94a3b8', font: { size: 11 } }, grid: { color: '#d6e3df', lineWidth: 0.7 }, ticks: { color: '#64748b', font: { size: 10 } }, min: yMin, max: yMax },
     },
   };
+}
+
+function replaceStationSensorChart(chartKey, canvasId, config) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  var managerKey = 'station:' + TABLE_ID + ':sensor:' + chartKey;
+  if (window.ChartManager && typeof ChartManager.destroy === 'function') {
+    ChartManager.destroy(managerKey);
+  }
+  var existing = window.Chart && Chart.getChart ? Chart.getChart(canvas) : null;
+  if (existing) {
+    try { existing.destroy(); } catch (_) {}
+  }
+  var chart = new Chart(canvas, Object.assign({}, config, {
+    plugins: [sensorBandsPlugin, dailyMinMaxPlugin]
+  }));
+  chart.$chartKey = managerKey;
+  chart.$stationId = TABLE_ID;
+  chart.$chartType = chartKey;
+  canvas._stationId = TABLE_ID;
+  canvas._chartKey = chartKey;
+  return chart;
 }
 
 function createOrUpdateCharts() {
   var chartEntries = state.filteredEntries;
   if (!chartEntries || !chartEntries.length) chartEntries = state.allEntries;
   if (!chartEntries || !chartEntries.length) return;
-  var chartBounds = getEntriesBounds(chartEntries);
-  var chartWindow = getWindowForRange(chartBounds, state.timeRange);
+  var allBounds = getEntriesBounds(state.allEntries);
+  var chartBounds = getEntriesBounds(chartEntries) || allBounds;
+  var chartWindow = getSensorDisplayWindow(allBounds || chartBounds, state.timeRange);
   var sensorColors = resolveSensorColors();
   var sensorDefs = buildStationSensorDefinitions(TABLE_ID, state.allEntries, _stationSlotMap, sensorColors);
   var _wxMin = chartWindow && isFinite(chartWindow.min) ? chartWindow.min : (chartBounds ? chartBounds.min : -Infinity);
@@ -454,13 +737,6 @@ function createOrUpdateCharts() {
   _wxOverlayTemp = downsamplePlotSeries(_wxOverlayTemp, 'station-weather-line', state.timeRange);
   _wxOverlayHum = downsamplePlotSeries(_wxOverlayHum, 'station-weather-line', state.timeRange);
 
-  var timeCfg = getTimeAxisConfig();
-  Object.keys(state.charts).forEach(function(k) {
-    if (state.charts[k] && state.charts[k].options && state.charts[k].options.scales && state.charts[k].options.scales.x) {
-      state.charts[k].options.scales.x.time = timeCfg;
-    }
-  });
-
   // -- Temperature --
   var tempDS = sensorDefs.map(function(sensorDef, index) {
     return makeDataset(chartEntries, sensorDef.tempKey, sensorDef.legendLabel, sensorDef.color, (index % 2) === 1);
@@ -477,19 +753,9 @@ function createOrUpdateCharts() {
   _tOpts.plugins.legend.position = 'left';
   _tOpts.scales.x.min = chartWindow.min;
   _tOpts.scales.x.max = chartWindow.max;
-  state.charts.temp = (window.ChartManager && typeof ChartManager.upsert === 'function')
-    ? ChartManager.upsert({
-        key: 'station:' + TABLE_ID + ':sensor:temp',
-        canvas: document.getElementById('tempChart'),
-        config: { type: 'line', data: { datasets: tempDS }, options: _tOpts },
-        overlays: buildSensorChartOverlays(),
-        meta: { stationId: TABLE_ID, chartKey: 'temp', scope: 'station-main' },
-        recreateOnUpdate: true,
-        updateMode: 'none'
-      })
-    : (state.charts.temp || new Chart(document.getElementById('tempChart'), {
-        type: 'line', data: { datasets: tempDS }, options: _tOpts, plugins: [sensorBandsPlugin, dailyMinMaxPlugin]
-      }));
+  state.charts.temp = replaceStationSensorChart('temp', 'tempChart', {
+    type: 'line', data: { datasets: tempDS }, options: _tOpts
+  });
 
   // -- Humidity --
   var humDS = sensorDefs.map(function(sensorDef, index) {
@@ -507,19 +773,9 @@ function createOrUpdateCharts() {
   _hOpts2.plugins.legend.position = 'left';
   _hOpts2.scales.x.min = chartWindow.min;
   _hOpts2.scales.x.max = chartWindow.max;
-  state.charts.hum = (window.ChartManager && typeof ChartManager.upsert === 'function')
-    ? ChartManager.upsert({
-        key: 'station:' + TABLE_ID + ':sensor:hum',
-        canvas: document.getElementById('humChart'),
-        config: { type: 'line', data: { datasets: humDS }, options: _hOpts2 },
-        overlays: buildSensorChartOverlays(),
-        meta: { stationId: TABLE_ID, chartKey: 'hum', scope: 'station-main' },
-        recreateOnUpdate: true,
-        updateMode: 'none'
-      })
-    : (state.charts.hum || new Chart(document.getElementById('humChart'), {
-        type: 'line', data: { datasets: humDS }, options: _hOpts2, plugins: [sensorBandsPlugin, dailyMinMaxPlugin]
-      }));
+  state.charts.hum = replaceStationSensorChart('hum', 'humChart', {
+    type: 'line', data: { datasets: humDS }, options: _hOpts2
+  });
 
   // Battery, Sync, Drift charts removed -- see station_health.html
 }
@@ -576,7 +832,7 @@ function openSensorChartModal(chartKey) {
   var yTitle = srcY.title && srcY.title.text ? srcY.title.text : '';
   var modalData = cloneChartDataForModal(srcChart.data);
   var bounds = getEntriesBounds(state.allEntries);
-  var win = getWindowForRange(bounds, _sensorModalRange);
+  var win = getSensorDisplayWindow(bounds, _sensorModalRange);
   modalData.datasets.forEach(function(ds) {
     var rawData = Array.isArray(ds._rawData) && ds._rawData.length ? ds._rawData : ds.data;
     if (!Array.isArray(rawData) || !rawData.length) return;
@@ -604,11 +860,24 @@ function openSensorChartModal(chartKey) {
         x: {
           type: 'time',
           adapters: { date: { zone: 'UTC' } },
-          time: getTimeAxisConfig(),
+          time: sensorTimeAxisConfig(_sensorModalRange),
           min: win.min,
           max: win.max,
-          grid: { color: '#d6e3df', lineWidth: 0.7 },
-          ticks: { color: '#64748b', maxTicksLimit: 12, font: { size: 10 }, callback: function(value) { return displayChartTime(value, { time: _sensorModalRange === 'day', label: false }); } }
+          grid: {
+            color: function(ctx) { return sensorAxisGridColor(ctx, _sensorModalRange); },
+            lineWidth: function(ctx) { return sensorAxisGridWidth(ctx, _sensorModalRange); }
+          },
+          ticks: {
+            color: '#64748b',
+            maxTicksLimit: sensorAxisTickLimit(_sensorModalRange),
+            autoSkip: _sensorModalRange === 'all',
+            font: { size: 10 },
+            callback: function(value, index) { return sensorAxisLabel(value, index, _sensorModalRange); }
+          },
+          afterBuildTicks: function(axis) {
+            var ticks = buildSensorAxisTicks(axis.min, axis.max, _sensorModalRange);
+            if (ticks) axis.ticks = ticks;
+          }
         },
         y: {
           title: { display: !!yTitle, text: yTitle, color: '#94a3b8', font: { size: 11 } },
@@ -632,6 +901,12 @@ function openSensorChartModal(chartKey) {
       })
     : new Chart(modalCanvas, Object.assign({}, modalConfig, { plugins: [sensorBandsPlugin, dailyMinMaxPlugin] }));
 
+  setSensorChartSunEvents(_sensorModalChart, win);
+  requestAnimationFrame(function() {
+    if (!_sensorModalChart) return;
+    _sensorModalChart.resize();
+    _sensorModalChart.update('none');
+  });
   updateSensorModalRangeButtons();
 }
 
@@ -640,7 +915,7 @@ function setSensorModalRange(range) {
   updateSensorModalRangeButtons();
   if (!_sensorModalChart) return;
   var bounds = getEntriesBounds(state.allEntries);
-  var win = getWindowForRange(bounds, range);
+  var win = getSensorDisplayWindow(bounds, range);
   if (_sensorModalChart.data && Array.isArray(_sensorModalChart.data.datasets)) {
     _sensorModalChart.data.datasets.forEach(function(ds) {
       var rawData = Array.isArray(ds._rawData) && ds._rawData.length ? ds._rawData : ds.data;
@@ -649,10 +924,25 @@ function setSensorModalRange(range) {
     });
   }
   if (_sensorModalChart.options && _sensorModalChart.options.scales && _sensorModalChart.options.scales.x) {
-    _sensorModalChart.options.scales.x.min = win.min;
-    _sensorModalChart.options.scales.x.max = win.max;
+    var xScale = _sensorModalChart.options.scales.x;
+    xScale.min = win.min;
+    xScale.max = win.max;
+    xScale.time = sensorTimeAxisConfig(range);
+    xScale.grid = {
+      color: function(ctx) { return sensorAxisGridColor(ctx, _sensorModalRange); },
+      lineWidth: function(ctx) { return sensorAxisGridWidth(ctx, _sensorModalRange); }
+    };
+    xScale.ticks = xScale.ticks || {};
+    xScale.ticks.maxTicksLimit = sensorAxisTickLimit(range);
+    xScale.ticks.autoSkip = range === 'all';
+    xScale.ticks.callback = function(value, index) { return sensorAxisLabel(value, index, _sensorModalRange); };
+    xScale.afterBuildTicks = function(axis) {
+      var ticks = buildSensorAxisTicks(axis.min, axis.max, _sensorModalRange);
+      if (ticks) axis.ticks = ticks;
+    };
   }
   setSensorChartSunEvents(_sensorModalChart, win);
+  _sensorModalChart.resize();
   _sensorModalChart.update('none');
 }
 

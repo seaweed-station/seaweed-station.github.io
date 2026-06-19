@@ -10,12 +10,12 @@
   };
 
   var POINT_BUDGETS = {
-    default: { day: 288, week: 504, month: 900, all: 1600, custom: 1600 },
-    'station-sensor': { day: 288, week: 504, month: 900, all: 1600, custom: 1600 },
-    'station-weather-line': { day: 288, week: 504, month: 900, all: 1600, custom: 1600 },
+    default: { day: 1500, week: 2500, month: 6000, all: 9000, custom: 9000 },
+    'station-sensor': { day: 1500, week: 2500, month: 6000, all: 9000, custom: 9000 },
+    'station-weather-line': { day: 720, week: 1400, month: 2400, all: 3600, custom: 3600 },
     'station-weather-bar': { day: 288, week: 504, month: 720, all: 960, custom: 960 },
     'health-series': { day: 240, week: 420, month: 700, all: 1200, custom: 1200 },
-    'modal-series': { day: 480, week: 900, month: 1400, all: 2200, custom: 2200 }
+    'modal-series': { day: 2000, week: 4000, month: 8000, all: 12000, custom: 12000 }
   };
   var SERIES_CACHE = new Map();
 
