@@ -72,7 +72,7 @@
     letter-spacing: 0.05em;
   }
 
-  .access-code-input {
+  input[type="password"] {
     width: 100%;
     padding: 10px 14px;
     background: #f7fcfa;
@@ -83,10 +83,8 @@
     outline: none;
     transition: border-color 0.2s;
     margin-bottom: 18px;
-    -webkit-text-security: disc;
-    text-security: disc;
   }
-  .access-code-input:focus {
+  input[type="password"]:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(47, 137, 183, 0.2);
   }
@@ -170,13 +168,13 @@
     <path d="M56 56C57 46 53 36 48 29" stroke="#6f9f3e" stroke-width="1.2" fill="none" opacity="0.35"/>
   </svg>
   <h1>Seaweed Station</h1>
-  <p class="sub">Enter the access code to continue</p>
+  <p class="sub">Enter the access password to continue</p>
 
-  <form id="loginForm" onsubmit="return checkAccessCode()" autocomplete="off">
-    <label for="accessCode">Access Code</label>
-    <input type="text" class="access-code-input" id="accessCode" autofocus autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="••••••••">
+  <form id="loginForm" onsubmit="return checkPassword()">
+    <label for="pwd">Password</label>
+    <input type="password" id="pwd" autofocus autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="••••••••">
     <button class="btn" type="submit">Enter Dashboard</button>
-    <div class="error" id="errMsg">Incorrect access code. Please try again.</div>
+    <div class="error" id="errMsg">Incorrect password. Please try again.</div>
   </form>
 </div>
 <div class="water-transition" id="waterTransition" aria-hidden="true"></div>
@@ -272,10 +270,10 @@
     var errMsg = document.getElementById('errMsg');
     var btn = document.querySelector('#loginForm .btn');
     if (btn) btn.disabled = false;
-    errMsg.textContent = message || 'Incorrect access code. Please try again.';
+    errMsg.textContent = message || 'Incorrect password. Please try again.';
     errMsg.classList.add('show');
-    if (!keepValue) document.getElementById('accessCode').value = '';
-    document.getElementById('accessCode').focus();
+    if (!keepValue) document.getElementById('pwd').value = '';
+    document.getElementById('pwd').focus();
   }
 
   function setSessionRole(role) {
@@ -301,21 +299,21 @@
     sessionStorage.setItem('sw_features', JSON.stringify(features));
   }
 
-  function checkAccessCode() {
-    var accessCode = document.getElementById('accessCode').value;
+  function checkPassword() {
+    var pwd = document.getElementById('pwd').value;
     var errMsg = document.getElementById('errMsg');
     var btn = document.querySelector('#loginForm .btn');
     if (btn) btn.disabled = true;
     errMsg.classList.remove('show');
 
-    SeaweedV4.authenticateAccessRole(accessCode).then(function(role) {
+    SeaweedV4.authenticateAccessRole(pwd).then(function(role) {
       if (!role) {
-        showLoginError('Incorrect access code. Please try again.');
+        showLoginError('Incorrect password. Please try again.');
         return;
       }
 
       setSessionRole(role);
-      if (!role.compatibility) SeaweedV4.rememberSessionAdminPassword(accessCode);
+      if (!role.compatibility) SeaweedV4.rememberSessionAdminPassword(pwd);
       var r = new URLSearchParams(location.search).get('r');
       goWithWaterTransition(r || 'v4/overview.html');
     }).catch(function(err) {
