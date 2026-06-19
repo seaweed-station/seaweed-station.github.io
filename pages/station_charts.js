@@ -642,6 +642,10 @@ function onSensorOptsChange() {
   window._sensorOpts = { night: n ? n.checked : true, harvest: h ? h.checked : true, wx: w ? w.checked : false };
   createOrUpdateCharts();
   syncSensorModalOverlayChecks();
+  if (_sensorModalChart && _sensorModalSourceKey) {
+    renderSensorModalChart();
+    updateSensorModalRangeButtons();
+  }
 }
 
 function getSensorOptsState() {
@@ -681,7 +685,10 @@ function onSensorModalOptsChange() {
   if (ovWx) ovWx.checked = window._sensorOpts.wx;
 
   createOrUpdateCharts();
-  if (_sensorModalSourceKey) openSensorChartModal(_sensorModalSourceKey);
+  if (_sensorModalSourceKey) {
+    renderSensorModalChart();
+    updateSensorModalRangeButtons();
+  }
 }
 
 function baseChartOptions(yLabel, yMin, yMax) {
@@ -829,7 +836,8 @@ function updateCharts() {
   if (!state.charts.temp) return;
   createOrUpdateCharts();
   if (_sensorModalChart && _sensorModalSourceKey) {
-    openSensorChartModal(_sensorModalSourceKey);
+    renderSensorModalChart();
+    updateSensorModalRangeButtons();
   }
 }
 
