@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
+<script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'&&sessionStorage.getItem('sw_auth')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seaweed Station Overview</title>
 <script src="../pages/seaweed_common.js?v=20260504v4"></script>
@@ -331,7 +331,7 @@ a:hover { text-decoration: underline; }
     <button class="btn btn-primary" id="btnFetchAll" onclick="fetchAllLive()">&#128752; Fetch Live</button>
     <span class="fetch-status" id="fetchStatus"></span>
     <span class="auto-refresh-label" id="autoRefreshLabel"></span>
-    <a class="btn btn-sm" href="../pages/battery_estimator.html" title="Battery Estimator" style="font-size:0.95rem" data-feature="battery">&#128267; Battery</a>
+    <a class="btn btn-sm" href="battery_estimator.html" title="Battery Estimator" style="font-size:0.95rem" data-feature="battery">&#128267; Battery</a>
     <a class="btn btn-sm" href="station_health.html" title="Station Health" data-feature="stationHealth">&#128267; Station Health</a>
     <a class="btn btn-sm" href="settings.html" data-feature="settings">&#9881; Settings</a>
   </div>

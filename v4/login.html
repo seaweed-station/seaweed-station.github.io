@@ -3,61 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login - Seaweed V4 Local</title>
-<link rel="stylesheet" href="css/v4.css">
-</head>
-<body class="login-shell">
-<main class="band login-panel">
-  <div class="band-head">
-    <div class="brand">
-      <div class="brand-mark">V4</div>
-      <div>
-        <h1>Seaweed V4 Local</h1>
-        <div class="sub">Local review access</div>
-      </div>
-    </div>
-  </div>
-  <div class="band-body">
-    <form id="loginForm">
-      <div class="field">
-        <label for="pwd">Password</label>
-        <input id="pwd" type="password" autocomplete="off" autofocus>
-      </div>
-      <div class="toolbar" style="margin-top:12px">
-        <button class="btn btn-primary" type="submit">Enter V4 Dashboard</button>
-        <a class="btn" href="../login.html">Use V3 Login</a>
-      </div>
-    </form>
-    <div class="notice error" id="loginError" style="display:none"></div>
-  </div>
-</main>
-<script src="js/catalog_provider_v4.js?v=20260506sharedmeta"></script>
+<title>Login - Seaweed Station Dashboard</title>
 <script>
-"use strict";
-(function() {
-  var redirect = new URLSearchParams(location.search).get('r') || 'overview.html';
-  if (SeaweedV4.isAuthenticated()) {
-    location.replace(redirect);
-    return;
-  }
-  var form = document.getElementById('loginForm');
-  var err = document.getElementById('loginError');
-  form.addEventListener('submit', function(evt) {
-    evt.preventDefault();
-    err.style.display = 'none';
-    var pwd = document.getElementById('pwd').value || '';
-    if (!pwd.trim()) return;
-    SeaweedV4.authenticateAccessRole(pwd).then(function(role) {
-      if (!role) throw new Error('Incorrect password.');
-      SeaweedV4.markAuthenticated(role);
-      SeaweedV4.rememberSessionAdminPassword(pwd);
-      location.replace(redirect);
-    }).catch(function(ex) {
-      err.textContent = ex && ex.message ? ex.message : 'Login failed.';
-      err.style.display = 'block';
-    });
-  });
-})();
+  (function() {
+    var params = new URLSearchParams(location.search);
+    var requested = params.get('r') || 'overview.html';
+    var destination = new URL(requested, location.href).href;
+    location.replace('../login.html?r=' + encodeURIComponent(destination));
+  })();
 </script>
+</head>
+<body>
+  <p>Opening Seaweed Station login...</p>
 </body>
 </html>

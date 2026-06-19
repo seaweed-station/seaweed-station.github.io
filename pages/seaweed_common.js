@@ -1722,21 +1722,35 @@ function getCurrentRole() {
         ? cachedRole.features
         : JSON.parse(sessionStorage.getItem('sw_features') || '{}');
       try {
-        sessionStorage.setItem('sw_allowed_stations', JSON.stringify(stations));
-        sessionStorage.setItem('sw_features', JSON.stringify({
+        var normalizedFeatures = {
           settings: features.settings !== false,
           battery: features.battery !== false,
           stationHealth: features.stationHealth !== false
-        }));
+        };
+        if (Object.prototype.hasOwnProperty.call(features, 'tableConfigurationView')) {
+          normalizedFeatures.tableConfigurationView = features.tableConfigurationView !== false;
+        }
+        if (Object.prototype.hasOwnProperty.call(features, 'tableConfigurationEdit')) {
+          normalizedFeatures.tableConfigurationEdit = features.tableConfigurationEdit === true;
+        }
+        sessionStorage.setItem('sw_allowed_stations', JSON.stringify(stations));
+        sessionStorage.setItem('sw_features', JSON.stringify(normalizedFeatures));
       } catch (_) {}
+      var normalizedFeatures = {
+        settings: features.settings !== false,
+        battery: features.battery !== false,
+        stationHealth: features.stationHealth !== false
+      };
+      if (Object.prototype.hasOwnProperty.call(features, 'tableConfigurationView')) {
+        normalizedFeatures.tableConfigurationView = features.tableConfigurationView !== false;
+      }
+      if (Object.prototype.hasOwnProperty.call(features, 'tableConfigurationEdit')) {
+        normalizedFeatures.tableConfigurationEdit = features.tableConfigurationEdit === true;
+      }
       return {
         roleId: roleId,
         allowedStations: stations,
-        features: {
-          settings: features.settings !== false,
-          battery: features.battery !== false,
-          stationHealth: features.stationHealth !== false
-        }
+        features: normalizedFeatures
       };
     }
   } catch (e) {}
@@ -1785,7 +1799,7 @@ function canAccessFeature(featureName) {
  */
 function requireFeature(featureName, redirectUrl) {
   if (!canAccessFeature(featureName)) {
-    var dest = redirectUrl || '../ESP32_Weather_Station_Dashboard.html';
+    var dest = redirectUrl || '../v4/overview.html';
     location.replace(dest);
     return false;
   }

@@ -2,11 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script>if(sessionStorage.getItem('sw_auth')!=='ok'){location.replace('../login.html?r='+encodeURIComponent(location.href));}</script>
+<script>
+var BATTERY_ESTIMATOR_V4_MODE = /(?:^|[?&])v4=1(?:&|$)/.test(location.search);
+if(sessionStorage.getItem('sw_auth')!=='ok'&&sessionStorage.getItem('sw_auth_v4_local')!=='ok'){
+  location.replace('../login.html?r='+encodeURIComponent(location.href));
+}
+</script>
 <script src="seaweed_common.js"></script>
-<script>if(typeof requireFeature==='function')requireFeature('battery','../ESP32_Weather_Station_Dashboard.html');</script>
+<script>if(typeof requireFeature==='function')requireFeature('battery','../v4/overview.html');</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ESP32 Seaweed Station — Battery Lifetime Estimator v2.1</title>
+<title>ESP32 Seaweed Station — Battery Lifetime Estimator v2.2</title>
 <style>
   :root {
     --bg: #eef8f5;
@@ -516,9 +521,9 @@
 
 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
   <h1>&#9889; Battery Lifetime Estimator</h1>
-  <a href="../ESP32_Weather_Station_Dashboard.html" style="color:var(--accent);font-size:0.85rem;text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-weight:600;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">&#9664; Overview</a>
+  <a id="overviewLink" href="../v4/overview.html" style="color:var(--accent);font-size:0.85rem;text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:5px 12px;font-weight:600;transition:border-color 0.2s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">&#9664; Overview</a>
 </div>
-<p class="subtitle">ESP32 Seaweed Station &nbsp;|&nbsp; T0 (LilyGO T-SIM7670G S3, master) &nbsp;+&nbsp; T-Energy / FireBeetle satellites &nbsp;|&nbsp; v2.1</p>
+<p class="subtitle">ESP32 Seaweed Station &nbsp;|&nbsp; T0 (LilyGO T-SIM7670G S3, master) &nbsp;+&nbsp; T-Energy / FireBeetle satellites &nbsp;|&nbsp; v2.2</p>
 
 <!-- ═══════════════════════════ T0 TAB ═══════════════════════════ -->
 <div id="tab-t0">
@@ -953,13 +958,13 @@
 <!-- Results -->
 <div class="panel results-wrap">
   <div class="panel-title">Results</div>
-  <table id="resultsTable" style="min-width:1600px;">
+  <table id="resultsTable" style="min-width:1680px;">
     <thead>
       <tr>
         <th rowspan="2" class="plot-col">Plot</th>
         <th rowspan="2">#</th>
         <th class="group-head" colspan="9">Inputs</th>
-        <th class="group-head group-sep" colspan="6">Battery Estimate</th>
+        <th class="group-head group-sep" colspan="7">Battery Estimate</th>
         <th class="group-head group-sep" colspan="2">Time Estimates</th>
         <th class="group-head group-sep" colspan="2">Sample Estimates</th>
         <th class="group-head group-sep" colspan="4">Data &amp; Drift (T0)</th>
@@ -975,6 +980,7 @@
         <th class="col-input">Battery<br>(mAh)</th>
         <th class="col-input">T/H<br>Sensors</th>
         <th class="col-output group-sep">Daily<br>mAh</th>
+        <th class="col-output">6 mo gap<br>mAh/d</th>
         <th class="col-output">Sleep<br>mAh/d</th>
         <th class="col-output">Web Sync<br>mAh/d</th>
         <th class="col-output">Sampling<br>mAh/d</th>
@@ -1257,6 +1263,8 @@ let fbRowCounter = 0;
 const fbResults  = [];
 let scenarioVoltageChart = null;
 const selectedScenarioKeys = {};
+const SIX_MONTH_TARGET_DAYS = 183;
+const DEFAULT_DERATING = 0.85;
 
 function syncSharedPeriod() {
   // Shared schedule values are read directly by the estimators.
@@ -1458,6 +1466,28 @@ function lifetimeClass(days) {
   if (days >= 30)  return 'val-ok';
   return 'val-bad';
 }
+function sixMonthBudgetMah(row) {
+  const battCap = Number(row && row.battCap) || 3000;
+  const derating = Number(row && row.derating);
+  const usable = battCap * (Number.isFinite(derating) && derating > 0 ? derating : DEFAULT_DERATING);
+  return usable / SIX_MONTH_TARGET_DAYS;
+}
+function sixMonthGapMah(row) {
+  const daily = Number(row && row.dailyTotal);
+  if (!Number.isFinite(daily)) return null;
+  return daily - sixMonthBudgetMah(row);
+}
+function sixMonthGapClass(gap) {
+  if (!Number.isFinite(gap)) return '';
+  if (gap <= 0) return 'val-good';
+  if (gap <= 3) return 'val-ok';
+  return 'val-bad';
+}
+function formatSixMonthGap(row) {
+  const gap = sixMonthGapMah(row);
+  if (!Number.isFinite(gap)) return '-';
+  return (gap > 0 ? '+' : '') + gap.toFixed(1);
+}
 
 // ============================================================================
 // T0 ENERGY MODEL
@@ -1641,6 +1671,7 @@ function renderResultsTable() {
     const cls = (i === 0) ? 'row-latest row-flash' : '';
     const sk = scenarioKey(r);
     const checked = !!selectedScenarioKeys[sk] ? 'checked' : '';
+    const sixGap = sixMonthGapMah(r);
     html += `<tr class="${cls}">
       <td class="plot-cell"><input type="checkbox" data-scenariokey="${sk}" ${checked}></td>
       <td>${r.num}</td>
@@ -1654,6 +1685,7 @@ function renderResultsTable() {
       <td class="col-input">${r.battCap}</td>
       <td class="col-input">${r.sensorCount}</td>
       <td class="col-output group-sep">${formatMah(r.dailyTotal)}</td>
+      <td class="col-output ${sixMonthGapClass(sixGap)}"><strong>${formatSixMonthGap(r)}</strong></td>
       <td class="col-output">${formatMah(r.sleepMah)}</td>
       <td class="col-output">${formatMah(r.webSyncMah)}</td>
       <td class="col-output">${formatMah(r.sampleMah)}</td>
@@ -1687,13 +1719,13 @@ function updateT0RowCount() {
 function exportT0CSV() {
   if (t0Results.length === 0) return;
   const headers = ['#','Board','Sample Period','Sync Period','Nodes','Mode','Sleep','Web Freq (hr)',
-    'Battery mAh','T/H Sensors','Daily mAh','Sleep mAh/d','Web Sync mAh/d','Sampling mAh/d','ESP-NOW mAh/d','Other mAh/d',
+    'Battery mAh','T/H Sensors','Daily mAh','Six-month gap mAh/d','Sleep mAh/d','Web Sync mAh/d','Sampling mAh/d','ESP-NOW mAh/d','Other mAh/d',
     'Lifetime Days','Lifetime Months','Samples/day','Syncs/day',
     'Updates/day','SIM Data/mo (MB)','RC Drift Typical','RC Drift Worst'];
   let csv = headers.join(',') + '\n';
   t0Results.forEach(r => {
     csv += [r.num,r.board,r.samplePeriod,r.syncPeriod,r.nodes,r.mode,r.sleep,r.webFreq,
-      r.battCap,r.sensorCount,r.dailyTotal.toFixed(2),r.sleepMah.toFixed(2),
+      r.battCap,r.sensorCount,r.dailyTotal.toFixed(2),formatSixMonthGap(r),r.sleepMah.toFixed(2),
       r.webSyncMah.toFixed(2),r.sampleMah.toFixed(2),r.espNowMah.toFixed(2),r.otherMah.toFixed(2),
       r.lifetimeDays.toFixed(1),r.lifetimeMonths.toFixed(1),r.samplesPerDay,r.syncsPerDay,
       r.updatesPerDay ?? '-', r.simDataMB != null ? r.simDataMB.toFixed(2) : '-',
@@ -1818,12 +1850,12 @@ function updateTERowCount() {
 function exportTECSV() {
   if (teResults.length === 0) return;
   const headers = ['#','Board','Sample Period','Sync Period','Nodes','Mode','Sleep','Web Freq (hr)',
-    'Battery mAh','T/H Sensors','Daily mAh','Sleep mAh/d','Web Sync mAh/d','Sampling mAh/d','ESP-NOW mAh/d','Other mAh/d',
+    'Battery mAh','T/H Sensors','Daily mAh','Six-month gap mAh/d','Sleep mAh/d','Web Sync mAh/d','Sampling mAh/d','ESP-NOW mAh/d','Other mAh/d',
     'Lifetime Days','Lifetime Months','Samples/day','Syncs/day'];
   let csv = headers.join(',') + '\n';
   teResults.forEach(r => {
     csv += [r.num,r.board,r.samplePeriod,r.syncPeriod,r.nodes,r.mode,r.sleep,r.webFreq,
-      r.battCap,r.sensorCount,r.dailyTotal.toFixed(2),r.sleepMah.toFixed(2),
+      r.battCap,r.sensorCount,r.dailyTotal.toFixed(2),formatSixMonthGap(r),r.sleepMah.toFixed(2),
       (r.webSyncMah === '-' ? '-' : r.webSyncMah.toFixed(2)),
       (r.sampleMah === '-' ? '-' : r.sampleMah.toFixed(2)),
       (r.espNowMah === '-' ? '-' : r.espNowMah.toFixed(2)),
@@ -1926,12 +1958,12 @@ function updateFBRowCount() {
 function exportFBCSV() {
   if (fbResults.length === 0) return;
   const headers = ['#','Board','Sample Period','Sync Period','Nodes','Mode','Sleep','Web Freq (hr)',
-    'Battery mAh','T/H Sensors','Daily mAh','Sleep mAh/d','Web Sync mAh/d','Sampling mAh/d','ESP-NOW mAh/d','Other mAh/d',
+    'Battery mAh','T/H Sensors','Daily mAh','Six-month gap mAh/d','Sleep mAh/d','Web Sync mAh/d','Sampling mAh/d','ESP-NOW mAh/d','Other mAh/d',
     'Lifetime Days','Lifetime Months','Samples/day','RF Windows/day'];
   let csv = headers.join(',') + '\n';
   fbResults.forEach(r => {
     csv += [r.num,r.board,r.samplePeriod,r.syncPeriod,r.nodes,r.mode,r.sleep,r.webFreq,
-      r.battCap,r.sensorCount,r.dailyTotal.toFixed(2),r.sleepMah.toFixed(2),
+      r.battCap,r.sensorCount,r.dailyTotal.toFixed(2),formatSixMonthGap(r),r.sleepMah.toFixed(2),
       (r.webSyncMah === '-' ? '-' : r.webSyncMah.toFixed(2)),
       r.sampleMah.toFixed(2),r.espNowMah.toFixed(2),r.otherMah.toFixed(2),
       r.lifetimeDays.toFixed(1),r.lifetimeMonths.toFixed(1),r.samplesPerDay,r.syncsPerDay].join(',') + '\n';

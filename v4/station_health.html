@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
+<script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'&&sessionStorage.getItem('sw_auth')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Station Health &mdash; Seaweed Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
@@ -207,7 +207,7 @@ a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 <!-- AUTH GUARD                                                    -->
 <!-- ============================================================ -->
 <script>
-if (sessionStorage.getItem('sw_auth_v4_local')!=='ok' && sessionStorage.getItem('sw_auth')!=='ok') { window.location.href = 'login.html'; }
+if (sessionStorage.getItem('sw_auth_v4_local')!=='ok' && sessionStorage.getItem('sw_auth')!=='ok') { window.location.href = 'login.html?r=' + encodeURIComponent(location.href); }
 </script>
 
 <header class="header">
@@ -216,6 +216,7 @@ if (sessionStorage.getItem('sw_auth_v4_local')!=='ok' && sessionStorage.getItem(
     <div class="nav-links">
       <a class="btn" href="overview.html">&#9664; Overview</a>
       <span id="stationNavLinks" class="nav-links"></span>
+      <a class="btn" href="battery_estimator.html" data-feature="battery">&#128267; Battery</a>
       <button class="btn-fetch" id="btnFetchAll" onclick="fetchLiveAll()" title="Pull latest data from Supabase for all stations">&#128752; Fetch Live</button>
       <a class="btn" id="btnTriggerDL" href="https://github.com/seaweed-station/seaweed-station.github.io/actions/workflows/download-data.yml" target="_blank" title="Open GitHub Actions workflow page for a manual run">&#9889; Actions</a>
       <span class="fetch-status" id="fetchStatus"></span>

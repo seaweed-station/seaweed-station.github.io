@@ -13,9 +13,9 @@
       { href: "overview.html", label: "Overview", page: "overview.html" },
       { href: station ? "station.html" + stationQuery : "station.html", label: "Station", page: "station.html" },
       { href: station ? "station_health.html" + stationQuery : "station_health.html", label: "Health", page: "station_health.html" },
+      { href: "battery_estimator.html", label: "Battery", page: "battery_estimator.html" },
       { href: "alerts.html", label: "Alerts", page: "alerts.html" },
-      { href: "settings.html", label: "Settings", page: "settings.html" },
-      { href: "../ESP32_Weather_Station_Dashboard.html", label: "V3 Live", page: "" }
+      { href: "settings.html", label: "Settings", page: "settings.html" }
     ];
     nodes.forEach(function(node) {
       node.innerHTML = links.map(function(link) {

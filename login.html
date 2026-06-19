@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Login — Seaweed Station Dashboard</title>
-<script src="pages/seaweed_common.js"></script>
+<script src="v4/js/catalog_provider_v4.js?v=20260619primary"></script>
 <style>
   :root {
     --bg: #eef8f5; --bg-card: #ffffff; --bg-hover: #e5f2ee;
@@ -260,10 +260,10 @@
     }, REDIRECT_ANIMATION_MS);
   }
 
-  // If already authenticated, skip straight to the dashboard
-  if (sessionStorage.getItem('sw_auth') === 'ok') {
+  // If already authenticated, skip straight to the V4 dashboard.
+  if (window.SeaweedV4 && SeaweedV4.isAuthenticated()) {
     var r = new URLSearchParams(location.search).get('r');
-    location.replace(r || 'index.html');
+    location.replace(r || 'v4/overview.html');
   }
 
   function showLoginError(message, keepValue) {
@@ -277,16 +277,26 @@
   }
 
   function setSessionRole(role) {
+    if (window.SeaweedV4 && typeof SeaweedV4.markAuthenticated === 'function') {
+      SeaweedV4.markAuthenticated(role);
+    }
     sessionStorage.setItem('sw_auth', 'ok');
     sessionStorage.setItem('sw_role', role.roleId || 'admin');
     sessionStorage.setItem('sw_allowed_stations', JSON.stringify(role.allowedStations || ['*']));
     // Support both formats: new { features: {...} } and legacy { canViewSettings, ... }
     var f = role.features && typeof role.features === 'object' ? role.features : null;
-    sessionStorage.setItem('sw_features', JSON.stringify({
+    var features = {
       settings:      f ? f.settings !== false      : role.canViewSettings !== false,
       battery:       f ? f.battery !== false        : role.canViewBattery !== false,
       stationHealth: f ? f.stationHealth !== false  : role.canViewStationHealth !== false
-    }));
+    };
+    if (f && Object.prototype.hasOwnProperty.call(f, 'tableConfigurationView')) {
+      features.tableConfigurationView = f.tableConfigurationView !== false;
+    }
+    if (f && Object.prototype.hasOwnProperty.call(f, 'tableConfigurationEdit')) {
+      features.tableConfigurationEdit = f.tableConfigurationEdit === true;
+    }
+    sessionStorage.setItem('sw_features', JSON.stringify(features));
   }
 
   function checkPassword() {
@@ -296,15 +306,16 @@
     if (btn) btn.disabled = true;
     errMsg.classList.remove('show');
 
-    authenticateAccessRole(pwd).then(function(role) {
+    SeaweedV4.authenticateAccessRole(pwd).then(function(role) {
       if (!role) {
         showLoginError('Incorrect password. Please try again.');
         return;
       }
 
       setSessionRole(role);
+      if (!role.compatibility) SeaweedV4.rememberSessionAdminPassword(pwd);
       var r = new URLSearchParams(location.search).get('r');
-      goWithWaterTransition(r || 'index.html');
+      goWithWaterTransition(r || 'v4/overview.html');
     }).catch(function(err) {
       showLoginError((err && err.message) || 'Login service unavailable. Please try again later.', true);
     });

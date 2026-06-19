@@ -1,10 +1,10 @@
 ﻿// ============================================================================
 // battery_model.js — Shared Battery Lifetime Prediction Engine
 // ============================================================================
-// Single source of truth for T0 and T-Energy energy models.
+// Single source of truth for T0, T-Energy, and FireBeetle energy models.
 // Used by:  battery_estimator.html  (manual what-if UI)
 //
-// Version: 1.0  (2026-02-24)
+// Version: 1.1  (2026-06-19)
 // ============================================================================
 "use strict";
 
