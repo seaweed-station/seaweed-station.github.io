@@ -1055,10 +1055,12 @@ function updateTimeButtons() {
 
 function updateChartSubheads() {
   var label = timeRangeLabel();
+  var tempLabel = typeof formatSensorChartSubhead === 'function' ? (formatSensorChartSubhead('temp') || label) : label;
+  var humLabel = typeof formatSensorChartSubhead === 'function' ? (formatSensorChartSubhead('hum') || label) : label;
   var el = document.getElementById('tempSubhead');
-  if (el) el.textContent = label;
+  if (el) el.textContent = tempLabel;
   var humSub = document.getElementById('humSubhead');
-  if (humSub) humSub.textContent = label;
+  if (humSub) humSub.textContent = humLabel;
   var batSub = document.getElementById('batSubhead');
   if (batSub) batSub.textContent = label;
 }
