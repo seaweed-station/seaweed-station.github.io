@@ -75,7 +75,7 @@
     </div>
   </section>
 </main>
-<script src="js/catalog_provider_v4.js?v=20260506stationmeta2"></script>
+<script src="js/catalog_provider_v4.js?v=20260626v4stations"></script>
 <script src="js/nav_v4.js?v=20260504roles"></script>
 <script src="js/page_bootstrap_v4.js?v=20260504b"></script>
 <script>
@@ -353,6 +353,7 @@
       renderAccessRoles(getRenderedAccessRoles().length ? getRenderedAccessRoles() : defaultRoleTemplate());
       statusEl.textContent = 'Catalog loaded from ' + SeaweedV4.getOtaBaseUrl() + ' at ' + SeaweedV4.formatTime(catalog.fetched_at || catalog.generated_at);
       stationMetaStatus.textContent = (catalog.stations || []).filter(SeaweedV4.supportsV4ReadModels).length + ' V4 station(s).' +
+        (catalog.v4_station_registry_error ? ' V4 registry fallback: ' + catalog.v4_station_registry_error : '') +
         (catalog.shared_station_metadata_error ? ' Shared metadata fallback: ' + catalog.shared_station_metadata_error : ' Shared metadata loaded when available.');
     } catch (err) {
       profileRows.innerHTML = emptyRow(6, 'Catalog failed.');

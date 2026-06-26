@@ -222,6 +222,84 @@
     return { url: DEFAULT_V4_SUPABASE_URL, key: DEFAULT_V4_SUPABASE_ANON_KEY };
   }
 
+  function cleanV4RegistryProjectFromCatalog(catalog) {
+    var profiles = catalog && Array.isArray(catalog.project_profiles) ? catalog.project_profiles : [];
+    var cleanProfile = null;
+    for (var p = 0; p < profiles.length; p++) {
+      var profile = profiles[p] || {};
+      var profileId = text(profile.profile_id || profile.project_profile_id);
+      var label = text(profile.label);
+      if (text(profile.schema_family).toLowerCase() !== "v4") continue;
+      if (profileId.toLowerCase().indexOf("transition") !== -1) continue;
+      if (label.toLowerCase().indexOf("v3") !== -1) continue;
+      cleanProfile = {
+        profile_id: profileId || "v4-clean-bench",
+        label: label || profileId || "V4 Superbase",
+        schema_family: "v4"
+      };
+      break;
+    }
+
+    var project = stationMetadataProjectFromCatalog(catalog);
+    return Object.assign({}, project, cleanProfile || {
+      profile_id: "v4-clean-bench",
+      label: "V4 Superbase",
+      schema_family: "v4"
+    });
+  }
+
+  async function fetchCleanV4StationRegistry(project) {
+    return await fetchJson(
+      project.url + "/rest/v1/station_registry?select=station_uid,station_name,active,notes&active=eq.true&limit=500",
+      12000,
+      { headers: supabaseHeaders(project.key) }
+    );
+  }
+
+  function mergeCleanV4StationRegistry(catalog, rows, project) {
+    rows = Array.isArray(rows) ? rows : [];
+    if (!catalog || !rows.length) return catalog;
+    var byUid = {};
+    var order = [];
+    (Array.isArray(catalog.stations) ? catalog.stations : []).forEach(function(station) {
+      var stationUid = text(station.station_uid);
+      if (!stationUid) return;
+      byUid[stationUid] = station;
+      order.push(stationUid);
+    });
+    rows.forEach(function(row) {
+      var stationUid = text(row.station_uid);
+      if (!stationUid) return;
+      var existing = byUid[stationUid] || {};
+      if (!byUid[stationUid]) order.push(stationUid);
+      byUid[stationUid] = Object.assign({}, existing, {
+        station_uid: stationUid,
+        station_key: text(existing.station_key) || slug(row.station_name, stationUid),
+        station_name: text(row.station_name || existing.station_name || stationUid),
+        active: row.active !== false,
+        notes: text(row.notes || existing.notes),
+        project_profile_id: project.profile_id,
+        project_label: project.label,
+        schema_family: "v4",
+        supabase_url: project.url,
+        supabase_anon_key: project.key
+      });
+    });
+    catalog.stations = order.map(function(stationUid) { return byUid[stationUid]; }).filter(Boolean);
+    catalog.v4_station_registry_at = new Date().toISOString();
+    return catalog;
+  }
+
+  async function pullCleanV4StationRegistryForCatalog(catalog) {
+    var project = cleanV4RegistryProjectFromCatalog(catalog);
+    try {
+      return mergeCleanV4StationRegistry(catalog, await fetchCleanV4StationRegistry(project), project);
+    } catch (err) {
+      catalog.v4_station_registry_error = err.message || String(err || "V4 station registry merge failed");
+      return catalog;
+    }
+  }
+
   function applyStationMetadataRows(catalog, rows) {
     rows = stationMetadataRows(rows);
     if (!catalog || !Array.isArray(catalog.stations) || !rows.length) return catalog;
@@ -480,13 +558,17 @@
     var base = getOtaBaseUrl();
     var primaryUrl = base + "/api/stations";
     try {
-      var catalog = await pullStationMetadataForCatalog(normalizeCatalog(await fetchJson(primaryUrl, 15000), primaryUrl));
+      var catalog = await pullStationMetadataForCatalog(
+        await pullCleanV4StationRegistryForCatalog(normalizeCatalog(await fetchJson(primaryUrl, 15000), primaryUrl))
+      );
       writeCatalogCache(catalog);
       return catalog;
     } catch (primaryErr) {
       try {
         var fallbackUrl = base + "/api/seaweed/station-catalog";
-        var fallback = await pullStationMetadataForCatalog(normalizeCatalog(await fetchJson(fallbackUrl, 15000), fallbackUrl));
+        var fallback = await pullStationMetadataForCatalog(
+          await pullCleanV4StationRegistryForCatalog(normalizeCatalog(await fetchJson(fallbackUrl, 15000), fallbackUrl))
+        );
         fallback.primary_error = primaryErr.message;
         writeCatalogCache(fallback);
         return fallback;
