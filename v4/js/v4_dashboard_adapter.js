@@ -500,9 +500,14 @@
   }
 
   function postgrestQuery(params) {
-    return Object.keys(params).map(function(key) {
-      return encodeURIComponent(key) + "=" + encodeURIComponent(params[key]);
-    }).join("&");
+    var parts = [];
+    Object.keys(params).forEach(function(key) {
+      var values = Array.isArray(params[key]) ? params[key] : [params[key]];
+      values.forEach(function(value) {
+        parts.push(encodeURIComponent(key) + "=" + encodeURIComponent(value));
+      });
+    });
+    return parts.join("&");
   }
 
   function headers() {
@@ -537,8 +542,7 @@
         if (match) slotMap[match[1]] = Number(match[1]);
       });
     });
-    var slots = Object.keys(slotMap).map(function(key) { return Number(key); }).filter(Boolean).sort(function(a, b) { return a - b; });
-    return slots.length ? slots : [1, 2];
+    return Object.keys(slotMap).map(function(key) { return Number(key); }).filter(Boolean).sort(function(a, b) { return a - b; });
   }
 
   function nodeSlotMap(slotRows, slots) {
@@ -673,7 +677,7 @@
         "battery_v", "battery_pct", "solar_v"
       ].join(","),
       station_uid: "eq." + station.station_uid,
-      sample_epoch: "gte." + win.from.toISOString(),
+      sample_epoch: ["gte." + win.from.toISOString(), "lte." + win.to.toISOString()],
       order: "sample_epoch.desc",
       limit: String(effectiveLimit)
     };
@@ -720,7 +724,7 @@
       var rows = await getPostgrest("sync_sessions", {
         select: "station_uid,hub_board_id,node_board_id,slot_number,sync_id,upload_id,sync_started_at,sync_ended_at,status,status_detail,expected_samples,received_total,transfer_mode,requested_files,received_files,received_file_rows,persisted_sd,sat_rssi_avg,sat_rssi_min,sat_drift_s,sat_battery_v,sat_flash_pct,sat_fw_ver,sat_fw_date,hello_seen,mac_ack_ok,ack_sample_id,transfer_elapsed_ms,sync_period_min,sample_period_min,boot_count,received_live,min_sample_id,max_sample_id,sync_duration_ms,last_miss_summary,t0_backlog_stop_reason,sat_file_fail_reason,t0_file_fail_detail,sync_phase,scheduled_heavy_at,service_outcome,sleep_commanded,ota_deployment_id,ota_attempt_id,ota_target_version,post_ota_fw_ver",
         station_uid: "eq." + station.station_uid,
-        sync_started_at: "gte." + win.from.toISOString(),
+        sync_started_at: ["gte." + win.from.toISOString(), "lte." + win.to.toISOString()],
         order: "sync_started_at.desc",
         limit: String(limit || 1000)
       }, 30000);
@@ -745,7 +749,7 @@
       var rows = await getPostgrest("upload_sessions", {
         select: "station_uid,source_board_id,upload_id,upload_started_at,upload_ended_at,boot_count,upload_duration_ms,transport,csq,espnow_sched_drift_s,abs_time_resync_drift_s,hub_rows_uploaded,sat_rows_uploaded,batches_attempted,batches_succeeded,free_heap,sd_free_kb,files_archived,config_version,config_sync_result,status,status_detail,applied_sample_period_min,applied_upload_interval_hours,applied_upload_anchor_hour_utc,applied_upload_anchor_minute_utc,applied_satellite_sync_period_hours,applied_slot_count,applied_sleep_enable,applied_deploy_mode,applied_fw_version,applied_fw_date",
         station_uid: "eq." + station.station_uid,
-        upload_started_at: "gte." + win.from.toISOString(),
+        upload_started_at: ["gte." + win.from.toISOString(), "lte." + win.to.toISOString()],
         order: "upload_started_at.desc",
         limit: String(limit || 500)
       }, 30000);

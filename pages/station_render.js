@@ -72,16 +72,19 @@ function updateSensorCards() {
 
   var html = '';
   sensors.forEach(function (s) {
-    var hasData = all.some(function (x) { return x[s.tempKey] !== null || x[s.humKey] !== null; });
-    if (!hasData) return; // skip sensors with no data at all
+    var hasData = all.some(function (x) {
+      return finiteOrNull(x[s.tempKey]) !== null || finiteOrNull(x[s.humKey]) !== null;
+    });
 
     // Per-sensor snapshot: latest available point for this sensor pair.
     var latestSensorRow = null;
-    for (var ri = all.length - 1; ri >= 0; ri--) {
-      var row = all[ri];
-      if (row[s.tempKey] !== null || row[s.humKey] !== null) {
-        latestSensorRow = row;
-        break;
+    if (hasData) {
+      for (var ri = all.length - 1; ri >= 0; ri--) {
+        var row = all[ri];
+        if (finiteOrNull(row[s.tempKey]) !== null || finiteOrNull(row[s.humKey]) !== null) {
+          latestSensorRow = row;
+          break;
+        }
       }
     }
 

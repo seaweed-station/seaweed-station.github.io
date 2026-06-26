@@ -43,6 +43,13 @@ function numParse(v) {
   return isNaN(n) ? null : n;
 }
 
+function thPairValues(tempValue, humidityValue) {
+  var temp = numParse(tempValue);
+  var humidity = numParse(humidityValue);
+  if (temp === 0 && humidity === 0) return { temp: null, humidity: null };
+  return { temp: temp, humidity: humidity };
+}
+
 // =====================================================================
 // DISPLAY FORMATTERS
 // =====================================================================
@@ -592,15 +599,18 @@ function ensureUTC(ts) {
 function feedToEntry(f, discoveredSlots) {
   var ts = new Date(f.created_at);
   if (isFutureTimestamp(ts)) return null;
+  var hub1 = thPairValues(f.temp_1, f.humidity_1);
+  var hub2 = thPairValues(f.temp_2, f.humidity_2);
+  var hub3 = thPairValues(f.temp_3, f.humidity_3);
   var entry = {
     timestamp: ts,
     entryId:   f.entry_id,
-    t0Temp1:   numParse(f.temp_1),
-    t0Hum1:    numParse(f.humidity_1),
-    t0Temp2:   numParse(f.temp_2),
-    t0Hum2:    numParse(f.humidity_2),
-    t0Temp3:   numParse(f.temp_3),
-    t0Hum3:    numParse(f.humidity_3),
+    t0Temp1:   hub1.temp,
+    t0Hum1:    hub1.humidity,
+    t0Temp2:   hub2.temp,
+    t0Hum2:    hub2.humidity,
+    t0Temp3:   hub3.temp,
+    t0Hum3:    hub3.humidity,
     t0BatV:    numParse(f.battery_v),
     t0BatPct:  numParse(f.battery_pct),
     t0SolarV:  numParse(f.solar_v),
@@ -619,10 +629,12 @@ function feedToEntry(f, discoveredSlots) {
       f[p + 'battery_pct'] != null ||
       f[p + 'flash_pct'] != null
     );
-    entry['sat' + n + 'Temp1']    = numParse(f[p + 'temp_1']);
-    entry['sat' + n + 'Hum1']     = numParse(f[p + 'humidity_1']);
-    entry['sat' + n + 'Temp2']    = numParse(f[p + 'temp_2']);
-    entry['sat' + n + 'Hum2']     = numParse(f[p + 'humidity_2']);
+    var sat1 = thPairValues(f[p + 'temp_1'], f[p + 'humidity_1']);
+    var sat2 = thPairValues(f[p + 'temp_2'], f[p + 'humidity_2']);
+    entry['sat' + n + 'Temp1']    = sat1.temp;
+    entry['sat' + n + 'Hum1']     = sat1.humidity;
+    entry['sat' + n + 'Temp2']    = sat2.temp;
+    entry['sat' + n + 'Hum2']     = sat2.humidity;
     entry['sat' + n + 'BatV']     = numParse(f[p + 'battery_v']);
     entry['sat' + n + 'BatPct']   = numParse(f[p + 'battery_pct']);
     entry['sat' + n + 'FlashPct'] = numParse(f[p + 'flash_pct']);
@@ -1121,7 +1133,7 @@ function buildStationSensorDefinitions(stationId, entries, deviceSlotsById, sens
 // =====================================================================
 // SHARED CACHE + CROSS-WINDOW SYNC
 // =====================================================================
-var STATION_CACHE_SCHEMA_VERSION = '20260619plots2';
+var STATION_CACHE_SCHEMA_VERSION = '20260626shangani-th';
 
 /**
  * Persist parsed station entries in shared localStorage cache.
