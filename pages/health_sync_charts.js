@@ -81,6 +81,43 @@ function renderSyncCharts(container, entries, stationId, range) {
     return Math.abs(v);
   }
 
+  function presentNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    var parsed = Number(value);
+    return isFinite(parsed) ? parsed : null;
+  }
+
+  function boolVal(value) {
+    if (value === true || value === 1) return true;
+    if (typeof value === 'string') {
+      var s = value.trim().toLowerCase();
+      return s === 'true' || s === 't' || s === '1' || s === 'yes';
+    }
+    return false;
+  }
+
+  function remainingSatelliteDriftS(row) {
+    if (!row) return null;
+    var observed = presentNumber(row.sat_drift_s);
+    if (boolVal(row.drift_learn_applied)) {
+      var residual = presentNumber(row.drift_learn_residual_s);
+      if (residual !== null) return residual;
+    }
+    return observed;
+  }
+
+  function appliedCompensationS(row) {
+    if (!row || !boolVal(row.drift_learn_applied)) return null;
+    return presentNumber(row.drift_learn_candidate_comp_s);
+  }
+
+  function signedSeconds(value) {
+    var n = presentNumber(value);
+    if (n === null) return '--';
+    var rounded = Math.round(n);
+    return (rounded > 0 ? '+' : '') + rounded + 's';
+  }
+
   function syncPhaseText(row) {
     return String((row && (row.sync_phase || row.service_outcome || row.transfer_mode || row.status_detail)) || '').trim().toLowerCase();
   }
@@ -243,7 +280,7 @@ function renderSyncCharts(container, entries, stationId, range) {
   // Check if any sync/RSSI data exists
   var hasDrift = syncRows.some(function(row) {
     return slotList.some(function(slot) {
-      return rowMatchesSlot(row, slot) && isUsableSyncDrift(row.sat_drift_s, row);
+      return rowMatchesSlot(row, slot) && isUsableSyncDrift(remainingSatelliteDriftS(row), row);
     });
   }) || rangeEntries.some(function(e) {
     return slotList.some(function(slot) {
@@ -434,6 +471,20 @@ function renderSyncCharts(container, entries, stationId, range) {
   driftBox = document.createElement('div');
   driftBox.className = 'chart-box';
   driftBox.innerHTML = '<h4>Device Time Drift (' + rangeLabel(range) + ')</h4>';
+  var driftCompStateKey = stationId || '__all';
+  window._healthShowDriftComp = window._healthShowDriftComp || {};
+  var showDriftComp = !!window._healthShowDriftComp[driftCompStateKey];
+  var driftToggle = document.createElement('label');
+  driftToggle.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin:0 0 8px;font-size:0.72rem;color:var(--text-sec);user-select:none';
+  driftToggle.title = 'Overlay applied drift compensation values. Off by default so the drift plot stays uncluttered.';
+  driftToggle.innerHTML = '<input type="checkbox" ' + (showDriftComp ? 'checked ' : '') + 'style="width:14px;height:14px"> Show compensation';
+  driftToggle.querySelector('input').addEventListener('change', function(ev) {
+    window._healthShowDriftComp[driftCompStateKey] = !!ev.target.checked;
+    if (typeof setStationRange === 'function') {
+      setStationRange(stationId, range, { skipEnsure: true, skipRawEnsure: true });
+    }
+  });
+  driftBox.appendChild(driftToggle);
   driftBox.appendChild(driftCanvas);
   container.appendChild(driftBox);
 
@@ -450,6 +501,7 @@ function renderSyncCharts(container, entries, stationId, range) {
   var metricSlots = slotList.map(function(slot) {
     return Object.assign({}, slot, {
       driftSeries: [],
+      driftCompSeries: [],
       rssiSeries: [],
       lastSampleId: null,
       lastDrift: null,
@@ -472,7 +524,7 @@ function renderSyncCharts(container, entries, stationId, range) {
 
   // Primary source (v2): sync_sessions timeline
   var firstDriftRows = firstCheckinDriftRows(syncRows.filter(function(row) {
-    return isUsableSyncDrift(row && row.sat_drift_s, row);
+    return isUsableSyncDrift(remainingSatelliteDriftS(row), row);
   }));
   var firstDriftRowKeys = {};
   firstDriftRows.forEach(function(row) {
@@ -486,8 +538,29 @@ function renderSyncCharts(container, entries, stationId, range) {
       for (var ms = 0; ms < metricSlots.length; ms++) {
         var metricSlot = metricSlots[ms];
         if (!rowMatchesSlot(row, metricSlot)) continue;
-        if (isUsableSyncDrift(row.sat_drift_s, row) && isFirstCheckinDriftRow(row, firstDriftRowKeys)) {
-          metricSlot.driftSeries.push({ x: t, y: Number(row.sat_drift_s) });
+        var remainingDrift = remainingSatelliteDriftS(row);
+        if (isUsableSyncDrift(remainingDrift, row) && isFirstCheckinDriftRow(row, firstDriftRowKeys)) {
+          metricSlot.driftSeries.push({
+            x: t,
+            y: Number(remainingDrift),
+            rawDrift: presentNumber(row.drift_learn_raw_arrival_s) !== null ? presentNumber(row.drift_learn_raw_arrival_s) : presentNumber(row.sat_drift_s),
+            compensation: appliedCompensationS(row),
+            confidence: presentNumber(row.drift_learn_confidence),
+            spread: presentNumber(row.drift_learn_spread_s),
+            applied: boolVal(row.drift_learn_applied),
+            reason: row.drift_learn_reason_text || ''
+          });
+          var comp = appliedCompensationS(row);
+          if (comp !== null) {
+            metricSlot.driftCompSeries.push({
+              x: t,
+              y: Number(comp),
+              remainingDrift: Number(remainingDrift),
+              rawDrift: presentNumber(row.drift_learn_raw_arrival_s) !== null ? presentNumber(row.drift_learn_raw_arrival_s) : presentNumber(row.sat_drift_s),
+              confidence: presentNumber(row.drift_learn_confidence),
+              spread: presentNumber(row.drift_learn_spread_s)
+            });
+          }
         }
         if (row.sat_rssi_avg !== null && row.sat_rssi_avg !== undefined && row.sat_rssi_avg !== 0) {
           metricSlot.rssiSeries.push({ x: t, y: Number(row.sat_rssi_avg) });
@@ -626,6 +699,22 @@ function renderSyncCharts(container, entries, stationId, range) {
         }
         return dsLabel + ': ' + yVal + 's';
       }
+      var rawPoint = ctx && ctx.raw ? ctx.raw : null;
+      if (dsLabel.indexOf('Compensation') >= 0) {
+        var compBits = [dsLabel + ': ' + signedSeconds(yVal)];
+        if (rawPoint && rawPoint.remainingDrift !== null && rawPoint.remainingDrift !== undefined) compBits.push('remaining ' + signedSeconds(rawPoint.remainingDrift));
+        if (rawPoint && rawPoint.rawDrift !== null && rawPoint.rawDrift !== undefined) compBits.push('observed ' + signedSeconds(rawPoint.rawDrift));
+        if (rawPoint && rawPoint.confidence !== null && rawPoint.confidence !== undefined) compBits.push('conf ' + Math.round(Number(rawPoint.confidence)));
+        return compBits.join(' | ');
+      }
+      if (dsLabel.indexOf('Remaining Drift') >= 0 && rawPoint) {
+        var driftBits = [dsLabel + ': ' + signedSeconds(yVal)];
+        if (rawPoint.rawDrift !== null && rawPoint.rawDrift !== undefined) driftBits.push('observed ' + signedSeconds(rawPoint.rawDrift));
+        if (rawPoint.compensation !== null && rawPoint.compensation !== undefined) driftBits.push('comp ' + signedSeconds(rawPoint.compensation));
+        if (rawPoint.confidence !== null && rawPoint.confidence !== undefined) driftBits.push('conf ' + Math.round(Number(rawPoint.confidence)));
+        if (rawPoint.spread !== null && rawPoint.spread !== undefined) driftBits.push('spread ' + Math.round(Number(rawPoint.spread)) + 's');
+        return driftBits.join(' | ');
+      }
       return dsLabel + ': ' + yVal + 's';
     };
 
@@ -655,9 +744,20 @@ function renderSyncCharts(container, entries, stationId, range) {
       if (!slot.driftSeries.length) return;
       driftDatasets.push(makeSeriesDS(
         memoizeHealthSeries('health:' + stationId + ':sync-drift:' + range + ':slot' + slot.slotNumber, slot.driftSeries),
-        slot.label + ' Drift',
+        slot.label + ' Remaining Drift',
         slotColor(slot)
       ));
+      if (showDriftComp && slot.driftCompSeries.length) {
+        var compDS = makeSeriesDS(
+          memoizeHealthSeries('health:' + stationId + ':sync-drift-comp:' + range + ':slot' + slot.slotNumber, slot.driftCompSeries),
+          slot.label + ' Compensation',
+          slotColor(slot, 'aa'),
+          2
+        );
+        compDS.borderDash = [5, 4];
+        compDS.tension = 0;
+        driftDatasets.push(compDS);
+      }
     });
     if (sysDriftSeriesCapped.length) { var _sdDS = makeSeriesDS(memoizeHealthSeries('health:' + stationId + ':sync-drift:' + range + ':t0', sysDriftSeriesCapped), 'T0 Clock Drift', t0SeriesColor); _sdDS.stepped = 'before'; _sdDS.tension = 0; driftDatasets.push(_sdDS); }
     makeLiveChart(driftBox, driftCanvas, 'Device Time Drift \u2013 ' + rangeLabel(range), {

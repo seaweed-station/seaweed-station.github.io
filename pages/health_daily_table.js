@@ -67,6 +67,64 @@ function renderDailyHealth(container, entries, stationId) {
     return Number(v);
   }
 
+  function boolVal(v) {
+    if (v === true || v === 1) return true;
+    if (typeof v === 'string') {
+      var s = v.trim().toLowerCase();
+      return s === 'true' || s === 't' || s === '1' || s === 'yes';
+    }
+    return false;
+  }
+
+  function fmtSignedSeconds(v) {
+    var n = num(v);
+    if (n == null) return '--';
+    var rounded = Math.round(n);
+    return (rounded > 0 ? '+' : '') + rounded + 's';
+  }
+
+  function driftCompShort(row) {
+    if (!row) return '--';
+    var comp = num(row.drift_learn_candidate_comp_s);
+    var residual = num(row.drift_learn_residual_s);
+    var spread = num(row.drift_learn_spread_s);
+    var conf = num(row.drift_learn_confidence);
+    var reason = String(row.drift_learn_reason_text || '').trim();
+    var hasLearner = comp != null || residual != null || spread != null || conf != null || reason;
+    if (!hasLearner) return '--';
+
+    var applied = boolVal(row.drift_learn_applied);
+    var txt = applied ? ('ON ' + fmtSignedSeconds(comp)) : ('OFF ' + fmtSignedSeconds(comp));
+    if (applied) {
+      txt += ' / res ' + fmtSignedSeconds(residual != null ? residual : row.sat_drift_s);
+    } else if (spread != null) {
+      txt += ' / spread ' + Math.round(spread) + 's';
+    } else if (reason) {
+      txt += ' / ' + reason;
+    }
+    if (conf != null) txt += ' / conf ' + Math.round(conf);
+
+    var title = [
+      'drift compensation ' + (applied ? 'applied' : 'not applied'),
+      'candidate ' + fmtSignedSeconds(comp),
+      'remaining ' + fmtSignedSeconds(residual != null ? residual : row.sat_drift_s),
+      'raw ' + fmtSignedSeconds(row.drift_learn_raw_arrival_s != null ? row.drift_learn_raw_arrival_s : row.sat_drift_s),
+      spread != null ? ('spread ' + Math.round(spread) + 's') : null,
+      conf != null ? ('confidence ' + Math.round(conf)) : null,
+      reason ? ('reason ' + reason) : null
+    ].filter(function(v) { return !!v; }).join(' | ');
+    return '<span title="' + escHtml(title) + '">' + escHtml(txt) + '</span>';
+  }
+
+  function remainingDriftForRow(row) {
+    if (!row) return null;
+    if (boolVal(row.drift_learn_applied)) {
+      var residual = num(row.drift_learn_residual_s);
+      if (residual != null) return residual;
+    }
+    return num(row.sat_drift_s);
+  }
+
   function t0ClockDriftS(row) {
     if (!row) return null;
     var v = num(row.abs_time_resync_drift_s);
@@ -507,9 +565,10 @@ function renderDailyHealth(container, entries, stationId) {
   var uploadCols = 1 + enabledSlotCount;
   var radioCols = 1 + enabledSlotCount;
   var driftCols = 1 + enabledSlotCount;
+  var driftCompCols = enabledSlotCount;
   var durationCols = 1 + enabledSlotCount;
   var dataCols = sampleCols + gapCols;
-  var radioSyncCols = uploadCols + radioCols + driftCols + durationCols;
+  var radioSyncCols = uploadCols + radioCols + driftCols + driftCompCols + durationCols;
 
   var groupTh = function(label, span, cls) {
     return '<th colspan="' + span + '" class="group-head ' + cls + '">' + label + '</th>';
@@ -538,6 +597,7 @@ function renderDailyHealth(container, entries, stationId) {
       slotHeaders('RSSI<br><span style="font-weight:400">(avg/max)</span>', 'grp-radio') +
       '<th class="grp-radio">T0 Drift<br><span style="font-weight:400">(avg/max)</span></th>' +
       slotHeaders('Drift<br><span style="font-weight:400">(avg/max)</span>', 'grp-radio') +
+      slotHeaders('Drift Comp<br><span style="font-weight:400">(latest)</span>', 'grp-radio') +
       '<th class="grp-radio">T0 Upload Time</th>' + slotHeaders('Sync Time', 'grp-radio') +
     '</tr>' +
     '</thead><tbody>';
@@ -651,9 +711,10 @@ function renderDailyHealth(container, entries, stationId) {
         syncOk: slotRows.filter(isSyncSuccess).length,
         rssiVals: slotRows.map(function(r) { return num(r.sat_rssi_avg); }).filter(function(v) { return v != null && v !== 0; }),
         driftVals: firstCheckins.map(function(r) {
-          var v = num(r.sat_drift_s);
+          var v = remainingDriftForRow(r);
           return v == null ? null : Math.abs(v);
         }).filter(function(v) { return v != null; }),
+        driftCompRow: firstCheckins.length ? firstCheckins[firstCheckins.length - 1] : null,
         syncMs: slotRows.reduce(function(acc, r) { return acc + (num(r.sync_duration_ms) || 0); }, 0)
       };
     });
@@ -684,6 +745,7 @@ function renderDailyHealth(container, entries, stationId) {
       slotCells('grp-radio', function(stat) { return fmtAvgMax(stat.rssiVals, '', false); }) +
       '<td class="grp-radio">' + fmtAvgMaxWithOutliers(t0DriftVals, 's', 3600) + '</td>' +
       slotCells('grp-radio', function(stat) { return fmtAvgMaxWithOutliers(stat.driftVals, 's', 3600); }) +
+      slotCells('grp-radio', function(stat) { return driftCompShort(stat.driftCompRow); }) +
       '<td class="grp-radio">' + fmtMs(t0UploadMs) + '</td>' +
       slotCells('grp-radio', function(stat) { return fmtMs(stat.syncMs); }) +
     '</tr>';

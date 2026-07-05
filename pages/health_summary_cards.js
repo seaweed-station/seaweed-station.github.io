@@ -339,16 +339,37 @@ function renderSummaryCards(container, entries, stationId) {
     return '<span style="color:' + color + '">' + p.toFixed(0) + '%</span> (' + n + '/' + total + ')';
   }
 
-  // v2: drift sourced from latest sync_sessions row per node
+  function syncBoolValue(value) {
+    if (value === true || value === 1 || value === '1') return true;
+    var s = String(value || '').trim().toLowerCase();
+    return s === 'true' || s === 't' || s === 'yes' || s === 'y';
+  }
+
+  function signedSeconds(v) {
+    var n = syncFiniteNumber(v);
+    if (n === null) return '--';
+    var r = Math.round(n);
+    return (r > 0 ? '+' : '') + r + 's';
+  }
+
+  // v2: drift sourced from latest sync_sessions row per node. When drift
+  // compensation is active, show the remaining/residual drift as the main value.
   function syncSessionDrift(sess) {
-    if (!sess || sess.sat_drift_s === null || sess.sat_drift_s === undefined) return { last: null, stale: true };
+    if (!sess) return { last: null, stale: true };
+    var observed = syncFiniteNumber(sess.sat_drift_s);
+    var residual = syncFiniteNumber(sess.drift_learn_residual_s);
+    var comp = syncFiniteNumber(sess.drift_learn_candidate_comp_s);
+    var conf = syncFiniteNumber(sess.drift_learn_confidence);
+    var applied = syncBoolValue(sess.drift_learn_applied);
+    var last = applied && residual !== null ? residual : observed;
+    if (last === null) return { last: null, stale: true };
     var sessTime = sess.sync_started_at ? new Date(ensureUTC(sess.sync_started_at)) : null;
     var stale = false;
     if (sessTime && !isNaN(sessTime.getTime())) {
       var ageMs = Date.now() - sessTime.getTime();
       stale = ageMs > 6 * 3600000; // stale if > 6h old
     }
-    return { last: sess.sat_drift_s, stale: stale };
+    return { last: last, observed: observed, compensation: comp, confidence: conf, applied: applied, stale: stale };
   }
 
   function driftStr(v) {
@@ -360,6 +381,12 @@ function renderSummaryCards(container, entries, stationId) {
   function driftCardLine(info) {
     if (!info || info.last === null) return '<span style="color:var(--text-muted)">--</span>';
     var out = driftStr(info.last);
+    if (info.compensation !== null && info.compensation !== undefined) {
+      out += ' <span style="color:var(--text-muted);font-size:0.82em">(' +
+        (info.applied ? 'ON ' : 'OFF ') + signedSeconds(info.compensation);
+      if (info.confidence !== null && info.confidence !== undefined) out += ', conf ' + Math.round(info.confidence);
+      out += ')</span>';
+    }
     if (info.stale) out += ' <span style="color:var(--text-muted);font-size:0.82em">(stale)</span>';
     return out;
   }
