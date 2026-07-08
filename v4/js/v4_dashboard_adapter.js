@@ -589,9 +589,20 @@
     return keys.indexOf("tb-02") !== -1 || keys.indexOf("st-0102") !== -1 || keys.indexOf("bati") !== -1;
   }
 
-  function filterBatiCurrentSlotRows(rows, station) {
+  function expectedBoardBySlot(slotRows) {
+    var out = {};
+    (slotRows || []).forEach(function(row) {
+      var slot = Number(row && row.slot_number);
+      var board = text(row && (row.node_board_id || row.node_id || row.node_primary_label)).toUpperCase();
+      if (board && isFinite(slot) && slot > 0) out[slot] = board;
+    });
+    return out;
+  }
+
+  function filterBatiCurrentSlotRows(rows, station, slotRows) {
     if (!isBatiStation(station)) return rows;
-    var expectedBySlot = { 1: "N0008", 2: "N0009", 3: "N0011" };
+    var expectedBySlot = expectedBoardBySlot(slotRows);
+    if (!Object.keys(expectedBySlot).length) return rows;
     return (Array.isArray(rows) ? rows : []).filter(function(row) {
       var role = text(row && row.sample_role).toLowerCase();
       var slot = Number(row && row.slot_number);
@@ -775,7 +786,7 @@
     var slotRows = await fetchSlotRowsForStation(result.station);
     var syncRows = await fetchSyncRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 200 : 800);
     var uploadRows = await fetchUploadRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 120 : 400);
-    var stationRows = filterBatiCurrentSlotRows(result.rows, result.station);
+    var stationRows = filterBatiCurrentSlotRows(result.rows, result.station, slotRows);
     var slots = discoverSlots(stationRows, slotRows);
     var feeds = rowsToFeeds(stationRows, slots);
     var latestUpload = uploadRows.length ? uploadRows[uploadRows.length - 1] : null;
