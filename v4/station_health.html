@@ -302,7 +302,17 @@ if (typeof requireFeature === 'function') requireFeature('stationHealth', 'overv
 // Station configurations — derived from STATION_REGISTRY (seaweed_common.js)
 var _HEALTH_TZ = { perth: 'Australia/Perth', perth_table: 'Australia/Perth', shangani: 'Africa/Nairobi', funzi: 'Africa/Nairobi', spare: 'UTC' };
 var STATIONS_DEFAULT = STATION_REGISTRY.map(function(s) {
-  return { id: s.id, name: s.name, defaultFolder: s.dataFolder, configKey: s.id, type: 'gateway', tz: _HEALTH_TZ[s.id] || 'UTC', displayTime: s.displayTime || '' };
+  return {
+    id: s.id,
+    name: s.name,
+    stationKey: s.stationKey || s.station_key || s.id,
+    stationUid: s.stationUid || s.station_uid || '',
+    defaultFolder: s.dataFolder,
+    configKey: s.id,
+    type: 'gateway',
+    tz: _HEALTH_TZ[s.id] || 'UTC',
+    displayTime: s.displayTime || ''
+  };
 });
 
 function buildConfiguredStations() {
@@ -431,7 +441,7 @@ function syncConfiguredStationUI() {
       var a = document.createElement('a');
       a.className = 'btn';
       a.setAttribute('data-station-link', st.id);
-      a.href = 'station.html?table=' + encodeURIComponent(st.id);
+      a.href = 'station.html?station=' + encodeURIComponent(st.stationKey || st.id);
       a.textContent = st.name || st.id;
       nav.appendChild(a);
     });

@@ -21,7 +21,7 @@ RESULTS_FILE = os.environ.get(
     os.path.join(os.path.dirname(__file__), "browser_console_audit_results.json"),
 )
 
-OVERVIEW_PATH = "/ESP32_Weather_Station_Dashboard.html"
+OVERVIEW_PATH = "/v4/overview.html"
 IGNORED_WARNING_SNIPPETS = [
     "[Overview] dashboard-overview payload stale; rendering cached cards first and refreshing in background",
     "[Overview] dashboard-overview payload stale; rendering cached cards first and deferring station-detail refresh until manual fetch",
@@ -29,16 +29,16 @@ IGNORED_WARNING_SNIPPETS = [
 ]
 
 PAGES = [
-    {"name": "login", "path": "/login.html", "wait": 3},
+    {"name": "login", "path": "/v4/login.html", "wait": 3},
     {"name": "index", "path": "/index.html", "wait": 4},
     {"name": "overview", "path": OVERVIEW_PATH, "wait": 12},
-    {"name": "battery_estimator", "path": "/pages/battery_estimator.html", "wait": 6},
-    {"name": "station_health", "path": "/pages/station_health.html", "wait": 14},
-    {"name": "settings", "path": "/pages/settings.html", "wait": 6},
-    {"name": "station_perth", "path": "/pages/station.html?table=perth", "wait": 12},
-    {"name": "station_shangani", "path": "/pages/station.html?table=shangani", "wait": 12},
-    {"name": "station_funzi", "path": "/pages/station.html?table=funzi", "wait": 12},
-    {"name": "station_spare", "path": "/pages/station.html?table=spare", "wait": 12},
+    {"name": "battery_estimator", "path": "/v4/battery_estimator.html", "wait": 6},
+    {"name": "station_health", "path": "/v4/station_health.html", "wait": 14},
+    {"name": "settings", "path": "/v4/settings.html", "wait": 6},
+    {"name": "station_perth", "path": "/v4/station.html?station=perth", "wait": 12},
+    {"name": "station_shangani", "path": "/v4/station.html?station=shangani", "wait": 12},
+    {"name": "station_funzi", "path": "/v4/station.html?station=funzi", "wait": 12},
+    {"name": "station_spare", "path": "/v4/station.html?station=spare", "wait": 12},
 ]
 
 PRELOAD_HOOK = r"""
@@ -165,7 +165,7 @@ def page_snapshot(driver):
 
 def login(driver):
     target = BASE_URL + OVERVIEW_PATH
-    url = f"{BASE_URL}/login.html?r={quote(target, safe=':/?=&')}"
+    url = f"{BASE_URL}/v4/login.html?r={quote(target, safe=':/?=&')}"
     driver.get(url)
     wait_document_ready(driver)
     pwd = WebDriverWait(driver, TIMEOUT_S).until(EC.presence_of_element_located((By.ID, "pwd")))
@@ -174,7 +174,9 @@ def login(driver):
     driver.find_element(By.CSS_SELECTOR, "#loginForm .btn").click()
 
     WebDriverWait(driver, TIMEOUT_S).until(
-        lambda d: d.execute_script("return sessionStorage.getItem('sw_auth')") == "ok"
+        lambda d: d.execute_script(
+            "return sessionStorage.getItem('sw_auth') === 'ok' || sessionStorage.getItem('sw_auth_v4_local') === 'ok';"
+        )
     )
     WebDriverWait(driver, TIMEOUT_S).until(lambda d: "login.html" not in d.current_url)
     time.sleep(3)

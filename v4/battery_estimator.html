@@ -1,17 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Battery Lifetime Estimator - Seaweed V4</title>
 <script>
-  (function() {
-    var destination = new URL('../pages/battery_estimator.html?v4=1', location.href);
-    location.replace(destination.href);
-  })();
+if (sessionStorage.getItem('sw_auth_v4_local') !== 'ok' && sessionStorage.getItem('sw_auth') !== 'ok') {
+  location.replace('login.html?r=' + encodeURIComponent(location.href));
+}
 </script>
+<style>
+  html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    background: #eef8f5;
+  }
+  iframe {
+    display: block;
+    width: 100%;
+    height: 100vh;
+    border: 0;
+  }
+</style>
 </head>
 <body>
-  <p>Opening Battery Lifetime Estimator...</p>
+  <iframe title="Battery Lifetime Estimator" src="../pages/battery_estimator.html?v4=1"></iframe>
 </body>
 </html>
