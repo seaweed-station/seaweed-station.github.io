@@ -10,8 +10,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1/dist/chartjs-adapter-luxon.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2/dist/chartjs-plugin-zoom.min.js"></script>
-<script src="../pages/seaweed_common.js?v=20260626shangani-th"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260709v4fixes"></script>
+<script src="../pages/seaweed_common.js?v=20260709rolealiases"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260709rolealiases"></script>
 <script src="../pages/seaweed_sync.js?v=20260504v4"></script>
 <script src="../pages/plot_core.js?v=20260619plots2"></script>
 <script src="../pages/plot_overlays.js"></script>
@@ -330,6 +330,10 @@ function buildConfiguredStations() {
       var out = Object.assign({}, base);
       out.id = p.id;
       out.name = p.name || base.name || p.id;
+      out.stationKey = p.stationKey || p.station_key || base.stationKey || base.station_key || '';
+      out.stationUid = p.stationUid || p.station_uid || base.stationUid || base.station_uid || '';
+      out.catalogAliases = (p.catalogAliases || p.catalog_aliases || base.catalogAliases || base.catalog_aliases || []).slice ? (p.catalogAliases || p.catalog_aliases || base.catalogAliases || base.catalog_aliases || []).slice() : [];
+      out.historicalSourceKeys = (p.historicalSourceKeys || p.historical_source_keys || base.historicalSourceKeys || base.historical_source_keys || []).slice ? (p.historicalSourceKeys || p.historical_source_keys || base.historicalSourceKeys || base.historical_source_keys || []).slice() : [];
       out.configKey = p.id;
       out.defaultFolder = p.dataFolder || base.defaultFolder || ('data_' + p.id);
       out.displayTime = p.displayTime || base.displayTime || '';

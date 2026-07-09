@@ -1926,12 +1926,58 @@ function getCurrentRole() {
 /**
  * Check if a station is visible for the current role.
  */
-function isStationVisibleForRole(stationId) {
+function addStationRoleAlias(list, value) {
+  var raw = String(value == null ? '' : value).trim().toLowerCase();
+  if (!raw) return;
+  list.push(raw);
+  var dashed = raw.replace(/[\s_]+/g, '-');
+  var underscored = raw.replace(/[\s-]+/g, '_');
+  if (dashed !== raw) list.push(dashed);
+  if (underscored !== raw) list.push(underscored);
+}
+
+function stationRoleAliases(stationLike) {
+  var aliases = [];
+  if (typeof stationLike === 'string') {
+    addStationRoleAlias(aliases, stationLike);
+  } else if (stationLike && typeof stationLike === 'object') {
+    [
+      stationLike.id,
+      stationLike.device_id,
+      stationLike.station_id,
+      stationLike.stationKey,
+      stationLike.station_key,
+      stationLike.stationUid,
+      stationLike.station_uid,
+      stationLike.name,
+      stationLike.stationName,
+      stationLike.station_name,
+      stationLike.legacy_device_id
+    ].forEach(function(value) { addStationRoleAlias(aliases, value); });
+
+    ['catalog_aliases', 'catalogAliases', 'aliases', 'historical_source_keys', 'historicalSourceKeys'].forEach(function(key) {
+      if (!Array.isArray(stationLike[key])) return;
+      stationLike[key].forEach(function(value) { addStationRoleAlias(aliases, value); });
+    });
+  }
+  var seen = {};
+  return aliases.filter(function(alias) {
+    if (!alias || seen[alias]) return false;
+    seen[alias] = true;
+    return true;
+  });
+}
+
+function isStationVisibleForRole(stationLike) {
   var role = getCurrentRole();
   if (!role.allowedStations) return true;
   if (!role.allowedStations.length) return false;
   if (role.allowedStations.indexOf('*') !== -1) return true;
-  return role.allowedStations.indexOf(String(stationId).toLowerCase()) !== -1;
+  var allowed = {};
+  role.allowedStations.forEach(function(item) {
+    stationRoleAliases(String(item || '')).forEach(function(alias) { allowed[alias] = true; });
+  });
+  return stationRoleAliases(stationLike).some(function(alias) { return !!allowed[alias]; });
 }
 
 /**
@@ -1940,8 +1986,7 @@ function isStationVisibleForRole(stationId) {
 function filterStationsForRole(stationsArray) {
   if (!Array.isArray(stationsArray)) return [];
   return stationsArray.filter(function(s) {
-    var id = typeof s === 'string' ? s : (s && (s.id || s.device_id));
-    return isStationVisibleForRole(id);
+    return isStationVisibleForRole(s);
   });
 }
 

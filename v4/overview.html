@@ -5,8 +5,8 @@
 <script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'&&sessionStorage.getItem('sw_auth')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seaweed Station Overview</title>
-<script src="../pages/seaweed_common.js?v=20260626shangani-th"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260709v4fixes"></script>
+<script src="../pages/seaweed_common.js?v=20260709rolealiases"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260709rolealiases"></script>
 <style>
 /* -- CSS Variables ------------------------------------------------- */
 :root {
@@ -417,6 +417,10 @@ function buildConfiguredTables() {
       };
       var out = Object.assign({}, base);
       out.id = id;
+      out.stationKey = p.stationKey || p.station_key || base.stationKey || base.station_key || '';
+      out.stationUid = p.stationUid || p.station_uid || base.stationUid || base.station_uid || '';
+      out.catalogAliases = (p.catalogAliases || p.catalog_aliases || base.catalogAliases || base.catalog_aliases || []).slice ? (p.catalogAliases || p.catalog_aliases || base.catalogAliases || base.catalog_aliases || []).slice() : [];
+      out.historicalSourceKeys = (p.historicalSourceKeys || p.historical_source_keys || base.historicalSourceKeys || base.historical_source_keys || []).slice ? (p.historicalSourceKeys || p.historical_source_keys || base.historicalSourceKeys || base.historical_source_keys || []).slice() : [];
       if (p.name) out.name = p.name;
       if (p.dataFolder) out.dataFile = '../data/' + p.dataFolder + '/merged_data.js';
       out.page = 'station.html?table=' + encodeURIComponent(id);

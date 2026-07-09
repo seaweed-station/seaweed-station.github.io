@@ -286,8 +286,28 @@
       var allowed = JSON.parse(sessionStorage.getItem("sw_allowed_stations") || '["*"]');
       if (!Array.isArray(allowed) || !allowed.length || allowed.indexOf("*") !== -1) return true;
       var allowedMap = {};
-      allowed.forEach(function(item) { allowedMap[text(item).toLowerCase()] = true; });
-      var aliases = [station.id, station.station_key, station.station_uid, text(station.station_key).replace(/-/g, "_"), text(station.name).toLowerCase()];
+      allowed.forEach(function(item) {
+        var raw = text(item).toLowerCase();
+        if (!raw) return;
+        allowedMap[raw] = true;
+        allowedMap[raw.replace(/[\s_]+/g, "-")] = true;
+        allowedMap[raw.replace(/[\s-]+/g, "_")] = true;
+      });
+      var aliases = [
+        station.id,
+        station.device_id,
+        station.station_id,
+        station.station_key,
+        station.stationKey,
+        station.station_uid,
+        station.stationUid,
+        station.legacy_device_id,
+        text(station.station_key).replace(/-/g, "_"),
+        text(station.station_key).replace(/_/g, "-"),
+        text(station.name).toLowerCase()
+      ];
+      (Array.isArray(station.catalog_aliases) ? station.catalog_aliases : []).forEach(function(item) { aliases.push(item); });
+      (Array.isArray(station.historical_source_keys) ? station.historical_source_keys : []).forEach(function(item) { aliases.push(item); });
       for (var i = 0; i < aliases.length; i++) {
         if (allowedMap[text(aliases[i]).toLowerCase()]) return true;
       }
@@ -403,6 +423,8 @@
         mapLon: station.lon,
         stationUid: station.station_uid,
         stationKey: station.station_key,
+        catalogAliases: station.catalog_aliases || [],
+        historicalSourceKeys: station.historical_source_keys || [],
         projectProfileId: station.project_profile_id,
         supabaseUrl: station.supabase_url || V4_SUPABASE_URL,
         supabaseAnonKey: station.supabase_anon_key || V4_SUPABASE_ANON_KEY,
@@ -512,6 +534,75 @@
         try {
           window.dispatchEvent(new CustomEvent("seaweed:deviceProfilesUpdated", {
             detail: { changed: true, source: "v4_station_metadata", fetchedAt: Date.now() }
+          }));
+        } catch (_) {}
+      }
+      return { changed: changed };
+    } catch (_) {
+      return { changed: false };
+    }
+  }
+
+  async function hydrateCatalogFromSupabase() {
+    var before = metadataSnapshotKey();
+    try {
+      var response = await fetchWithTimeout(
+        V4_SUPABASE_URL + "/rest/v1/station_registry?select=station_uid,station_name,active,notes&active=eq.true&limit=500",
+        12000,
+        { headers: headers() }
+      );
+      if (!response.ok) return { changed: false };
+      var rows = await response.json();
+      if (!Array.isArray(rows) || !rows.length) return { changed: false };
+      var existingCatalog = null;
+      try {
+        existingCatalog = JSON.parse(localStorage.getItem(CATALOG_CACHE_KEY) || "null");
+      } catch (_) {}
+      var existingByUid = {};
+      (existingCatalog && Array.isArray(existingCatalog.stations) ? existingCatalog.stations : []).forEach(function(station) {
+        var stationUid = text(station && station.station_uid);
+        if (stationUid) existingByUid[stationUid] = station;
+      });
+      var catalog = {
+        catalog_version: 0,
+        generated_at: new Date().toISOString(),
+        fetched_at: new Date().toISOString(),
+        source: "v4_station_registry_browser",
+        project_profiles: [{
+          profile_id: "v4-clean-bench",
+          label: "V4 Supabase",
+          schema_family: "v4",
+          supabase_url: V4_SUPABASE_URL,
+          anon_key_present: true,
+          active: true
+        }],
+        stations: rows.map(function(row) {
+          var stationUid = text(row.station_uid);
+          var existing = existingByUid[stationUid] || {};
+          return Object.assign({}, existing, {
+            station_uid: text(row.station_uid),
+            station_key: text(existing.station_key) || slug(row.station_name || row.station_uid),
+            station_name: text(row.station_name || row.station_uid),
+            active: row.active !== false,
+            notes: text(row.notes),
+            project_profile_id: text(existing.project_profile_id) || "v4-clean-bench",
+            project_label: text(existing.project_label) || "V4 Supabase",
+            schema_family: "v4",
+            supabase_url: text(existing.supabase_url) || V4_SUPABASE_URL,
+            supabase_anon_key: text(existing.supabase_anon_key) || V4_SUPABASE_ANON_KEY
+          });
+        }).filter(function(row) {
+          return !!row.station_uid;
+        })
+      };
+      localStorage.setItem(CATALOG_CACHE_KEY, JSON.stringify(catalog));
+      applyRegistry();
+      var after = metadataSnapshotKey();
+      var changed = before !== after;
+      if (changed && typeof window.dispatchEvent === "function") {
+        try {
+          window.dispatchEvent(new CustomEvent("seaweed:deviceProfilesUpdated", {
+            detail: { changed: true, source: "v4_station_registry", fetchedAt: Date.now() }
           }));
         } catch (_) {}
       }
@@ -983,7 +1074,9 @@
   }
 
   applyRegistry();
-  refreshSharedStationMetadataFromSupabase();
+  hydrateCatalogFromSupabase().then(function() {
+    return refreshSharedStationMetadataFromSupabase();
+  });
 
   window.SW_V4_DASHBOARD = {
     stations: stations,
@@ -992,6 +1085,7 @@
     installStationDataAdapter: installStationDataAdapter,
     installOverviewDataAdapter: installOverviewDataAdapter,
     installHealthDataAdapter: installHealthDataAdapter,
+    hydrateCatalogFromSupabase: hydrateCatalogFromSupabase,
     refreshSharedStationMetadataFromSupabase: refreshSharedStationMetadataFromSupabase
   };
 })(window);

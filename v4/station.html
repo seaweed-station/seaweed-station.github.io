@@ -1038,8 +1038,8 @@ body {
      =================================================================== -->
 <!-- seaweed_common.js must load before bootLoader — STATION_REGISTRY is defined there -->
 <script src="js/catalog_provider_v4.js?v=20260709v4fixes"></script>
-<script src="../pages/seaweed_common.js?v=20260626shangani-th"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260709v4fixes"></script>
+<script src="../pages/seaweed_common.js?v=20260709rolealiases"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260709rolealiases"></script>
 <script id="bootLoader">
 // Boot loader: reads ?table= param, injects data scripts
 (function(){
@@ -1054,16 +1054,10 @@ body {
     };
   }
 
-  function isBatiStationId(id) {
-    var key = String(id || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-    return key === 'tb_02' || key === 'bati' || key === 'st_0102';
-  }
-
   var params = new URLSearchParams(window.location.search);
   var v4StationKey = params.get('station') || params.get('table') || '';
-  var isBatiRoute = isBatiStationId(v4StationKey);
-  var v4Station = (!isBatiRoute && window.SW_V4_DASHBOARD) ? window.SW_V4_DASHBOARD.findStation(v4StationKey) : null;
-  var tableId = isBatiRoute ? 'tb-02' : ((v4Station && v4Station.id) || params.get('table') || v4StationKey || 'tb-01');
+  var v4Station = window.SW_V4_DASHBOARD ? window.SW_V4_DASHBOARD.findStation(v4StationKey) : null;
+  var tableId = (v4Station && v4Station.id) || params.get('table') || v4StationKey || 'tb-01';
   window.__TABLE_ID = tableId;
 
   // Station definitions — derived from STATION_REGISTRY (seaweed_common.js)
@@ -1090,21 +1084,6 @@ body {
     return String(id || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
   }
 
-  function applyCanonicalStationConfig(id, cfg) {
-    if (!isBatiStationId(id) && !(cfg && isBatiStationId(cfg.id))) return cfg;
-    var out = Object.assign({}, cfg || {});
-    out.id = 'tb-02';
-    out.title = 'Bati';
-    out.subtitle = 'Bati station -- Seaweed Table T/H Monitoring';
-    out.dataFolder = 'data_tb-02';
-    if (!isFinite(Number(out.mapLat))) out.mapLat = -31.87;
-    if (!isFinite(Number(out.mapLon))) out.mapLon = 115.90;
-    out.weather = buildWeatherLocation('Bati', out.mapLat, out.mapLon);
-    out.tideStation = 'perth';
-    out.sensorMap = 'bati';
-    return out;
-  }
-
   function buildStationsFromConfig() {
     var out = {};
     var configured = null;
@@ -1114,7 +1093,7 @@ body {
     } catch(e) {}
 
     Object.keys(STATIONS_DEFAULT).forEach(function(id) {
-      out[id] = applyCanonicalStationConfig(id, Object.assign({}, STATIONS_DEFAULT[id]));
+      out[id] = Object.assign({}, STATIONS_DEFAULT[id]);
     });
 
     if (configured && configured.length) {
@@ -1159,7 +1138,7 @@ body {
         var weatherLabel = (base.weather && base.weather.name) ? base.weather.name : merged.title;
         merged.weather = buildWeatherLocation(weatherLabel, merged.mapLat, merged.mapLon);
         merged.displayTime = p.displayTime || base.displayTime || '';
-        out[id] = applyCanonicalStationConfig(id, merged);
+        out[id] = merged;
       });
     }
 
@@ -1167,19 +1146,21 @@ body {
   }
 
   var STATIONS = buildStationsFromConfig();
-  if (isBatiRoute) {
-    STATIONS['tb-02'] = applyCanonicalStationConfig('tb-02', STATIONS['tb-02'] || {});
-  }
 
   // Role-based station filtering: remove stations the current role cannot see
   if (typeof filterStationsForRole === 'function') {
-    var allowedIds = filterStationsForRole(Object.keys(STATIONS).map(function(id) { return { id: id }; })).map(function(s) { return s.id; });
+    var allowedIds = filterStationsForRole(Object.keys(STATIONS).map(function(id) {
+      var station = STATIONS[id] || {};
+      return {
+        id: id,
+        stationKey: (window.SW_V4_DASHBOARD && window.SW_V4_DASHBOARD.findStation(id) || {}).station_key || '',
+        stationUid: (window.SW_V4_DASHBOARD && window.SW_V4_DASHBOARD.findStation(id) || {}).station_uid || '',
+        name: station.title
+      };
+    })).map(function(s) { return s.id; });
     Object.keys(STATIONS).forEach(function(id) {
       if (allowedIds.indexOf(id) === -1) delete STATIONS[id];
     });
-  }
-  if (isBatiRoute) {
-    STATIONS['tb-02'] = applyCanonicalStationConfig('tb-02', STATIONS['tb-02'] || {});
   }
 
   var stationIds = Object.keys(STATIONS);
@@ -1188,7 +1169,7 @@ body {
     tableId = fallbackId;
     window.__TABLE_ID = fallbackId;
   }
-  var cfg = applyCanonicalStationConfig(tableId, STATIONS[tableId] || STATIONS_DEFAULT.perth);
+  var cfg = STATIONS[tableId] || STATIONS_DEFAULT.perth;
 
   window.__STATIONS = STATIONS;
   window.__STATION = cfg;
