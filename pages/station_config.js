@@ -106,43 +106,64 @@ var SENSOR_MAPS = {
     ],
   },
   bati: {
-    viewBox: '0 0 900 260',
-    label: 'Bati direct T/H sensor placement diagram',
-    svg:
-      '<rect x="26" y="98" width="150" height="64" rx="7" fill="#0369a1" fill-opacity="0.12" stroke="#38bdf8" stroke-width="2"/>' +
-      '<text x="101" y="124" text-anchor="middle" fill="#38bdf8" font-size="14" font-weight="700">S1</text>' +
-      '<text x="101" y="145" text-anchor="middle" fill="#0f766e" font-size="12" font-weight="700">Hub T/H</text>' +
-      '<line x1="176" y1="130" x2="238" y2="60" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 4"/>' +
-      '<line x1="176" y1="130" x2="238" y2="130" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 4"/>' +
-      '<line x1="176" y1="130" x2="238" y2="200" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 4"/>' +
-      '<rect x="238" y="28" width="190" height="64" rx="7" fill="#15803d" fill-opacity="0.12" stroke="#22c55e" stroke-width="2"/>' +
-      '<text x="333" y="53" text-anchor="middle" fill="#22c55e" font-size="14" font-weight="700">S2</text>' +
-      '<text x="333" y="72" text-anchor="middle" fill="#0f766e" font-size="12" font-weight="700">Slot 1 Satellite</text>' +
-      '<text x="333" y="86" text-anchor="middle" fill="#64748b" font-size="10">N0008</text>' +
-      '<rect x="238" y="98" width="190" height="64" rx="7" fill="#854d0e" fill-opacity="0.12" stroke="#eab308" stroke-width="2"/>' +
-      '<text x="333" y="123" text-anchor="middle" fill="#eab308" font-size="14" font-weight="700">S3</text>' +
-      '<text x="333" y="142" text-anchor="middle" fill="#0f766e" font-size="12" font-weight="700">Slot 2 Satellite</text>' +
-      '<text x="333" y="156" text-anchor="middle" fill="#64748b" font-size="10">N0009</text>' +
-      '<rect x="238" y="168" width="190" height="64" rx="7" fill="#7e22ce" fill-opacity="0.12" stroke="#a855f7" stroke-width="2"/>' +
-      '<text x="333" y="193" text-anchor="middle" fill="#a855f7" font-size="14" font-weight="700">S4</text>' +
-      '<text x="333" y="212" text-anchor="middle" fill="#0f766e" font-size="12" font-weight="700">Slot 3 Satellite</text>' +
-      '<text x="333" y="226" text-anchor="middle" fill="#64748b" font-size="10">N0011</text>' +
-      '<line x1="428" y1="60" x2="486" y2="86" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 4"/>' +
-      '<line x1="428" y1="200" x2="486" y2="174" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5 4"/>' +
-      '<rect x="486" y="54" width="180" height="64" rx="7" fill="#991b1b" fill-opacity="0.08" stroke="#ef4444" stroke-width="1.7" stroke-dasharray="7 5"/>' +
-      '<text x="576" y="79" text-anchor="middle" fill="#ef4444" font-size="14" font-weight="700">S5</text>' +
-      '<text x="576" y="99" text-anchor="middle" fill="#64748b" font-size="12">Future FireBeetle</text>' +
-      '<rect x="486" y="142" width="180" height="64" rx="7" fill="#9a3412" fill-opacity="0.08" stroke="#f97316" stroke-width="1.7" stroke-dasharray="7 5"/>' +
-      '<text x="576" y="167" text-anchor="middle" fill="#f97316" font-size="14" font-weight="700">S6</text>' +
-      '<text x="576" y="187" text-anchor="middle" fill="#64748b" font-size="12">Future FireBeetle</text>' +
-      '<text x="346" y="250" text-anchor="middle" fill="#64748b" font-size="10">Bati hub direct T/H plus FireBeetle satellite T/H slots</text>',
+    viewBox: '0 0 900 300',
+    label: 'Bati seaweed table sensor placement diagram',
+    svg: '<rect x="40" y="266" width="760" height="8" fill="#334155" rx="2"/>' +
+      '<rect x="78" y="24" width="16" height="242" fill="#107c41" rx="3"/>' +
+      '<rect x="238" y="24" width="16" height="242" fill="#107c41" rx="3"/>' +
+      '<rect x="398" y="24" width="16" height="242" fill="#107c41" rx="3"/>' +
+      '<rect x="558" y="24" width="16" height="242" fill="#107c41" rx="3"/>' +
+      '<rect x="718" y="24" width="16" height="242" fill="#107c41" rx="3"/>' +
+      '<line x1="86" y1="24" x2="726" y2="24" stroke="#21a366" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="86" y1="262" x2="72" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="86" y1="262" x2="100" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="246" y1="262" x2="232" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="246" y1="262" x2="260" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="406" y1="262" x2="392" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="406" y1="262" x2="420" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="566" y1="262" x2="552" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="566" y1="262" x2="580" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="726" y1="262" x2="712" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<line x1="726" y1="262" x2="740" y2="278" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>' +
+      '<rect x="46" y="85" width="720" height="12" fill="#21a366" rx="2"/>' +
+      '<rect x="46" y="177" width="720" height="12" fill="#21a366" rx="2"/>' +
+      '<rect x="68" y="68" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="228" y="68" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="388" y="68" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="548" y="68" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="708" y="68" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="68" y="160" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="228" y="160" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="388" y="160" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="548" y="160" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<rect x="708" y="160" width="36" height="34" fill="#0f6b3a" rx="3"/>' +
+      '<text x="166" y="74" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B1</text>' +
+      '<text x="326" y="74" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B2</text>' +
+      '<text x="486" y="74" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B3</text>' +
+      '<text x="646" y="74" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B4</text>' +
+      '<text x="166" y="154" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B5</text>' +
+      '<text x="326" y="154" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B6</text>' +
+      '<text x="486" y="154" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B7</text>' +
+      '<text x="646" y="154" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B8</text>' +
+      '<rect x="578" y="112" width="44" height="26" rx="4" fill="none" stroke="#38bdf8" stroke-width="2"/>' +
+      '<text x="600" y="130" font-family="sans-serif" font-size="13" font-weight="700" fill="#38bdf8" text-anchor="middle">S1</text>' +
+      '<rect x="578" y="38" width="44" height="26" rx="4" fill="none" stroke="#22c55e" stroke-width="2"/>' +
+      '<text x="600" y="56" font-family="sans-serif" font-size="13" font-weight="700" fill="#22c55e" text-anchor="middle">S2</text>' +
+      '<rect x="418" y="112" width="44" height="26" rx="4" fill="none" stroke="#eab308" stroke-width="2"/>' +
+      '<text x="440" y="130" font-family="sans-serif" font-size="13" font-weight="700" fill="#eab308" text-anchor="middle">S3</text>' +
+      '<rect x="418" y="38" width="44" height="26" rx="4" fill="none" stroke="#a855f7" stroke-width="2"/>' +
+      '<text x="440" y="56" font-family="sans-serif" font-size="13" font-weight="700" fill="#a855f7" text-anchor="middle">S4</text>' +
+      '<rect x="190" y="112" width="44" height="26" rx="4" fill="none" stroke="#ef4444" stroke-width="2"/>' +
+      '<text x="212" y="130" font-family="sans-serif" font-size="13" font-weight="700" fill="#ef4444" text-anchor="middle">S5</text>' +
+      '<rect x="190" y="38" width="44" height="26" rx="4" fill="none" stroke="#f97316" stroke-width="2"/>' +
+      '<text x="212" y="56" font-family="sans-serif" font-size="13" font-weight="700" fill="#f97316" text-anchor="middle">S6</text>',
     legend: [
-      { color: '#38bdf8', label: 'S1 - Hub T/H' },
-      { color: '#22c55e', label: 'S2 - Slot 1 Satellite (N0008)' },
-      { color: '#eab308', label: 'S3 - Slot 2 Satellite (N0009)' },
-      { color: '#a855f7', label: 'S4 - Slot 3 Satellite (N0011)' },
-      { color: '#ef4444', label: 'S5 - Future FireBeetle' },
-      { color: '#f97316', label: 'S6 - Future FireBeetle' },
+      { color: '#38bdf8', label: 'S1' },
+      { color: '#22c55e', label: 'S2' },
+      { color: '#eab308', label: 'S3' },
+      { color: '#a855f7', label: 'S4' },
+      { color: '#ef4444', label: 'S5' },
+      { color: '#f97316', label: 'S6' },
     ],
   },
   shangani: {
