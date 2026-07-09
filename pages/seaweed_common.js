@@ -1005,7 +1005,7 @@ function buildBatiDirectSensorDefinitions(stationId, entries, deviceSlotsById, s
 
   var definitions = [{
     sensorIndex: 1, sensorId: 'S1',
-    legendLabel: 'S1 - Hub T/H', summaryLabel: 'S1 Hub T/H', shortLabel: 'Hub T/H',
+    legendLabel: 'S1 - Hub T/H', summaryLabel: 'S1 (Hub)', shortLabel: 'Hub T/H',
     tempKey: 't0Temp1', humKey: 't0Hum1',
     color: sensorColorByIndex(sensorColors, 1), nodeLetter: 'H',
     displayName: 'Hub T/H'
@@ -1023,7 +1023,7 @@ function buildBatiDirectSensorDefinitions(stationId, entries, deviceSlotsById, s
       sensorIndex: sensorIndex,
       sensorId: 'S' + sensorIndex,
       legendLabel: 'S' + sensorIndex + ' - ' + slotLabel,
-      summaryLabel: 'S' + sensorIndex + ' ' + slotLabel,
+      summaryLabel: 'S' + sensorIndex + ' (' + (nodeLabel || ('Slot ' + slotNumber)) + ')',
       shortLabel: slotLabel,
       tempKey: 'sat' + slotNumber + 'Temp1',
       humKey: 'sat' + slotNumber + 'Hum1',
