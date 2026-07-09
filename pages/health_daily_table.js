@@ -500,20 +500,48 @@ function renderDailyHealth(container, entries, stationId) {
     return fallback;
   }
 
-  function batteryTrend(arr, key) {
-    var first = arr.find(function(e) { return e[key] !== null && e[key] !== undefined && !isNaN(e[key]); });
-    var last = arr.slice().reverse().find(function(e) { return e[key] !== null && e[key] !== undefined && !isNaN(e[key]); });
-    if (!first || !last) return '<span style="color:var(--text-muted)">--</span>';
+  function cleanBatteryAverage(arr, key) {
+    var values = (arr || []).map(function(e) { return num(e && e[key]); }).filter(function(v) {
+      return v != null && isFinite(v) && v >= 0 && v <= 100;
+    }).sort(function(a, b) { return a - b; });
+    if (!values.length) return null;
 
-    var a = Number(first[key]);
-    var b = Number(last[key]);
+    var rawCount = values.length;
+    var trim = values.length >= 8 ? Math.max(1, Math.floor(values.length * 0.10)) : 0;
+    if (trim > 0 && (values.length - trim * 2) >= 3) values = values.slice(trim, values.length - trim);
+
+    return {
+      avg: avg(values),
+      count: values.length,
+      rawCount: rawCount
+    };
+  }
+
+  function batteryTrend(arr, key, prevArr) {
+    var current = cleanBatteryAverage(arr, key);
+    if (!current || current.avg == null) return '<span style="color:var(--text-muted)">--</span>';
+
+    var prev = cleanBatteryAverage(prevArr, key);
+    if (!prev || prev.avg == null) {
+      return '<span style="color:var(--text)" title="Clean daily average from ' + current.count + ' battery sample(s)">avg ' + current.avg.toFixed(0) + '</span>';
+    }
+
+    var a = prev.avg;
+    var b = current.avg;
     var d = b - a;
     var arrow = d > 0.5 ? '\u2197' : d < -0.5 ? '\u2198' : '\u2192';
-    var color = d < -10 ? 'var(--danger)' : d < -3 ? 'var(--warning)' : (d > 1 ? 'var(--success)' : 'var(--text)');
-    return '<span style="color:' + color + '">' + a.toFixed(0) + arrow + b.toFixed(0) + '</span>';
+    var color = d < -5 ? 'var(--danger)' : d < -1 ? 'var(--warning)' : (d > 1 ? 'var(--success)' : 'var(--text)');
+    var title = 'Clean daily average: previous ' + a.toFixed(1) + '%, this day ' + b.toFixed(1) + '%; samples ' +
+      prev.count + ' prev / ' + current.count + ' current';
+    if (prev.rawCount !== prev.count || current.rawCount !== current.count) {
+      title += '; trimmed daily high/low edge samples';
+    }
+    return '<span style="color:' + color + '" title="' + escHtml(title) + '">' + a.toFixed(0) + arrow + b.toFixed(0) + '</span>';
   }
 
   var allDays = Object.keys(byDay).sort().reverse();
+  var dayIndexByKey = {};
+  allDays.forEach(function(dayKey, index) { dayIndexByKey[dayKey] = index; });
   var visibleDays = Math.max(STATION_LOG_ROWS_STEP, Number(_stationLogsVisibleDays[stationId]) || STATION_LOG_ROWS_STEP);
   var days = allDays.slice(0, visibleDays);
   var visibleWindowStart = days.length ? Date.parse(days[days.length - 1] + 'T00:00:00Z') : NaN;
@@ -586,7 +614,7 @@ function renderDailyHealth(container, entries, stationId) {
       '<th class="grp-config">Sample Period<br><span style="font-weight:400">(min)</span></th><th class="grp-config">Upload Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">Sat Sync Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">T0 FW</th>' +
       slotHeaders('FW', 'grp-config') +
       slotHeaders('Mapping', 'grp-config') +
-      '<th class="grp-battery group-start">T0 Bat<br><span style="font-weight:400">(%)</span></th>' + slotHeaders('Bat<br><span style="font-weight:400">(%)</span>', 'grp-battery') +
+      '<th class="grp-battery group-start">T0 Bat<br><span style="font-weight:400">(avg %)</span></th>' + slotHeaders('Bat<br><span style="font-weight:400">(avg %)</span>', 'grp-battery') +
       '<th class="grp-data group-start">T0 Samples<br><span style="font-weight:400">(sync rec/exp)</span></th>' +
       slotHeaders('Samples<br><span style="font-weight:400">(sync rec/exp)</span>', 'grp-data') +
       '<th class="grp-data">T0 Lost Time<br><span style="font-weight:400">(period-based)</span></th>' +
@@ -608,6 +636,8 @@ function renderDailyHealth(container, entries, stationId) {
   for (var di = 0; di < days.length; di++) {
     var day = days[di];
     var de  = byDay[day];
+    var prevDayKey = allDays[(dayIndexByKey[day] || 0) + 1];
+    var prevDayEntries = prevDayKey ? byDay[prevDayKey] : null;
     var dl  = new Date(day + 'T12:00:00Z'); // noon UTC avoids day-boundary shifts
     var tz  = stationId ? stationTz(stationId) : undefined;
     var dateLabel = dl.toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', weekday: 'short' });
@@ -733,8 +763,8 @@ function renderDailyHealth(container, entries, stationId) {
       '<td class="grp-config">' + dayT0Fw + '</td>' +
       slotCells('grp-config', function(stat) { return stat.fw; }) +
       slotCells('grp-config', function(stat) { return stat.mapText; }) +
-      '<td class="grp-battery group-start">' + batteryTrend(de, 't0BatPct') + '</td>' +
-      slotCells('grp-battery', function(stat) { return batteryTrend(de, slotPrefix(stat.slot) + 'BatPct'); }) +
+      '<td class="grp-battery group-start">' + batteryTrend(de, 't0BatPct', prevDayEntries) + '</td>' +
+      slotCells('grp-battery', function(stat) { return batteryTrend(de, slotPrefix(stat.slot) + 'BatPct', prevDayEntries); }) +
       '<td class="grp-data group-start">' + fmtCount(t0SamplesActual, t0SamplesExpected) + '</td>' +
       slotCells('grp-data', function(stat) { return fmtCount(stat.samplesActual, stat.samplesExpected || null); }) +
       '<td class="grp-data">' + t0LostTime + '</td>' +
