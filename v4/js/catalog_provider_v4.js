@@ -26,6 +26,32 @@
     return String(value == null ? "" : value).trim();
   }
 
+  function firstValue(row, keys) {
+    row = row || {};
+    for (var i = 0; i < keys.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(row, keys[i])) continue;
+      if (row[keys[i]] == null) continue;
+      if (text(row[keys[i]]) === "") continue;
+      return row[keys[i]];
+    }
+    return "";
+  }
+
+  function parseCoordinate(value) {
+    if (value == null || value === "") return null;
+    if (typeof value === "number") return isFinite(value) ? value : null;
+    var raw = text(value).replace(/[;,]+$/g, "").trim();
+    if (!raw) return null;
+    var n = Number(raw);
+    return isFinite(n) ? n : null;
+  }
+
+  function parseDisplayOrder(value) {
+    if (value == null || text(value) === "") return null;
+    var n = Number(value);
+    return isFinite(n) ? n : null;
+  }
+
   function parseUtcOffsetMinutes(value) {
     var raw = text(value);
     if (!raw || /^(utc|gmt|z)$/i.test(raw)) return 0;
@@ -153,20 +179,20 @@
   function writeStationMetadataMap(rows) {
     var map = {};
     (Array.isArray(rows) ? rows : []).forEach(function(row) {
-      var stationUid = text(row.station_uid || row.stationUid);
-      var stationKey = text(row.station_key || row.stationKey);
+      var stationUid = text(firstValue(row, ["station_uid", "stationUid"]));
+      var stationKey = text(firstValue(row, ["station_key", "stationKey"]));
       var key = stationUid || stationKey || text(row.id);
       if (!key) return;
       map[key] = {
         enabled: row.enabled !== false,
-        displayOrder: Number(row.displayOrder),
-        installDateUtc: text(row.installDateUtc),
-        datasetStatus: text(row.datasetStatus || "active"),
-        datasetEndUtc: text(row.datasetEndUtc),
-        datasetEndNote: text(row.datasetEndNote),
-        lat: row.lat === "" || row.lat == null ? null : Number(row.lat),
-        lon: row.lon === "" || row.lon == null ? null : Number(row.lon),
-        displayTime: normalizeDisplayTime(row.displayTime || row.display_time)
+        displayOrder: parseDisplayOrder(firstValue(row, ["displayOrder", "display_order"])),
+        installDateUtc: text(firstValue(row, ["installDateUtc", "install_date_utc", "installDate", "install_date", "commissionDateUtc", "commission_date_utc"])),
+        datasetStatus: text(firstValue(row, ["datasetStatus", "dataset_status"]) || "active"),
+        datasetEndUtc: text(firstValue(row, ["datasetEndUtc", "dataset_end_utc", "datasetEnd", "dataset_end"])),
+        datasetEndNote: text(firstValue(row, ["datasetEndNote", "dataset_end_note", "datasetNote", "dataset_note"])),
+        lat: parseCoordinate(firstValue(row, ["lat", "latitude"])),
+        lon: parseCoordinate(firstValue(row, ["lon", "lng", "longitude"])),
+        displayTime: normalizeDisplayTime(firstValue(row, ["displayTime", "display_time", "timeZone", "time_zone", "timezone", "tz"]))
       };
     });
     localStorage.setItem(STATION_META_KEY, JSON.stringify(map));
@@ -183,21 +209,21 @@
 
   function sanitizeStationMetadataRow(row, fallbackOrder) {
     row = row || {};
-    var stationUid = text(row.station_uid || row.stationUid);
-    var stationKey = text(row.station_key || row.stationKey);
-    var displayOrder = Number(row.displayOrder);
+    var stationUid = text(firstValue(row, ["station_uid", "stationUid"]));
+    var stationKey = text(firstValue(row, ["station_key", "stationKey"]));
+    var displayOrder = parseDisplayOrder(firstValue(row, ["displayOrder", "display_order"]));
     return {
       station_uid: stationUid,
       station_key: stationKey,
       enabled: row.enabled !== false,
-      displayOrder: isFinite(displayOrder) ? displayOrder : fallbackOrder,
-      installDateUtc: text(row.installDateUtc),
-      datasetStatus: text(row.datasetStatus || "active"),
-      datasetEndUtc: text(row.datasetEndUtc),
-      datasetEndNote: text(row.datasetEndNote),
-      lat: row.lat === "" || row.lat == null ? null : Number(row.lat),
-      lon: row.lon === "" || row.lon == null ? null : Number(row.lon),
-      displayTime: normalizeDisplayTime(row.displayTime || row.display_time)
+      displayOrder: displayOrder != null ? displayOrder : fallbackOrder,
+      installDateUtc: text(firstValue(row, ["installDateUtc", "install_date_utc", "installDate", "install_date", "commissionDateUtc", "commission_date_utc"])),
+      datasetStatus: text(firstValue(row, ["datasetStatus", "dataset_status"]) || "active"),
+      datasetEndUtc: text(firstValue(row, ["datasetEndUtc", "dataset_end_utc", "datasetEnd", "dataset_end"])),
+      datasetEndNote: text(firstValue(row, ["datasetEndNote", "dataset_end_note", "datasetNote", "dataset_note"])),
+      lat: parseCoordinate(firstValue(row, ["lat", "latitude"])),
+      lon: parseCoordinate(firstValue(row, ["lon", "lng", "longitude"])),
+      displayTime: normalizeDisplayTime(firstValue(row, ["displayTime", "display_time", "timeZone", "time_zone", "timezone", "tz"]))
     };
   }
 
@@ -491,8 +517,8 @@
       datasetStatus: text(meta.datasetStatus || "active"),
       datasetEndUtc: text(meta.datasetEndUtc),
       datasetEndNote: text(meta.datasetEndNote),
-      lat: latValue === "" || latValue == null ? null : Number(latValue),
-      lon: lonValue === "" || lonValue == null ? null : Number(lonValue),
+      lat: parseCoordinate(latValue),
+      lon: parseCoordinate(lonValue),
       displayTime: normalizeDisplayTime(displayTimeValue),
       data_folder: text(row.data_folder)
     }));

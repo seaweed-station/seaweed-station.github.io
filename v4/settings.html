@@ -75,7 +75,7 @@
     </div>
   </section>
 </main>
-<script src="js/catalog_provider_v4.js?v=20260626shangani-th"></script>
+<script src="js/catalog_provider_v4.js?v=20260709v4fixes"></script>
 <script src="js/nav_v4.js?v=20260504roles"></script>
 <script src="js/page_bootstrap_v4.js?v=20260504b"></script>
 <script>
@@ -109,6 +109,10 @@
   function dateInputToUtc(value, endOfDay) {
     if (!value) return '';
     return value + (endOfDay ? 'T23:59:59.999Z' : 'T00:00:00Z');
+  }
+
+  function cleanCoordinateInput(value) {
+    return SeaweedV4.text(value).replace(/[;,]+$/g, '').trim();
   }
 
   function stationOptionId(station) {
@@ -204,8 +208,8 @@
         datasetStatus: get('datasetStatus') || 'active',
         datasetEndUtc: dateInputToUtc(get('datasetEnd'), true),
         datasetEndNote: get('datasetNote'),
-        lat: get('lat'),
-        lon: get('lon'),
+        lat: cleanCoordinateInput(get('lat')),
+        lon: cleanCoordinateInput(get('lon')),
         displayTime: get('displayTime')
       });
     });

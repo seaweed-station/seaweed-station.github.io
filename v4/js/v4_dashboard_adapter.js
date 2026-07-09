@@ -95,6 +95,26 @@
     return value == null ? "" : String(value).trim();
   }
 
+  function firstValue(row, keys) {
+    row = row || {};
+    for (var i = 0; i < keys.length; i++) {
+      if (!Object.prototype.hasOwnProperty.call(row, keys[i])) continue;
+      if (row[keys[i]] == null) continue;
+      if (text(row[keys[i]]) === "") continue;
+      return row[keys[i]];
+    }
+    return "";
+  }
+
+  function parseCoordinate(value) {
+    if (value == null || value === "") return null;
+    if (typeof value === "number") return isFinite(value) ? value : null;
+    var raw = text(value).replace(/[;,]+$/g, "").trim();
+    if (!raw) return null;
+    var n = Number(raw);
+    return isFinite(n) ? n : null;
+  }
+
   function normalizeDisplayTime(value) {
     if (window.SeaweedV4 && typeof SeaweedV4.displayTimeLabel === "function") {
       var raw = text(value);
@@ -158,20 +178,20 @@
   function writeStationMetadataMap(rows) {
     var map = {};
     (Array.isArray(rows) ? rows : []).forEach(function(row) {
-      var stationUid = text(row.station_uid || row.stationUid);
-      var stationKey = text(row.station_key || row.stationKey);
+      var stationUid = text(firstValue(row, ["station_uid", "stationUid"]));
+      var stationKey = text(firstValue(row, ["station_key", "stationKey"]));
       var key = stationUid || stationKey || text(row.id);
       if (!key) return;
       map[key] = {
         enabled: row.enabled !== false,
-        displayOrder: displayOrderValue(row.displayOrder),
-        installDateUtc: text(row.installDateUtc),
-        datasetStatus: text(row.datasetStatus || "active"),
-        datasetEndUtc: text(row.datasetEndUtc),
-        datasetEndNote: text(row.datasetEndNote),
-        lat: row.lat === "" || row.lat == null ? null : Number(row.lat),
-        lon: row.lon === "" || row.lon == null ? null : Number(row.lon),
-        displayTime: normalizeDisplayTime(row.displayTime || row.display_time)
+        displayOrder: displayOrderValue(firstValue(row, ["displayOrder", "display_order"])),
+        installDateUtc: text(firstValue(row, ["installDateUtc", "install_date_utc", "installDate", "install_date", "commissionDateUtc", "commission_date_utc"])),
+        datasetStatus: text(firstValue(row, ["datasetStatus", "dataset_status"]) || "active"),
+        datasetEndUtc: text(firstValue(row, ["datasetEndUtc", "dataset_end_utc", "datasetEnd", "dataset_end"])),
+        datasetEndNote: text(firstValue(row, ["datasetEndNote", "dataset_end_note", "datasetNote", "dataset_note"])),
+        lat: parseCoordinate(firstValue(row, ["lat", "latitude"])),
+        lon: parseCoordinate(firstValue(row, ["lon", "lng", "longitude"])),
+        displayTime: normalizeDisplayTime(firstValue(row, ["displayTime", "display_time", "timeZone", "time_zone", "timezone", "tz"]))
       };
     });
     try { localStorage.setItem(STATION_META_KEY, JSON.stringify(map)); } catch (_) {}
@@ -184,18 +204,19 @@
     else if (payload && Array.isArray(payload.stations)) rows = payload.stations;
     return rows.map(function(row, idx) {
       row = row || {};
+      var displayOrder = displayOrderValue(firstValue(row, ["displayOrder", "display_order"]));
       return {
-        station_uid: text(row.station_uid || row.stationUid),
-        station_key: text(row.station_key || row.stationKey),
+        station_uid: text(firstValue(row, ["station_uid", "stationUid"])),
+        station_key: text(firstValue(row, ["station_key", "stationKey"])),
         enabled: row.enabled !== false,
-        displayOrder: displayOrderValue(row.displayOrder) != null ? displayOrderValue(row.displayOrder) : idx,
-        installDateUtc: text(row.installDateUtc),
-        datasetStatus: text(row.datasetStatus || "active"),
-        datasetEndUtc: text(row.datasetEndUtc),
-        datasetEndNote: text(row.datasetEndNote),
-        lat: row.lat === "" || row.lat == null ? null : Number(row.lat),
-        lon: row.lon === "" || row.lon == null ? null : Number(row.lon),
-        displayTime: normalizeDisplayTime(row.displayTime || row.display_time)
+        displayOrder: displayOrder != null ? displayOrder : idx,
+        installDateUtc: text(firstValue(row, ["installDateUtc", "install_date_utc", "installDate", "install_date", "commissionDateUtc", "commission_date_utc"])),
+        datasetStatus: text(firstValue(row, ["datasetStatus", "dataset_status"]) || "active"),
+        datasetEndUtc: text(firstValue(row, ["datasetEndUtc", "dataset_end_utc", "datasetEnd", "dataset_end"])),
+        datasetEndNote: text(firstValue(row, ["datasetEndNote", "dataset_end_note", "datasetNote", "dataset_note"])),
+        lat: parseCoordinate(firstValue(row, ["lat", "latitude"])),
+        lon: parseCoordinate(firstValue(row, ["lon", "lng", "longitude"])),
+        displayTime: normalizeDisplayTime(firstValue(row, ["displayTime", "display_time", "timeZone", "time_zone", "timezone", "tz"]))
       };
     }).filter(function(row) {
       return row.station_uid || row.station_key;
@@ -240,6 +261,7 @@
   }
 
   function displayOrderValue(value) {
+    if (value == null || text(value) === "") return null;
     var n = Number(value);
     return isFinite(n) ? n : null;
   }
@@ -320,8 +342,8 @@
       location: text(station.location) || text(presentation.location) || "V4 Superbase station",
       enabled: meta.enabled !== undefined ? meta.enabled !== false : station.active !== false && station.enabled !== false,
       dataFolder: text(station.data_folder || presentation.data_folder) || ("data_" + id),
-      lat: latValue != null && latValue !== "" ? Number(latValue) : (presentation.lat != null ? Number(presentation.lat) : null),
-      lon: lonValue != null && lonValue !== "" ? Number(lonValue) : (presentation.lon != null ? Number(presentation.lon) : null),
+      lat: parseCoordinate(latValue != null && latValue !== "" ? latValue : presentation.lat),
+      lon: parseCoordinate(lonValue != null && lonValue !== "" ? lonValue : presentation.lon),
       weatherName: text(station.weather_name || presentation.weather_name) || text(station.station_name) || id,
       tideStation: text(station.tide_station || presentation.tide_station) || "perth",
       sensorMap: text(station.sensor_map || presentation.sensor_map) || "perth",
@@ -355,8 +377,8 @@
       var stationKey = station.station_key || slug(station.name || station.station_uid);
       var meta = stationMetadata(station, stationKey, station.id);
       if (meta.enabled !== undefined) station.enabled = meta.enabled !== false;
-      if (meta.lat !== undefined && meta.lat !== null && meta.lat !== "") station.lat = Number(meta.lat);
-      if (meta.lon !== undefined && meta.lon !== null && meta.lon !== "") station.lon = Number(meta.lon);
+      if (meta.lat !== undefined && meta.lat !== null && meta.lat !== "") station.lat = parseCoordinate(meta.lat);
+      if (meta.lon !== undefined && meta.lon !== null && meta.lon !== "") station.lon = parseCoordinate(meta.lon);
       station.displayTime = normalizeDisplayTime(meta.displayTime || station.displayTime);
       station.displayOrder = displayOrderValue(meta.displayOrder != null ? meta.displayOrder : station.displayOrder);
       return applyCanonicalV4Station(station);

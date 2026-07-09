@@ -156,6 +156,10 @@ function cleanSensorPlotSeries(points, key) {
   return suppressIsolatedSensorJumps(collapseDuplicateSensorPoints(points), key);
 }
 
+function isZeroSensorPlotOutlier(key, value) {
+  return /temp|hum/i.test(String(key || '')) && Math.abs(Number(value)) <= 0.000001;
+}
+
 function chartLocalDayStartMs(ms) {
   var offsetMs = getStationOffsetMinutesForCharts() * 60000;
   return Math.floor((ms + offsetMs) / 86400000) * 86400000 - offsetMs;
@@ -374,19 +378,12 @@ function buildSensorChartOverlays() {
 function makeDataset(entries, key, label, color, dashed, rangeOverride) {
   var plotRange = rangeOverride || state.timeRange;
   var rawData = [];
-  var zeroCount = 0;
-  var nonZeroCount = 0;
   entries.forEach(function (e) {
     var value = e ? Number(e[key]) : NaN;
-    if (isFinite(value)) {
-      if (value === 0) zeroCount++;
-      else nonZeroCount++;
+    if (isFinite(value) && !isZeroSensorPlotOutlier(key, value)) {
       rawData.push({ x: e.timestamp, y: value });
     }
   });
-  if (/temp|hum/i.test(String(key || '')) && nonZeroCount > 0 && zeroCount > Math.max(3, rawData.length * 0.05)) {
-    rawData = rawData.filter(function(point) { return point.y !== 0; });
-  }
   var cleanData = cleanSensorPlotSeries(rawData, key);
   var data = memoizedDownsampleSeries(buildStationSeriesCacheKey('sensor', key, plotRange), cleanData, 'station-sensor', plotRange);
   return {
