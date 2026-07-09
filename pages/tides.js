@@ -820,6 +820,7 @@ function initTides(locationKey) {
 
   // Expose day-level ranges for sensor chart overlay (sensorBandsPlugin)
   window._tideWindows = fullDayRanges;
+  if (typeof refreshSensorOverlayCharts === 'function') refreshSensorOverlayCharts();
 
   // Harvest calendar
   renderHarvestCalendar(activeWins, events, now, locationKey);
@@ -839,6 +840,7 @@ window.SeaweedTides = {
   moonPhase: moonPhase,
   tideHeight: tideHeight,
   harvestWindows: harvestWindows,
+  harvestDayRanges: harvestDayRanges,
   LOCATIONS: LOCATIONS,
   loadMoreTides: function () {
     var locKey = window._tideLocationKey;

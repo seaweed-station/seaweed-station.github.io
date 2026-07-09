@@ -81,11 +81,54 @@
       location: "Bati station",
       dataFolder: "data_tb-02",
       weatherName: "Bati",
-      tideStation: "perth",
+      lat: -4.592111,
+      lon: 39.392351,
+      tideStation: "kenya",
       sensorMap: "bati",
       project_profile_id: "v4-clean-bench"
     }
   };
+
+  var FIELD_STATION_PRESENTATION_DEFAULTS = [
+    {
+      match: ["shangani"],
+      location: "Kwale County, Kenya",
+      data_folder: "data_Shangani",
+      lat: -4.55,
+      lon: 39.50,
+      weather_name: "Shangani Aramani, Kenya",
+      tide_station: "kenya",
+      sensor_map: "shangani"
+    },
+    {
+      match: ["funzi"],
+      location: "Funzi Island, Kenya",
+      data_folder: "data_Funzi",
+      lat: -4.581429,
+      lon: 39.437527,
+      weather_name: "Funzi Island, Kenya",
+      tide_station: "kenya",
+      sensor_map: "funzi"
+    },
+    {
+      match: ["bati", "st-0102"],
+      location: "Bati station",
+      data_folder: "data_tb-02",
+      lat: -4.592111,
+      lon: 39.392351,
+      weather_name: "Bati, Kenya",
+      tide_station: "kenya",
+      sensor_map: "bati"
+    },
+    {
+      match: ["spare"],
+      location: "Spare Station",
+      data_folder: "data_spare",
+      weather_name: "Spare Station, Kenya",
+      tide_station: "kenya",
+      sensor_map: "funzi"
+    }
+  ];
 
   function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -350,7 +393,7 @@
     var legacyId = text(station.legacy_device_id || "").toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
     var meta = stationMetadata(station, stationKey, legacyId);
     var id = legacyId || stationKey || text(station.station_uid).toLowerCase();
-    var presentation = station.presentation || {};
+    var presentation = Object.assign({}, inferredFieldStationPresentation(station, stationKey, id), station.presentation || {});
     var latValue = meta.lat !== undefined ? meta.lat : station.lat;
     var lonValue = meta.lon !== undefined ? meta.lon : station.lon;
     var displayTimeValue = meta.displayTime !== undefined ? meta.displayTime : (station.displayTime || station.display_time);
@@ -377,6 +420,27 @@
       datasetEndNote: text(meta.datasetEndNote),
       displayTime: normalizeDisplayTime(displayTimeValue)
     });
+  }
+
+  function inferredFieldStationPresentation(station, stationKey, id) {
+    var keys = [
+      stationKey,
+      id,
+      station && station.station_uid,
+      station && station.station_key,
+      station && station.station_name,
+      station && station.name,
+      station && station.legacy_device_id
+    ].map(function(value) { return text(value).toLowerCase(); }).filter(Boolean);
+    for (var i = 0; i < FIELD_STATION_PRESENTATION_DEFAULTS.length; i++) {
+      var def = FIELD_STATION_PRESENTATION_DEFAULTS[i];
+      for (var k = 0; k < keys.length; k++) {
+        for (var m = 0; m < def.match.length; m++) {
+          if (keys[k].indexOf(def.match[m]) !== -1) return def;
+        }
+      }
+    }
+    return {};
   }
 
   function catalogStations() {

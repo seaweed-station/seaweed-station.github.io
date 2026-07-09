@@ -323,8 +323,15 @@ function loadMoreDailySummary() {
   updatePeaksTable();
 }
 
+function dailySummaryEntries() {
+  var current = Array.isArray(state.allEntries) ? state.allEntries : [];
+  var historical = Array.isArray(state.summaryEntries) ? state.summaryEntries : [];
+  if (current.length) return current;
+  return historical;
+}
+
 function updatePeaksTable() {
-  var entries = (state.summaryEntries && state.summaryEntries.length) ? state.summaryEntries : state.allEntries;
+  var entries = dailySummaryEntries();
   if (!entries.length) return;
   var datasetMeta = getStationDatasetRenderMeta(TABLE_ID);
   var datasetEndDayKey = datasetMeta ? datasetMeta.endDayKey : null;
@@ -340,7 +347,12 @@ function updatePeaksTable() {
   });
 
   function fieldStats(dayEntries, key) {
-    var vals = dayEntries.map(function (e) { return e[key]; }).filter(function (v) { return v !== null && v !== undefined; });
+    var vals = dayEntries.map(function (e) {
+      var value = e ? Number(e[key]) : NaN;
+      if (!isFinite(value)) return null;
+      if (typeof isZeroSensorPlotOutlier === 'function' && isZeroSensorPlotOutlier(key, value)) return null;
+      return value;
+    }).filter(function (v) { return v !== null && v !== undefined; });
     if (!vals.length) return null;
     return { min: Math.min.apply(null, vals), max: Math.max.apply(null, vals), avg: vals.reduce(function (a, b) { return a + b; }, 0) / vals.length, count: vals.length };
   }
@@ -356,10 +368,16 @@ function updatePeaksTable() {
     if (def.humKey) humKeys[def.humKey] = summaryLabel;
   });
 
+  function hasCleanFieldValue(key) {
+    return entries.some(function(e) {
+      var value = e ? Number(e[key]) : NaN;
+      return isFinite(value) && !(typeof isZeroSensorPlotOutlier === 'function' && isZeroSensorPlotOutlier(key, value));
+    });
+  }
   var activeTempKeys = {};
-  for (var tk in tempKeys) { if (entries.some(function (e) { return e[tk] !== null && e[tk] !== undefined; })) activeTempKeys[tk] = tempKeys[tk]; }
+  for (var tk in tempKeys) { if (hasCleanFieldValue(tk)) activeTempKeys[tk] = tempKeys[tk]; }
   var activeHumKeys = {};
-  for (var hk in humKeys) { if (entries.some(function (e) { return e[hk] !== null && e[hk] !== undefined; })) activeHumKeys[hk] = humKeys[hk]; }
+  for (var hk in humKeys) { if (hasCleanFieldValue(hk)) activeHumKeys[hk] = humKeys[hk]; }
 
   // Build Open-Meteo daily stats from weatherState.data
   var wxByDay = {};

@@ -1039,7 +1039,7 @@ body {
 <!-- seaweed_common.js must load before bootLoader — STATION_REGISTRY is defined there -->
 <script src="js/catalog_provider_v4.js?v=20260709v4fixes"></script>
 <script src="../pages/seaweed_common.js?v=20260709uploadgrace"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260709uploadgrace"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260709stationplots"></script>
 <script id="bootLoader">
 // Boot loader: reads ?table= param, injects data scripts
 (function(){
@@ -1254,7 +1254,7 @@ body {
 <script src="../pages/battery_forecast_widget.js"></script>
 
 <!-- Tide prediction engine (shared) -->
-<script src="../pages/tides.js"></script>
+<script src="../pages/tides.js?v=20260709sensoroverlays"></script>
 
 <!-- Cached weather data -->
 <script>
@@ -1287,17 +1287,17 @@ if (window.SW_V4_DASHBOARD) window.SW_V4_DASHBOARD.installStationDataAdapter();
 <!-- ================================================================= -->
 <!--     SECTION 5: RENDERING (status cards, network bar, header)      -->
 <!-- ================================================================= -->
-<script src="../pages/station_render.js?v=20260626shangani-th"></script>
+<script src="../pages/station_render.js?v=20260709stationplots"></script>
 
 <!-- ================================================================= -->
 <!--     SECTION 6: CHARTS + PLUGINS                                  -->
 <!-- ================================================================= -->
-<script src="../pages/station_charts.js?v=20260709zero-filter"></script>
+<script src="../pages/station_charts.js?v=20260709stationplots"></script>
 
 <!-- ================================================================= -->
 <!--     SECTION 7: SYNC / DRIFT / WEATHER                            -->
 <!-- ================================================================= -->
-<script src="../pages/station_weather.js"></script>
+<script src="../pages/station_weather.js?v=20260709sensoroverlays"></script>
 
 <!-- ================================================================= -->
 <!--     SECTION 7B: TABLE CONFIGURATION                              -->

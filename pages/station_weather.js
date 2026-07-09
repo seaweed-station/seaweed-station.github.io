@@ -310,6 +310,7 @@ function refreshWeatherLinkedViews() {
   renderWeatherCharts();
   if (state.filteredEntries.length) {
     if (state.charts.temp) updateCharts();
+    if (typeof refreshSensorOverlayCharts === 'function') refreshSensorOverlayCharts();
     updatePeaksTable();
   }
 }

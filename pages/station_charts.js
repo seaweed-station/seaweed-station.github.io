@@ -409,14 +409,93 @@ window._sensorOpts = { night: true, harvest: true, wx: false };
 
 function getSensorSunEventsForWindow(windowLike) {
   if (!windowLike || !isFinite(windowLike.min) || !isFinite(windowLike.max)) return [];
-  if (typeof buildSunEventsForRange !== 'function') return [];
   var daily = weatherState ? weatherState.daily : null;
-  return buildSunEventsForRange(daily, windowLike.min, windowLike.max);
+  var events = [];
+  if (typeof buildSunEventsForRange === 'function') {
+    events = buildSunEventsForRange(daily, windowLike.min, windowLike.max);
+  }
+  return events.length ? events : buildFallbackSensorSunEvents(windowLike.min, windowLike.max);
+}
+
+function buildFallbackSensorSunEvents(minMs, maxMs) {
+  if (!isFinite(minMs) || !isFinite(maxMs) || maxMs <= minMs) return [];
+  var out = [];
+  var dayMs = 86400000;
+  var start = chartLocalDayStartMs(minMs) - dayMs;
+  var end = chartLocalDayStartMs(maxMs) + dayMs;
+  for (var dayStart = start; dayStart <= end; dayStart += dayMs) {
+    out.push({
+      rise: dayStart + 6.25 * 3600000,
+      set: dayStart + 18.25 * 3600000,
+      fallback: true
+    });
+  }
+  return out.filter(function(evt) {
+    return evt.set >= minMs && evt.rise <= maxMs;
+  });
 }
 
 function setSensorChartSunEvents(chart, windowLike) {
   if (!chart) return;
   chart.$sensorSunEvents = getSensorSunEventsForWindow(windowLike);
+}
+
+function getSensorHarvestWindowsForChart(chart) {
+  var xA = chart && chart.scales ? chart.scales.x : null;
+  var minX = xA && isFinite(xA.min) ? xA.min : NaN;
+  var maxX = xA && isFinite(xA.max) ? xA.max : NaN;
+  if (!isFinite(minX) || !isFinite(maxX) || maxX <= minX) return [];
+  var locationKey = window._tideLocationKey || (STATION && STATION.tideStation) || 'kenya';
+  var threshold = window._harvestOpts && isFinite(Number(window._harvestOpts.maxHeight))
+    ? Number(window._harvestOpts.maxHeight)
+    : 0.50;
+  var enabled = !(window._harvestOpts && window._harvestOpts.enabled === false);
+  if (!enabled) return [];
+  var cacheKey = [
+    locationKey,
+    chartLocalDayStartMs(minX),
+    chartLocalDayStartMs(maxX),
+    threshold
+  ].join('|');
+  if (chart.$sensorHarvestKey === cacheKey && Array.isArray(chart.$sensorHarvestWindows)) {
+    return chart.$sensorHarvestWindows;
+  }
+  var wins = Array.isArray(window._tideWindows) ? window._tideWindows : [];
+  var overlapping = wins.filter(function(win) {
+    if (!win || !win.start || !win.end) return false;
+    var start = new Date(win.start).getTime();
+    var end = new Date(win.end).getTime();
+    return isFinite(start) && isFinite(end) && end >= minX && start <= maxX;
+  });
+  var rangeBuilder = window.SeaweedTides && typeof window.SeaweedTides.harvestDayRanges === 'function'
+    ? window.SeaweedTides.harvestDayRanges
+    : null;
+  if (rangeBuilder) {
+    try {
+      var built = rangeBuilder(new Date(minX), new Date(maxX), locationKey);
+      if (Array.isArray(built)) overlapping = built;
+    } catch (_) {
+      // Keep any overlapping global tide windows if the chart-specific build fails.
+    }
+  }
+  chart.$sensorHarvestKey = cacheKey;
+  chart.$sensorHarvestWindows = overlapping;
+  return overlapping;
+}
+
+function refreshSensorOverlayCharts() {
+  if (state.charts && state.charts.temp) {
+    setSensorChartSunEvents(state.charts.temp, { min: state.charts.temp.scales.x.min, max: state.charts.temp.scales.x.max });
+    state.charts.temp.update('none');
+  }
+  if (state.charts && state.charts.hum) {
+    setSensorChartSunEvents(state.charts.hum, { min: state.charts.hum.scales.x.min, max: state.charts.hum.scales.x.max });
+    state.charts.hum.update('none');
+  }
+  if (_sensorModalChart && _sensorModalChart.scales && _sensorModalChart.scales.x) {
+    setSensorChartSunEvents(_sensorModalChart, { min: _sensorModalChart.scales.x.min, max: _sensorModalChart.scales.x.max });
+    _sensorModalChart.update('none');
+  }
 }
 
 var sensorBandsPlugin = {
@@ -432,20 +511,36 @@ var sensorBandsPlugin = {
     ctx.beginPath(); ctx.rect(left, top, right - left, bot - top); ctx.clip();
 
     if (opts.harvest) {
-      var wins = window._tideWindows || [];
-      ctx.fillStyle = 'rgba(34, 197, 94, 0.10)';
+      var wins = getSensorHarvestWindowsForChart(chart);
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.20)';
       for (var w = 0; w < wins.length; w++) {
-        var wx1 = xA.getPixelForValue(wins[w].start.getTime());
-        var wx2 = xA.getPixelForValue(wins[w].end.getTime());
+        if (!wins[w] || !wins[w].start || !wins[w].end) continue;
+        var wx1 = xA.getPixelForValue(new Date(wins[w].start).getTime());
+        var wx2 = xA.getPixelForValue(new Date(wins[w].end).getTime());
         if (wx2 < left || wx1 > right) continue;
-        ctx.fillRect(Math.max(wx1, left), top, Math.min(wx2, right) - Math.max(wx1, left), bot - top);
+        var hx1 = Math.max(wx1, left);
+        var hx2 = Math.min(wx2, right);
+        if (hx2 <= hx1) continue;
+        ctx.fillRect(hx1, top, hx2 - hx1, bot - top);
+        ctx.strokeStyle = 'rgba(22, 163, 74, 0.34)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(hx1, top);
+        ctx.lineTo(hx1, bot);
+        ctx.moveTo(hx2, top);
+        ctx.lineTo(hx2, bot);
+        ctx.stroke();
       }
     }
 
     if (opts.night) {
-      var sunEvents = Array.isArray(chart.$sensorSunEvents) ? chart.$sensorSunEvents : [];
+      var sunEvents = Array.isArray(chart.$sensorSunEvents) && chart.$sensorSunEvents.length
+        ? chart.$sensorSunEvents
+        : getSensorSunEventsForWindow({ min: minX, max: maxX });
       if (sunEvents.length) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+        chart.$sensorSunEvents = sunEvents;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.14)';
         if (sunEvents[0].rise > minX) {
           var x1 = Math.max(left, xA.getPixelForValue(minX));
           var x2 = Math.min(right, xA.getPixelForValue(sunEvents[0].rise));
@@ -803,6 +898,7 @@ function createOrUpdateCharts() {
   state.charts.temp = replaceStationSensorChart('temp', 'tempChart', {
     type: 'line', data: { datasets: tempDS }, options: _tOpts
   });
+  setSensorChartSunEvents(state.charts.temp, tempWindow);
 
   // -- Humidity --
   var humDS = sensorDefs.map(function(sensorDef, index) {
@@ -825,6 +921,7 @@ function createOrUpdateCharts() {
   state.charts.hum = replaceStationSensorChart('hum', 'humChart', {
     type: 'line', data: { datasets: humDS }, options: _hOpts2
   });
+  setSensorChartSunEvents(state.charts.hum, humWindow);
 
   // Battery, Sync, Drift charts removed -- see station_health.html
 }
