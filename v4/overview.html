@@ -5,8 +5,8 @@
 <script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'&&sessionStorage.getItem('sw_auth')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seaweed Station Overview</title>
-<script src="../pages/seaweed_common.js?v=20260709rolealiases"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260709rolealiases"></script>
+<script src="../pages/seaweed_common.js?v=20260709uploadgrace"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260709uploadgrace"></script>
 <style>
 /* -- CSS Variables ------------------------------------------------- */
 :root {
@@ -373,11 +373,16 @@ function getDeviceProfileConfig(tableId) {
 }
 
 var TABLES_DEFAULT = STATION_REGISTRY.map(function(s) {
+  var stationKey = s.stationKey || s.station_key || s.id;
   return {
     id: s.id,
+    stationKey: stationKey,
+    stationUid: s.stationUid || s.station_uid || '',
+    catalogAliases: (s.catalogAliases || s.catalog_aliases || []).slice ? (s.catalogAliases || s.catalog_aliases || []).slice() : [],
+    historicalSourceKeys: (s.historicalSourceKeys || s.historical_source_keys || []).slice ? (s.historicalSourceKeys || s.historical_source_keys || []).slice() : [],
     name: s.name,
     location: s.location,
-    page: 'station.html?table=' + encodeURIComponent(s.id),
+    page: 'station.html?station=' + encodeURIComponent(stationKey),
     dataFile: '../data/' + s.dataFolder + '/merged_data.js',
     weather: (s.lat != null && s.lon != null) ? { lat: s.lat, lon: s.lon } : { lat: 0, lon: 0 },
     hasSatellite: s.hasSatellite !== false
@@ -408,9 +413,11 @@ function buildConfiguredTables() {
       }
       var base = baseMap[p.id] || {
         id: id,
+        stationKey: p.stationKey || p.station_key || id,
+        stationUid: p.stationUid || p.station_uid || '',
         name: p.name || id,
         location: 'Configured station',
-        page: 'station.html?table=' + encodeURIComponent(id),
+        page: 'station.html?station=' + encodeURIComponent(p.stationKey || p.station_key || id),
         dataFile: '../data/' + (p.dataFolder || ('data_' + id)) + '/merged_data.js',
         weather: { lat: 0, lon: 0 },
         hasSatellite: true
@@ -423,7 +430,7 @@ function buildConfiguredTables() {
       out.historicalSourceKeys = (p.historicalSourceKeys || p.historical_source_keys || base.historicalSourceKeys || base.historical_source_keys || []).slice ? (p.historicalSourceKeys || p.historical_source_keys || base.historicalSourceKeys || base.historical_source_keys || []).slice() : [];
       if (p.name) out.name = p.name;
       if (p.dataFolder) out.dataFile = '../data/' + p.dataFolder + '/merged_data.js';
-      out.page = 'station.html?table=' + encodeURIComponent(id);
+      out.page = 'station.html?station=' + encodeURIComponent(out.stationKey || id);
       if (typeof p.hasSatellite === 'boolean') out.hasSatellite = p.hasSatellite;
       var replaced = false;
       for (var idx = 0; idx < tables.length; idx++) {
@@ -468,7 +475,7 @@ if (typeof applyNavVisibility === 'function') applyNavVisibility();
 
 TABLES.forEach(function(t) {
   if (!t.page) {
-    t.page = 'station.html?table=' + encodeURIComponent(t.id);
+    t.page = 'station.html?station=' + encodeURIComponent(t.stationKey || t.station_key || t.id);
   }
 });
 
@@ -612,9 +619,101 @@ function escHtml(str) {
   return d.innerHTML;
 }
 
-var NEXT_CHECK_PIPELINE_BUFFER_MIN = 12;
+var NEXT_UPLOAD_OVERDUE_GRACE_MIN = 60;
 
-function formatNextCheckIn(tableId, lastUpdate, dataHealth) {
+function validDateOrNull(value) {
+  if (!value) return null;
+  var d = value instanceof Date ? value : new Date(value);
+  return d && !isNaN(d.getTime()) ? d : null;
+}
+
+function finiteNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  var n = Number(value);
+  return isFinite(n) ? n : null;
+}
+
+function firstValidDate(values) {
+  for (var i = 0; i < values.length; i++) {
+    var d = validDateOrNull(values[i]);
+    if (d) return d;
+  }
+  return null;
+}
+
+function appendUploadRows(target, rows) {
+  if (!Array.isArray(rows)) return;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i]) target.push(rows[i]);
+  }
+}
+
+function latestUploadSession(rows) {
+  var latest = null;
+  var latestMs = null;
+  for (var i = 0; i < rows.length; i++) {
+    var d = validDateOrNull(rows[i].upload_started_at || rows[i].started_at || rows[i].created_at);
+    if (!d) continue;
+    if (latestMs === null || d.getTime() > latestMs) {
+      latest = rows[i];
+      latestMs = d.getTime();
+    }
+  }
+  return latest;
+}
+
+function resolveUploadSchedule(tableId, summary) {
+  var statusRow = _deviceStatusById && _deviceStatusById[tableId] ? _deviceStatusById[tableId] : null;
+  var raw = statusRow && statusRow.raw ? statusRow.raw : null;
+  var rawStatus = raw && raw.device_status ? raw.device_status : raw;
+  var summaryStatus = summary && (summary.deviceStatus || summary.device_status) ? (summary.deviceStatus || summary.device_status) : null;
+  var status = summaryStatus || rawStatus || {};
+  var config = (summary && (summary.deviceConfig || summary.device_config)) ||
+    (raw && (raw.device_config || raw.deviceConfig)) ||
+    {};
+  var uploadRows = [];
+  appendUploadRows(uploadRows, summary && (summary.uploadSessions || summary.upload_sessions));
+  appendUploadRows(uploadRows, raw && (raw.upload_sessions || raw.uploadSessions));
+  var latestUpload = latestUploadSession(uploadRows);
+
+  var lastUpload = firstValidDate([
+    statusRow && statusRow.lastUploadAt,
+    summary && (summary.lastUploadAt || summary.last_upload_at),
+    status && status.last_upload_at,
+    raw && raw.last_upload_at,
+    latestUpload && latestUpload.upload_started_at
+  ]);
+
+  var intervalHours = finiteNumberOrNull(config.upload_interval_hours);
+  if (intervalHours === null) intervalHours = finiteNumberOrNull(config.applied_upload_interval_hours);
+  if (intervalHours === null && latestUpload) intervalHours = finiteNumberOrNull(latestUpload.applied_upload_interval_hours);
+  if (lastUpload && intervalHours !== null && intervalHours > 0) {
+    return {
+      nextAt: new Date(lastUpload.getTime() + intervalHours * 60 * 60 * 1000),
+      source: 'upload',
+      lastUploadAt: lastUpload,
+      intervalHours: intervalHours
+    };
+  }
+
+  var nextFromStatus = firstValidDate([
+    statusRow && statusRow.nextCheckInAt,
+    status && status.next_check_in,
+    raw && raw.next_check_in
+  ]);
+  if (nextFromStatus) {
+    return {
+      nextAt: nextFromStatus,
+      source: 'device_status',
+      lastUploadAt: lastUpload,
+      intervalHours: intervalHours
+    };
+  }
+
+  return null;
+}
+
+function formatNextCheckIn(tableId, lastUpdate, dataHealth, summary) {
   var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(tableId) : null;
   if (datasetMeta && datasetMeta.isActive) {
     var pauseText = datasetMeta.note || datasetMeta.statusLabel;
@@ -630,54 +729,27 @@ function formatNextCheckIn(tableId, lastUpdate, dataHealth) {
       text: 'Next check pending live refresh'
     };
   }
-  var statusRow = _deviceStatusById && _deviceStatusById[tableId] ? _deviceStatusById[tableId] : null;
-  var nextFromStatus = statusRow && statusRow.nextCheckInAt ? statusRow.nextCheckInAt : null;
-  if (nextFromStatus && !isNaN(nextFromStatus.getTime())) {
-    var authDeltaMin = Math.round((nextFromStatus.getTime() - Date.now()) / 60000);
-    var authState = 'good';
-    var authWhen;
-    if (authDeltaMin >= 0) {
-      authState = 'good';
-      authWhen = 'in ' + formatEtaMinutes(authDeltaMin);
-    } else if (Math.abs(authDeltaMin) <= NEXT_CHECK_PIPELINE_BUFFER_MIN) {
-      authState = 'warn';
-      authWhen = 'pending ingest';
-    } else {
-      authState = 'late';
-      authWhen = 'overdue by ' + formatEtaMinutes(Math.abs(authDeltaMin) - NEXT_CHECK_PIPELINE_BUFFER_MIN);
-    }
-    var authAbs = nextFromStatus.toLocaleString('en-GB', {
-      hour: '2-digit', minute: '2-digit', hour12: false,
-      timeZone: 'UTC'
-    });
-    var authCls = authState === 'good' ? 'next-check-good' : (authState === 'warn' ? 'next-check-warn' : 'next-check-late');
-    authAbs = formatStationDisplayTime(nextFromStatus, tableId, { time: true });
-    var authText = 'Next check in: ' + authWhen + ' (' + authAbs + ')';
-    return { html: '<span class="next-check ' + authCls + '">' + authText + '</span>', text: authText };
+  var schedule = resolveUploadSchedule(tableId, summary);
+  if (!schedule || !schedule.nextAt) {
+    return { html: '<span class="next-check next-check-unknown">Next upload: --</span>', text: 'Next upload: --' };
   }
 
-  if (!lastUpdate || !dataHealth || !dataHealth.expected) {
-    return { html: '<span class="next-check next-check-unknown">Next check in: --</span>', text: 'Next check in: --' };
-  }
-  var last = lastUpdate instanceof Date ? lastUpdate : new Date(lastUpdate);
-  if (isNaN(last.getTime())) {
-    return { html: '<span class="next-check next-check-unknown">Next check in: --</span>', text: 'Next check in: --' };
-  }
-
-  var cadenceMin = Math.max(1, Math.round((24 * 60) / dataHealth.expected));
-  var nextAt = new Date(last.getTime() + cadenceMin * 60000);
+  var nextAt = schedule.nextAt;
   var deltaMin = Math.round((nextAt.getTime() - Date.now()) / 60000);
   var state = 'good';
   var when;
   if (deltaMin >= 0) {
     state = 'good';
     when = 'in ' + formatEtaMinutes(deltaMin);
-  } else if (Math.abs(deltaMin) <= NEXT_CHECK_PIPELINE_BUFFER_MIN) {
-    state = 'warn';
-    when = 'pending ingest';
   } else {
-    state = 'late';
-    when = 'overdue by ' + formatEtaMinutes(Math.abs(deltaMin) - NEXT_CHECK_PIPELINE_BUFFER_MIN);
+    var lateMin = Math.abs(deltaMin);
+    if (lateMin <= NEXT_UPLOAD_OVERDUE_GRACE_MIN) {
+      state = 'warn';
+      when = 'pending upload; ' + formatEtaMinutes(lateMin) + ' past schedule';
+    } else {
+      state = 'late';
+      when = 'overdue by ' + formatEtaMinutes(lateMin);
+    }
   }
   var nextAbs = nextAt.toLocaleString('en-GB', {
     hour: '2-digit', minute: '2-digit', hour12: false,
@@ -685,7 +757,7 @@ function formatNextCheckIn(tableId, lastUpdate, dataHealth) {
   });
   var cls = state === 'good' ? 'next-check-good' : (state === 'warn' ? 'next-check-warn' : 'next-check-late');
   nextAbs = formatStationDisplayTime(nextAt, tableId, { time: true });
-  var text = 'Next check in: ' + when + ' (' + nextAbs + ')';
+  var text = 'Next upload: ' + when + ' (' + nextAbs + ')';
   return { html: '<span class="next-check ' + cls + '">' + text + '</span>', text: text };
 }
 
@@ -897,7 +969,7 @@ function renderTableCard(table, summary) {
     healthSub = datasetEndLabel + (datasetMeta.note ? ' | ' + datasetMeta.note : '');
   }
   var updateInfo = formatDatasetUpdate(summary.lastUpdate, table.id);
-  var nextCheck = formatNextCheckIn(table.id, summary.lastUpdate, summary.dataHealth);
+  var nextCheck = formatNextCheckIn(table.id, summary.lastUpdate, summary.dataHealth, summary);
 
   var metrics =
     metricBox('T0 Batt', t0DisplayPct != null ? Math.round(t0DisplayPct) + '%': '--', t0BattSub, batteryToneClass(t0DisplayPct)) +
@@ -1065,6 +1137,7 @@ function edgeStationToSummary(st) {
   return {
     freshness: freshness,
     lastUpdate: lastUpdate,
+    lastUploadAt: st.device_status && st.device_status.last_upload_at ? st.device_status.last_upload_at : st.last_upload_at,
     entries: actual,
     t0: {
       status: t0Bat != null ? (t0Bat > 80 ? 'green' : (t0Bat < 30 ? 'red' : 'yellow')) : 'nc',
@@ -1085,6 +1158,9 @@ function edgeStationToSummary(st) {
     weekHumHigh: null,
     monthTempHigh: null,
     monthHumHigh: null,
+    deviceStatus: st.device_status || st,
+    deviceConfig: st.device_config || null,
+    uploadSessions: Array.isArray(st.upload_sessions) ? st.upload_sessions : [],
   };
 }
 
@@ -1124,10 +1200,15 @@ async function hydrateOverviewCardFromSamplesRaw(table, card) {
         nextCheckInAt: payload.device_status.next_check_in ? new Date(payload.device_status.next_check_in) : null,
         lastSeenAt: payload.device_status.last_seen ? new Date(payload.device_status.last_seen) : null,
         lastUploadAt: payload.device_status.last_upload_at ? new Date(payload.device_status.last_upload_at) : null,
-        raw: payload.device_status
+        raw: payload
       };
     }
-    var replacement = renderTableCard(table, computeSummary(table.id, entries));
+    var sampleSummary = computeSummary(table.id, entries);
+    sampleSummary.deviceStatus = payload.device_status || null;
+    sampleSummary.deviceConfig = payload.device_config || null;
+    sampleSummary.uploadSessions = Array.isArray(payload.upload_sessions) ? payload.upload_sessions : [];
+    sampleSummary.lastUploadAt = payload.device_status && payload.device_status.last_upload_at ? payload.device_status.last_upload_at : null;
+    var replacement = renderTableCard(table, sampleSummary);
     if (card && card.parentNode) card.parentNode.replaceChild(replacement, card);
     return true;
   } catch (err) {
@@ -1326,10 +1407,17 @@ function stationDetailPayloadToOverviewSummary(table, payload) {
     if (parsed) entries.push(parsed);
   }
   entries.sort(function(a, b) { return a.timestamp - b.timestamp; });
+  var summary = computeSummary(table.id, entries);
+  summary.deviceStatus = payload && payload.device_status ? payload.device_status : null;
+  summary.deviceConfig = payload && payload.device_config ? payload.device_config : null;
+  summary.uploadSessions = payload && Array.isArray(payload.upload_sessions) ? payload.upload_sessions : [];
+  summary.lastUploadAt = summary.deviceStatus && summary.deviceStatus.last_upload_at ? summary.deviceStatus.last_upload_at : null;
   return {
     entries: entries,
-    summary: computeSummary(table.id, entries),
+    summary: summary,
     deviceStatus: payload && payload.device_status ? payload.device_status : null,
+    deviceConfig: payload && payload.device_config ? payload.device_config : null,
+    uploadSessions: payload && Array.isArray(payload.upload_sessions) ? payload.upload_sessions : [],
     dataAsOf: payload && payload.data_as_of ? payload.data_as_of : null,
     fetchDurationMs: payload && payload._response_duration_ms != null ? payload._response_duration_ms : null
   };
@@ -1439,7 +1527,11 @@ async function renderOverviewFromStationDetails(basePayload, contextLabel, optio
           nextCheckInAt: derived.deviceStatus.next_check_in ? new Date(derived.deviceStatus.next_check_in) : null,
           lastSeenAt: derived.deviceStatus.last_seen ? new Date(derived.deviceStatus.last_seen) : null,
           lastUploadAt: derived.deviceStatus.last_upload_at ? new Date(derived.deviceStatus.last_upload_at) : null,
-          raw: derived.deviceStatus
+          raw: {
+            device_status: derived.deviceStatus,
+            device_config: derived.deviceConfig,
+            upload_sessions: derived.uploadSessions
+          }
         };
       }
       tableEntries[table.id] = derived.entries;

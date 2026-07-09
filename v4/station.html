@@ -1038,8 +1038,8 @@ body {
      =================================================================== -->
 <!-- seaweed_common.js must load before bootLoader — STATION_REGISTRY is defined there -->
 <script src="js/catalog_provider_v4.js?v=20260709v4fixes"></script>
-<script src="../pages/seaweed_common.js?v=20260709rolealiases"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260709rolealiases"></script>
+<script src="../pages/seaweed_common.js?v=20260709uploadgrace"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260709uploadgrace"></script>
 <script id="bootLoader">
 // Boot loader: reads ?table= param, injects data scripts
 (function(){
@@ -1055,9 +1055,11 @@ body {
   }
 
   var params = new URLSearchParams(window.location.search);
-  var v4StationKey = params.get('station') || params.get('table') || '';
+  var requestedStationKey = params.get('station') || '';
+  var requestedTableId = params.get('table') || '';
+  var v4StationKey = requestedStationKey || requestedTableId || '';
   var v4Station = window.SW_V4_DASHBOARD ? window.SW_V4_DASHBOARD.findStation(v4StationKey) : null;
-  var tableId = (v4Station && v4Station.id) || params.get('table') || v4StationKey || 'tb-01';
+  var tableId = (v4Station && v4Station.id) || requestedTableId || requestedStationKey || 'tb-01';
   window.__TABLE_ID = tableId;
 
   // Station definitions — derived from STATION_REGISTRY (seaweed_common.js)
@@ -1065,6 +1067,10 @@ body {
   STATION_REGISTRY.forEach(function(s) {
     STATIONS_DEFAULT[s.id] = {
       id: s.id,
+      stationKey: s.stationKey || s.station_key || s.id,
+      stationUid: s.stationUid || s.station_uid || '',
+      catalogAliases: (s.catalogAliases || s.catalog_aliases || []).slice ? (s.catalogAliases || s.catalog_aliases || []).slice() : [],
+      historicalSourceKeys: (s.historicalSourceKeys || s.historical_source_keys || []).slice ? (s.historicalSourceKeys || s.historical_source_keys || []).slice() : [],
       title: s.name,
       subtitle: s.location + ' -- Seaweed Table T/H Monitoring',
       channelId: '',
@@ -1084,13 +1090,54 @@ body {
     return String(id || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
   }
 
+  function normalizeStationToken(value) {
+    return String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
+  }
+
+  function stationMatchesToken(id, station, token) {
+    if (!token) return false;
+    station = station || {};
+    var aliases = [
+      id,
+      station.id,
+      station.stationKey,
+      station.station_key,
+      station.stationUid,
+      station.station_uid,
+      station.title,
+      station.name
+    ];
+    (station.catalogAliases || station.catalog_aliases || []).forEach(function(alias) { aliases.push(alias); });
+    (station.historicalSourceKeys || station.historical_source_keys || []).forEach(function(alias) { aliases.push(alias); });
+    for (var i = 0; i < aliases.length; i++) {
+      if (normalizeStationToken(aliases[i]) === token) return true;
+    }
+    return false;
+  }
+
+  function resolveStationIdFromStations(value, stations) {
+    var token = normalizeStationToken(value);
+    if (!token || !stations) return '';
+    if (stations[value]) return value;
+    var ids = Object.keys(stations);
+    for (var i = 0; i < ids.length; i++) {
+      if (stationMatchesToken(ids[i], stations[ids[i]], token)) return ids[i];
+    }
+    return '';
+  }
+
   function buildStationsFromConfig() {
     var out = {};
     var configured = null;
-    try {
-      var s = JSON.parse(localStorage.getItem('seaweed_dashboard_config') || '{}');
-      configured = Array.isArray(s.deviceProfiles) ? s.deviceProfiles : null;
-    } catch(e) {}
+    if (typeof getConfiguredDeviceProfiles === 'function') {
+      configured = getConfiguredDeviceProfiles({ includeDisabled: true });
+    }
+    if (!configured || !configured.length) {
+      try {
+        var s = JSON.parse(localStorage.getItem('seaweed_dashboard_config') || '{}');
+        configured = Array.isArray(s.deviceProfiles) ? s.deviceProfiles : null;
+      } catch(e) {}
+    }
 
     Object.keys(STATIONS_DEFAULT).forEach(function(id) {
       out[id] = Object.assign({}, STATIONS_DEFAULT[id]);
@@ -1120,6 +1167,10 @@ body {
           sensorMap: 'funzi'
         };
         var merged = Object.assign({}, base);
+        merged.stationKey = p.stationKey || p.station_key || base.stationKey || base.station_key || id;
+        merged.stationUid = p.stationUid || p.station_uid || base.stationUid || base.station_uid || '';
+        merged.catalogAliases = (p.catalogAliases || p.catalog_aliases || base.catalogAliases || base.catalog_aliases || []).slice ? (p.catalogAliases || p.catalog_aliases || base.catalogAliases || base.catalog_aliases || []).slice() : [];
+        merged.historicalSourceKeys = (p.historicalSourceKeys || p.historical_source_keys || base.historicalSourceKeys || base.historical_source_keys || []).slice ? (p.historicalSourceKeys || p.historical_source_keys || base.historicalSourceKeys || base.historical_source_keys || []).slice() : [];
         if (p.name) {
           merged.title = p.name;
           merged.subtitle = p.name + ' -- Seaweed Table T/H Monitoring';
@@ -1151,10 +1202,13 @@ body {
   if (typeof filterStationsForRole === 'function') {
     var allowedIds = filterStationsForRole(Object.keys(STATIONS).map(function(id) {
       var station = STATIONS[id] || {};
+      var foundStation = window.SW_V4_DASHBOARD && window.SW_V4_DASHBOARD.findStation ? window.SW_V4_DASHBOARD.findStation(id) : null;
       return {
         id: id,
-        stationKey: (window.SW_V4_DASHBOARD && window.SW_V4_DASHBOARD.findStation(id) || {}).station_key || '',
-        stationUid: (window.SW_V4_DASHBOARD && window.SW_V4_DASHBOARD.findStation(id) || {}).station_uid || '',
+        stationKey: station.stationKey || station.station_key || (foundStation || {}).station_key || '',
+        stationUid: station.stationUid || station.station_uid || (foundStation || {}).station_uid || '',
+        catalogAliases: station.catalogAliases || station.catalog_aliases || (foundStation || {}).catalog_aliases || [],
+        historicalSourceKeys: station.historicalSourceKeys || station.historical_source_keys || (foundStation || {}).historical_source_keys || [],
         name: station.title
       };
     })).map(function(s) { return s.id; });
@@ -1164,6 +1218,11 @@ body {
   }
 
   var stationIds = Object.keys(STATIONS);
+  var resolvedRequestedId = resolveStationIdFromStations(v4StationKey, STATIONS);
+  if (resolvedRequestedId) {
+    tableId = resolvedRequestedId;
+    window.__TABLE_ID = resolvedRequestedId;
+  }
   if (!STATIONS[tableId]) {
     var fallbackId = stationIds.length ? stationIds[0] : 'perth';
     tableId = fallbackId;
