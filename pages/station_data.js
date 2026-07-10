@@ -617,6 +617,9 @@ function applyEdgeSideData(payload) {
     };
   }
 
+  state.deviceConfig = payload.device_config || null;
+  state.uploadSessions = Array.isArray(payload.upload_sessions) ? payload.upload_sessions.slice() : [];
+
   // Slot map
   if (payload.slot_map && typeof payload.slot_map === 'object') {
     _stationSlotMap = {};

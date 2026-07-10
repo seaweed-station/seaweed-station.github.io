@@ -33,6 +33,8 @@ var state = {
   summaryEntries:   [],
   filteredEntries:  [],
   syncSessions:     [],
+  uploadSessions:   [],
+  deviceConfig:     null,
   deviceStatus:     null,
   timeRange:        'week',
   channelInfo:      null,

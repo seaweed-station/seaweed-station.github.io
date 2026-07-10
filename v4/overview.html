@@ -677,16 +677,16 @@ function resolveUploadSchedule(tableId, summary) {
   var latestUpload = latestUploadSession(uploadRows);
 
   var lastUpload = firstValidDate([
+    latestUpload && latestUpload.upload_started_at,
     statusRow && statusRow.lastUploadAt,
     summary && (summary.lastUploadAt || summary.last_upload_at),
     status && status.last_upload_at,
-    raw && raw.last_upload_at,
-    latestUpload && latestUpload.upload_started_at
+    raw && raw.last_upload_at
   ]);
 
-  var intervalHours = finiteNumberOrNull(config.upload_interval_hours);
+  var intervalHours = latestUpload ? finiteNumberOrNull(latestUpload.applied_upload_interval_hours) : null;
+  if (intervalHours === null) intervalHours = finiteNumberOrNull(config.upload_interval_hours);
   if (intervalHours === null) intervalHours = finiteNumberOrNull(config.applied_upload_interval_hours);
-  if (intervalHours === null && latestUpload) intervalHours = finiteNumberOrNull(latestUpload.applied_upload_interval_hours);
   if (lastUpload && intervalHours !== null && intervalHours > 0) {
     return {
       nextAt: new Date(lastUpload.getTime() + intervalHours * 60 * 60 * 1000),

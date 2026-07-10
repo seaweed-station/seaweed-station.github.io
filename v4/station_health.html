@@ -757,7 +757,7 @@ function rebuildHealthStations(openStationIds, viewState) {
 </script>
 
 <!-- Sprint 6: Extracted health page modules -->
-<script src="../pages/health_station_utils.js?v=20260528plots"></script>
+<script src="../pages/health_station_utils.js?v=20260710uploadschedule"></script>
 <script src="../pages/health_chart_utils.js"></script>
 <script src="../pages/health_edge_fetch.js?v=20260523dynslots"></script>
 <script>
@@ -834,7 +834,7 @@ function renderStationSection(station, data) {
   var e = data.entries;
   var hasData = e.length > 0;
   var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(station.id) : null;
-  var nextCheck = hasData ? estimateStationNextCheckIn(e, station.id) : { text: 'Next: --', summaryText: 'Next check in: --', cls: 'next-check-unknown' };
+  var nextCheck = hasData ? estimateStationNextCheckIn(e, station.id) : { text: 'Next upload: --', summaryText: 'Next upload: --', cls: 'next-check-unknown' };
 
   function formatDatasetEndLabel(endMs) {
     if (!isFinite(endMs)) return '--';

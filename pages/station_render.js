@@ -177,85 +177,125 @@ function formatEtaFromMinutes(mins) {
   return m ? (h + 'h ' + m + 'm') : (h + 'h');
 }
 
-var NEXT_CHECK_PIPELINE_BUFFER_MIN = 12;
+var NEXT_UPLOAD_OVERDUE_GRACE_MIN = 60;
 
-function estimateNextCheckIn(entries, preferredNextAt) {
-  if (preferredNextAt && !isNaN(preferredNextAt.getTime())) {
-    var statusDeltaMin = Math.round((preferredNextAt.getTime() - Date.now()) / 60000);
-    var statusState = 'good';
-    var statusWhen;
-    if (statusDeltaMin >= 0) {
-      statusState = 'good';
-      statusWhen = 'in ' + formatEtaFromMinutes(statusDeltaMin);
-    } else if (Math.abs(statusDeltaMin) <= NEXT_CHECK_PIPELINE_BUFFER_MIN) {
-      statusState = 'warn';
-      statusWhen = 'pending ingest';
-    } else {
-      statusState = 'late';
-      statusWhen = 'overdue by ' + formatEtaFromMinutes(Math.abs(statusDeltaMin) - NEXT_CHECK_PIPELINE_BUFFER_MIN);
+function stationDateOrNull(value) {
+  if (!value) return null;
+  var d = value instanceof Date ? value : new Date(value);
+  return d && !isNaN(d.getTime()) ? d : null;
+}
+
+function stationNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  var n = Number(value);
+  return isFinite(n) ? n : null;
+}
+
+function latestStationUploadSession(rows) {
+  var latest = null;
+  var latestMs = null;
+  rows = Array.isArray(rows) ? rows : [];
+  for (var i = 0; i < rows.length; i++) {
+    var d = stationDateOrNull(rows[i] && (rows[i].upload_started_at || rows[i].started_at || rows[i].created_at));
+    if (!d) continue;
+    if (latestMs === null || d.getTime() > latestMs) {
+      latest = rows[i];
+      latestMs = d.getTime();
     }
-    var statusAbs = preferredNextAt.toLocaleString('en-GB', {
-      day: '2-digit', month: 'short',
-      hour: '2-digit', minute: '2-digit', hour12: false,
-      timeZone: 'UTC'
-    });
-    if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
-      statusAbs = SeaweedV4.formatWithUtcOffset(preferredNextAt, window.__STATION && window.__STATION.displayTime);
-    } else {
-      statusAbs += ' UTC';
-    }
-    return { text: 'Next check in: ' + statusWhen + ' (' + statusAbs + ')', state: statusState };
   }
+  return latest;
+}
 
-  if (!entries || entries.length < 2) {
-    return { text: 'Next check in: --', state: 'unknown' };
-  }
-
-  var latest = entries[entries.length - 1].timestamp;
-  if (!latest || isNaN(latest.getTime())) {
-    return { text: 'Next check in: --', state: 'unknown' };
-  }
-
+function observedStationUploadIntervalHours(rows) {
+  rows = (Array.isArray(rows) ? rows : []).map(function(row) {
+    var d = stationDateOrNull(row && (row.upload_started_at || row.started_at || row.created_at));
+    return d ? d.getTime() : NaN;
+  }).filter(function(ms) {
+    return isFinite(ms);
+  }).sort(function(a, b) {
+    return a - b;
+  });
+  if (rows.length < 2) return null;
   var diffs = [];
-  var start = Math.max(1, entries.length - 40);
-  for (var i = start; i < entries.length; i++) {
-    var prevTs = entries[i - 1].timestamp;
-    var curTs = entries[i].timestamp;
-    if (!prevTs || !curTs) continue;
-    var d = curTs.getTime() - prevTs.getTime();
-    if (d > 0 && d <= 12 * 3600000) diffs.push(d);
+  for (var i = 1; i < rows.length; i++) {
+    var diff = rows[i] - rows[i - 1];
+    if (diff > 0 && diff <= 14 * 24 * 3600000) diffs.push(diff);
   }
-  if (!diffs.length) {
-    return { text: 'Next check in: --', state: 'unknown' };
-  }
-
+  if (!diffs.length) return null;
   diffs.sort(function(a, b) { return a - b; });
-  var cadenceMs = diffs[Math.floor(diffs.length / 2)];
-  var nextAt = new Date(latest.getTime() + cadenceMs);
+  return diffs[Math.floor(diffs.length / 2)] / 3600000;
+}
+
+function resolveStationUploadSchedule() {
+  var uploadRows = Array.isArray(state.uploadSessions) ? state.uploadSessions : [];
+  var latestUpload = latestStationUploadSession(uploadRows);
+  var cfg = state.deviceConfig || {};
+  var status = state.deviceStatus || {};
+  var raw = status.raw || {};
+  var lastUpload = stationDateOrNull(latestUpload && latestUpload.upload_started_at) ||
+    stationDateOrNull(status.lastUploadAt) ||
+    stationDateOrNull(raw.last_upload_at);
+  var intervalHours = latestUpload ? stationNumberOrNull(latestUpload.applied_upload_interval_hours) : null;
+  if (intervalHours === null) intervalHours = stationNumberOrNull(cfg.upload_interval_hours);
+  if (intervalHours === null) intervalHours = stationNumberOrNull(cfg.bulk_freq_hours);
+  if (intervalHours === null) intervalHours = observedStationUploadIntervalHours(uploadRows);
+  if (!lastUpload || intervalHours === null || intervalHours <= 0) return null;
+  return {
+    nextAt: new Date(lastUpload.getTime() + intervalHours * 3600000),
+    lastUploadAt: lastUpload,
+    intervalHours: intervalHours,
+    source: latestUpload ? 'upload_sessions' : 'device_status'
+  };
+}
+
+function formatStationNextTime(dateValue) {
+  var d = stationDateOrNull(dateValue);
+  if (!d) return '--';
+  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
+    return SeaweedV4.formatWithUtcOffset(d, window.__STATION && window.__STATION.displayTime);
+  }
+  return d.toLocaleString('en-GB', {
+    day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: 'UTC'
+  }) + ' UTC';
+}
+
+function formatNextUploadStatus(nextAt) {
   var deltaMin = Math.round((nextAt.getTime() - Date.now()) / 60000);
   var state = 'good';
   var when;
   if (deltaMin >= 0) {
     state = 'good';
     when = 'in ' + formatEtaFromMinutes(deltaMin);
-  } else if (Math.abs(deltaMin) <= NEXT_CHECK_PIPELINE_BUFFER_MIN) {
-    state = 'warn';
-    when = 'pending ingest';
   } else {
-    state = 'late';
-    when = 'overdue by ' + formatEtaFromMinutes(Math.abs(deltaMin) - NEXT_CHECK_PIPELINE_BUFFER_MIN);
+    var lateMin = Math.abs(deltaMin);
+    if (lateMin <= NEXT_UPLOAD_OVERDUE_GRACE_MIN) {
+      state = 'warn';
+      when = 'pending upload; ' + formatEtaFromMinutes(lateMin) + ' past schedule';
+    } else {
+      state = 'late';
+      when = 'overdue by ' + formatEtaFromMinutes(lateMin);
+    }
   }
-  var nextAbs = nextAt.toLocaleString('en-GB', {
-    day: '2-digit', month: 'short',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-    timeZone: 'UTC'
-  });
-  if (window.SeaweedV4 && typeof SeaweedV4.formatWithUtcOffset === 'function') {
-    nextAbs = SeaweedV4.formatWithUtcOffset(nextAt, window.__STATION && window.__STATION.displayTime);
-  } else {
-    nextAbs += ' UTC';
+  return { text: 'Next upload: ' + when + ' (' + formatStationNextTime(nextAt) + ')', state: state };
+}
+
+function estimateNextCheckIn(entries, preferredNextAt) {
+  var uploadSchedule = resolveStationUploadSchedule();
+  if (uploadSchedule && uploadSchedule.nextAt && !isNaN(uploadSchedule.nextAt.getTime())) {
+    return formatNextUploadStatus(uploadSchedule.nextAt);
   }
-  return { text: 'Next check in: ' + when + ' (' + nextAbs + ')', state: state };
+
+  if (preferredNextAt && !isNaN(preferredNextAt.getTime())) {
+    var statusDeltaMin = Math.round((preferredNextAt.getTime() - Date.now()) / 60000);
+    if (statusDeltaMin >= 0) {
+      return { text: 'Next status check: in ' + formatEtaFromMinutes(statusDeltaMin) + ' (' + formatStationNextTime(preferredNextAt) + ')', state: 'good' };
+    }
+    return { text: 'Upload schedule pending; status check was ' + formatEtaFromMinutes(Math.abs(statusDeltaMin)) + ' ago', state: 'warn' };
+  }
+
+  return { text: 'Next upload: waiting for upload schedule', state: 'unknown' };
 }
 
 // =====================================================================

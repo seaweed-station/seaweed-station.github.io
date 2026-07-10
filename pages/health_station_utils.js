@@ -639,7 +639,101 @@ function fmtEtaMinutes(mins) {
   return m ? (h + 'h ' + m + 'm') : (h + 'h');
 }
 
-var NEXT_CHECK_PIPELINE_BUFFER_MIN = 12;
+var NEXT_UPLOAD_OVERDUE_GRACE_MIN = 60;
+
+function healthDateOrNull(value) {
+  if (!value) return null;
+  var d = value instanceof Date ? value : new Date(value);
+  return d && !isNaN(d.getTime()) ? d : null;
+}
+
+function healthNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  var n = Number(value);
+  return isFinite(n) ? n : null;
+}
+
+function latestHealthUploadSession(rows) {
+  var latest = null;
+  var latestMs = null;
+  rows = Array.isArray(rows) ? rows : [];
+  for (var i = 0; i < rows.length; i++) {
+    var d = healthDateOrNull(rows[i] && (rows[i].upload_started_at || rows[i].started_at || rows[i].created_at));
+    if (!d) continue;
+    if (latestMs === null || d.getTime() > latestMs) {
+      latest = rows[i];
+      latestMs = d.getTime();
+    }
+  }
+  return latest;
+}
+
+function observedHealthUploadIntervalHours(rows) {
+  rows = (Array.isArray(rows) ? rows : []).map(function(row) {
+    var d = healthDateOrNull(row && (row.upload_started_at || row.started_at || row.created_at));
+    return d ? d.getTime() : NaN;
+  }).filter(function(ms) {
+    return isFinite(ms);
+  }).sort(function(a, b) {
+    return a - b;
+  });
+  if (rows.length < 2) return null;
+  var diffs = [];
+  for (var i = 1; i < rows.length; i++) {
+    var diff = rows[i] - rows[i - 1];
+    if (diff > 0 && diff <= 14 * 24 * 3600000) diffs.push(diff);
+  }
+  if (!diffs.length) return null;
+  diffs.sort(function(a, b) { return a - b; });
+  return diffs[Math.floor(diffs.length / 2)] / 3600000;
+}
+
+function resolveHealthUploadSchedule(stationId) {
+  var statusRow = stationId ? _deviceStatusById[stationId] : null;
+  var cfg = stationId && _deviceConfigById ? (_deviceConfigById[stationId] || {}) : {};
+  var uploadRows = stationId && _stationUploadTimeline ? (_stationUploadTimeline[stationId] || []) : [];
+  var latestUpload = latestHealthUploadSession(uploadRows);
+  var raw = statusRow && statusRow.raw ? statusRow.raw : {};
+  var lastUpload = healthDateOrNull(latestUpload && latestUpload.upload_started_at) ||
+    healthDateOrNull(statusRow && statusRow.lastUploadAt) ||
+    healthDateOrNull(raw && raw.last_upload_at);
+  var intervalHours = latestUpload ? healthNumberOrNull(latestUpload.applied_upload_interval_hours) : null;
+  if (intervalHours === null) intervalHours = healthNumberOrNull(cfg.upload_interval_hours);
+  if (intervalHours === null) intervalHours = healthNumberOrNull(cfg.bulk_freq_hours);
+  if (intervalHours === null) intervalHours = observedHealthUploadIntervalHours(uploadRows);
+  if (!lastUpload || intervalHours === null || intervalHours <= 0) return null;
+  return {
+    nextAt: new Date(lastUpload.getTime() + intervalHours * 3600000),
+    lastUploadAt: lastUpload,
+    intervalHours: intervalHours,
+    source: latestUpload ? 'upload_sessions' : 'device_status'
+  };
+}
+
+function formatHealthNextUploadStatus(nextAt, stationId) {
+  var deltaMin = Math.round((nextAt.getTime() - Date.now()) / 60000);
+  var cls = 'next-check-good';
+  var when;
+  if (deltaMin >= 0) {
+    cls = 'next-check-good';
+    when = 'in ' + fmtEtaMinutes(deltaMin);
+  } else {
+    var lateMin = Math.abs(deltaMin);
+    if (lateMin <= NEXT_UPLOAD_OVERDUE_GRACE_MIN) {
+      cls = 'next-check-warn';
+      when = 'pending upload; ' + fmtEtaMinutes(lateMin) + ' past schedule';
+    } else {
+      cls = 'next-check-late';
+      when = 'overdue by ' + fmtEtaMinutes(lateMin);
+    }
+  }
+  var nextAbs = fmtStationTime(nextAt, stationId);
+  return {
+    text: 'Next upload: ' + when + ' (' + nextAbs + ')',
+    summaryText: 'Next upload: ' + when + ' (' + nextAbs + ')',
+    cls: cls
+  };
+}
 
 function estimateStationNextCheckIn(entries, stationId) {
   var datasetMeta = typeof getStationDatasetState === 'function' ? getStationDatasetState(stationId) : null;
@@ -651,103 +745,60 @@ function estimateStationNextCheckIn(entries, stationId) {
       cls: 'next-check-paused'
     };
   }
+  var uploadSchedule = resolveHealthUploadSchedule(stationId);
+  if (uploadSchedule && uploadSchedule.nextAt && !isNaN(uploadSchedule.nextAt.getTime())) {
+    return formatHealthNextUploadStatus(uploadSchedule.nextAt, stationId);
+  }
   var statusRow = stationId ? _deviceStatusById[stationId] : null;
   var nextFromStatus = statusRow && statusRow.nextCheckInAt ? statusRow.nextCheckInAt : null;
   if (nextFromStatus && !isNaN(nextFromStatus.getTime())) {
     var statusDeltaMin = Math.round((nextFromStatus.getTime() - Date.now()) / 60000);
-    var statusCls = 'next-check-good';
-    var statusWhen;
     if (statusDeltaMin >= 0) {
-      statusCls = 'next-check-good';
-      statusWhen = 'in ' + fmtEtaMinutes(statusDeltaMin);
-    } else if (Math.abs(statusDeltaMin) <= NEXT_CHECK_PIPELINE_BUFFER_MIN) {
-      statusCls = 'next-check-warn';
-      statusWhen = 'pending ingest';
-    } else {
-      statusCls = 'next-check-late';
-      statusWhen = 'overdue by ' + fmtEtaMinutes(Math.abs(statusDeltaMin) - NEXT_CHECK_PIPELINE_BUFFER_MIN);
+      var statusIn = 'in ' + fmtEtaMinutes(statusDeltaMin);
+      var statusAbsGood = fmtStationTime(nextFromStatus, stationId);
+      return {
+        text: 'Next status check: ' + statusIn + ' (' + statusAbsGood + ')',
+        summaryText: 'Next status check: ' + statusIn + ' (' + statusAbsGood + ')',
+        cls: 'next-check-good'
+      };
     }
-    var statusAbs = nextFromStatus.toLocaleString('en-GB', {
-      day: '2-digit', month: 'short',
-      hour: '2-digit', minute: '2-digit', hour12: false,
-      timeZone: 'UTC'
-    });
-    statusAbs = fmtStationTime(nextFromStatus, stationId);
+    var statusAgo = fmtEtaMinutes(Math.abs(statusDeltaMin));
     return {
-      text: 'Next: ' + statusWhen + ' (' + statusAbs + ')',
-      summaryText: 'Next check in: ' + statusWhen + ' (' + statusAbs + ')',
-      cls: statusCls
+      text: 'Upload schedule pending; status check was ' + statusAgo + ' ago',
+      summaryText: 'Upload schedule pending; status check was ' + statusAgo + ' ago',
+      cls: 'next-check-warn'
     };
   }
 
   var srcInfo = stationId ? (_stationDataSource[stationId] || {}) : {};
   if (srcInfo.source === 'cache') {
     return {
-      text: 'Next: waiting for live status',
-      summaryText: 'Next check in: waiting for live status',
+      text: 'Next upload: waiting for live status',
+      summaryText: 'Next upload: waiting for live status',
       cls: 'next-check-unknown'
     };
   }
 
   if (!entries || entries.length < 2) {
     return {
-      text: 'Next check in: --',
-      summaryText: 'Next check in: --',
+      text: 'Next upload: --',
+      summaryText: 'Next upload: --',
       cls: 'next-check-unknown'
     };
   }
   var latest = entries[entries.length - 1].timestamp;
   if (!latest || isNaN(latest.getTime())) {
     return {
-      text: 'Next check in: --',
-      summaryText: 'Next check in: --',
+      text: 'Next upload: --',
+      summaryText: 'Next upload: --',
       cls: 'next-check-unknown'
     };
   }
 
-  var diffs = [];
-  var start = Math.max(1, entries.length - 40);
-  for (var i = start; i < entries.length; i++) {
-    var prevTs = entries[i - 1].timestamp;
-    var curTs = entries[i].timestamp;
-    if (!prevTs || !curTs) continue;
-    var d = curTs.getTime() - prevTs.getTime();
-    if (d > 0 && d <= 12 * 3600000) diffs.push(d);
-  }
-  if (!diffs.length) {
-    return {
-      text: 'Next check in: --',
-      summaryText: 'Next check in: --',
-      cls: 'next-check-unknown'
-    };
-  }
-
-  diffs.sort(function(a, b) { return a - b; });
-  var cadenceMs = diffs[Math.floor(diffs.length / 2)];
-  var nextAt = new Date(latest.getTime() + cadenceMs);
-  var deltaMin = Math.round((nextAt.getTime() - Date.now()) / 60000);
-  var cls = 'next-check-good';
-  var when;
-  if (deltaMin >= 0) {
-    cls = 'next-check-good';
-    when = 'in ' + fmtEtaMinutes(deltaMin);
-  } else if (Math.abs(deltaMin) <= NEXT_CHECK_PIPELINE_BUFFER_MIN) {
-    cls = 'next-check-warn';
-    when = 'pending ingest';
-  } else {
-    cls = 'next-check-late';
-    when = 'overdue by ' + fmtEtaMinutes(Math.abs(deltaMin) - NEXT_CHECK_PIPELINE_BUFFER_MIN);
-  }
-  var nextAbs = nextAt.toLocaleString('en-GB', {
-    day: '2-digit', month: 'short',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-    timeZone: 'UTC'
-  });
-  nextAbs = fmtStationTime(nextAt, stationId);
   return {
-    text: 'Next: ' + when + ' (' + nextAbs + ')',
-    summaryText: 'Next check in: ' + when + ' (' + nextAbs + ')',
-    cls: cls
+    text: 'Next upload: waiting for upload schedule',
+    summaryText: 'Next upload: waiting for upload schedule',
+    cls: 'next-check-unknown'
   };
 }
 
