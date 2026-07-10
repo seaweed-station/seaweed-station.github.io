@@ -186,13 +186,28 @@ function renderDailyHealth(container, entries, stationId) {
     return r && r.upload_started_at ? new Date(ensureUTC(r.upload_started_at)).getTime() : null;
   });
 
-  var samplePeriodEvents = syncRowsAll.map(function(r) {
+  var satellitePeriodFallbackEvents = syncRowsAll.map(function(r) {
     var ts = r && r.sync_started_at ? new Date(ensureUTC(r.sync_started_at)).getTime() : NaN;
     var min = num(r && r.sample_period_min);
     var sec = min != null ? min * 60 : null;
     if (!isFinite(ts) || sec == null || !isFinite(sec) || sec <= 0) return null;
     return { ts: ts, v: sec };
   }).filter(function(x) { return !!x; }).sort(function(a, b) { return a.ts - b.ts; });
+
+  function uploadSamplePeriodEvents(primaryField) {
+    return uploadRowsAll.map(function(r) {
+      var ts = r && r.upload_started_at ? new Date(ensureUTC(r.upload_started_at)).getTime() : NaN;
+      var minutes = num(r && r[primaryField]);
+      if (minutes == null) minutes = num(r && r.applied_sample_period_min);
+      var sec = minutes != null ? minutes * 60 : null;
+      if (!isFinite(ts) || sec == null || !isFinite(sec) || sec <= 0) return null;
+      return { ts: ts, v: sec };
+    }).filter(function(x) { return !!x; }).sort(function(a, b) { return a.ts - b.ts; });
+  }
+
+  var hubSamplePeriodEvents = uploadSamplePeriodEvents('applied_hub_sample_period_min');
+  var satelliteSamplePeriodEvents = uploadSamplePeriodEvents('applied_satellite_sample_period_min');
+  if (!satelliteSamplePeriodEvents.length) satelliteSamplePeriodEvents = satellitePeriodFallbackEvents;
 
   function dominantValueForDay(events, dayStart, dayEnd, defaultValue) {
     if (!events || !events.length) return defaultValue == null ? null : defaultValue;
@@ -558,7 +573,7 @@ function renderDailyHealth(container, entries, stationId) {
   }
 
   var enabledSlotCount = slots.length;
-  var configCols = 4 + enabledSlotCount * 2;
+  var configCols = 5 + enabledSlotCount * 2;
   var batteryCols = 1 + enabledSlotCount;
   var sampleCols = 1 + enabledSlotCount;
   var gapCols = 1 + enabledSlotCount;
@@ -583,7 +598,7 @@ function renderDailyHealth(container, entries, stationId) {
       groupTh('Radio and Satellite Syncs', radioSyncCols, 'grp-radio group-start') +
     '</tr>' +
     '<tr>' +
-      '<th class="grp-config">Sample Period<br><span style="font-weight:400">(min)</span></th><th class="grp-config">Upload Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">Sat Sync Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">T0 FW</th>' +
+      '<th class="grp-config">Hub Sample<br><span style="font-weight:400">(min)</span></th><th class="grp-config">Sat Sample<br><span style="font-weight:400">(min)</span></th><th class="grp-config">Upload Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">Sat Sync Freq<br><span style="font-weight:400">(hours)</span></th><th class="grp-config">T0 FW</th>' +
       slotHeaders('FW', 'grp-config') +
       slotHeaders('Mapping', 'grp-config') +
       '<th class="grp-battery group-start">T0 Bat<br><span style="font-weight:400">(%)</span></th>' + slotHeaders('Bat<br><span style="font-weight:400">(%)</span>', 'grp-battery') +
@@ -636,7 +651,23 @@ function renderDailyHealth(container, entries, stationId) {
     // Majority config values for the day (fallback to global medians).
     var daySamplePeriods = daySyncRows.map(function(r) { var m = num(r.sample_period_min); return m != null ? m * 60 : null; }).filter(function(v) { return v && v > 0; });
     var daySyncPeriods = daySyncRows.map(function(r) { var m = num(r.sync_period_min); return m != null ? m * 60 : null; }).filter(function(v) { return v && v > 0; });
-    var cfgSampleSec = dominantValueForDay(samplePeriodEvents, dayStart, dayEnd, mode(daySamplePeriods));
+    var legacySampleSec = mode(daySamplePeriods);
+    var cfgHubSampleSec = dominantValueForDay(
+      hubSamplePeriodEvents,
+      dayStart,
+      dayEnd,
+      configRow && num(configRow.hub_sample_period_min) != null
+        ? num(configRow.hub_sample_period_min) * 60
+        : legacySampleSec
+    );
+    var cfgSatelliteSampleSec = dominantValueForDay(
+      satelliteSamplePeriodEvents,
+      dayStart,
+      dayEnd,
+      configRow && num(configRow.satellite_sample_period_min) != null
+        ? num(configRow.satellite_sample_period_min) * 60
+        : legacySampleSec
+    );
     var cfgSyncSec = mode(daySyncPeriods);
 
     var dayUploadIntervals = [];
@@ -668,7 +699,7 @@ function renderDailyHealth(container, entries, stationId) {
     );
     var t0SamplesActual = de.length;
     var dayT0IntervalMs = medianIntervalMs(de, function(r) { return r.timestamp ? r.timestamp.getTime() : null; });
-    var effectiveSampleSec = cfgSampleSec || (dayT0IntervalMs ? Math.round(dayT0IntervalMs / 1000) : (globalT0IntervalMs ? Math.round(globalT0IntervalMs / 1000) : null));
+    var effectiveSampleSec = cfgHubSampleSec || (dayT0IntervalMs ? Math.round(dayT0IntervalMs / 1000) : (globalT0IntervalMs ? Math.round(globalT0IntervalMs / 1000) : null));
     var t0SamplesExpected = expectedCountForWindow(effectiveSampleSec, dayWindowMs);
     if (t0SamplesExpected == null) {
       t0SamplesExpected = expectedPerDayFromIntervalMs(effectiveSampleSec ? effectiveSampleSec * 1000 : (dayT0IntervalMs || globalT0IntervalMs));
@@ -676,6 +707,7 @@ function renderDailyHealth(container, entries, stationId) {
 
     var periodBasedExpected = expectedCountForWindow(effectiveSampleSec, dayWindowMs);
     var t0LostTime = fmtLostTime(t0SamplesActual, periodBasedExpected, effectiveSampleSec);
+    var satellitePeriodBasedExpected = expectedCountForWindow(cfgSatelliteSampleSec, dayWindowMs);
 
     var t0UploadsActual = dayUploadRows.length;
     var t0UploadsOk = dayUploadRows.filter(isUploadSuccess).length;
@@ -706,7 +738,7 @@ function renderDailyHealth(container, entries, stationId) {
         mapText: nodeLetter ? ('Node ' + escHtml(nodeLetter)) : '--',
         samplesActual: samplesActual,
         samplesExpected: samplesExpected,
-        lostTime: fmtLostTime(samplesActual, periodBasedExpected, effectiveSampleSec),
+        lostTime: fmtLostTime(samplesActual, satellitePeriodBasedExpected, cfgSatelliteSampleSec),
         syncActual: slotRows.length,
         syncOk: slotRows.filter(isSyncSuccess).length,
         rssiVals: slotRows.map(function(r) { return num(r.sat_rssi_avg); }).filter(function(v) { return v != null && v !== 0; }),
@@ -727,7 +759,8 @@ function renderDailyHealth(container, entries, stationId) {
 
     html += '<tr>' +
       '<td>' + dateLabel + '</td>' +
-      '<td class="grp-config">' + fmtPeriodSeconds(cfgSampleSec) + '</td>' +
+      '<td class="grp-config">' + fmtPeriodSeconds(cfgHubSampleSec) + '</td>' +
+      '<td class="grp-config">' + fmtPeriodSeconds(cfgSatelliteSampleSec) + '</td>' +
       '<td class="grp-config">' + fmtPeriodMs(cfgUploadMs) + '</td>' +
       '<td class="grp-config">' + fmtPeriodSeconds(cfgSyncSec) + '</td>' +
       '<td class="grp-config">' + dayT0Fw + '</td>' +

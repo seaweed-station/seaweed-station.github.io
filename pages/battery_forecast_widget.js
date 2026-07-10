@@ -380,9 +380,23 @@ window.BatteryForecast = (function () {
       espnowSyncPeriod_s: 3600, sat1Installed: true, sat2Installed: false,
     };
 
+    var deviceCfg = state && state.deviceConfig && typeof state.deviceConfig === 'object'
+      ? state.deviceConfig
+      : null;
+    var legacySample_s = deviceCfg && Number(deviceCfg.sample_period_min) > 0
+      ? Number(deviceCfg.sample_period_min) * 60
+      : t0Cfg.samplePeriod_s;
+    var hubSample_s = deviceCfg && Number(deviceCfg.hub_sample_period_min) > 0
+      ? Number(deviceCfg.hub_sample_period_min) * 60
+      : legacySample_s;
+    var satelliteSample_s = deviceCfg && Number(deviceCfg.satellite_sample_period_min) > 0
+      ? Number(deviceCfg.satellite_sample_period_min) * 60
+      : legacySample_s;
+    t0Cfg = Object.assign({}, t0Cfg, { samplePeriod_s: hubSample_s });
+
     var t0Result  = BatteryModel.calcT0Daily(t0Cfg);
     var teResult  = BatteryModel.calcTEDaily({
-      samplePeriod_s:      t0Cfg.samplePeriod_s,
+      samplePeriod_s:      satelliteSample_s,
       espnowSyncPeriod_s:  t0Cfg.espnowSyncPeriod_s,
       sleepEnable:         true,
     });
@@ -393,7 +407,9 @@ window.BatteryForecast = (function () {
       t0TrendDaysLeft: null, slot1TrendDaysLeft: null, slot2TrendDaysLeft: null,
       t0Mae: null, slot1Mae: null, slot2Mae: null,
       configAvailable: !!cfg,
-      configSummary: BatteryModel.configSummary(cfg),
+      configSummary: BatteryModel.configSummary(cfg) +
+        (deviceCfg ? ' | Hub sample ' + Math.round(hubSample_s / 60) + 'm' +
+          ' | Sat sample ' + Math.round(satelliteSample_s / 60) + 'm' : ''),
       configChanges: changes,
       firstConfig:     _firstCfgEntry ? _firstCfgEntry.cfg : null,
       firstConfigTime: _firstCfgEntry ? _firstCfgEntry.ts  : null,

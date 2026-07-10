@@ -661,7 +661,10 @@ function rebuildHealthStations(openStationIds) {
     var selId = sel ? sel.value : (STATIONS[0] ? STATIONS[0].id : null);
     if (selId && stationData[selId] && stationData[selId].entries.length) {
       BatteryForecast.reset();
-      BatteryForecast.init({ allEntries: stationData[selId].entries });
+      BatteryForecast.init({
+        allEntries: stationData[selId].entries,
+        deviceConfig: _deviceConfigById[selId] || null
+      });
       document.getElementById('forecastPanel').style.display = '';
     }
   } else {
@@ -697,7 +700,10 @@ function onAllLoaded() {
 function switchForecastStation(id) {
   if (!window.BatteryForecast || !stationData[id] || !stationData[id].entries.length) return;
   BatteryForecast.reset();
-  BatteryForecast.init({ allEntries: stationData[id].entries });
+  BatteryForecast.init({
+    allEntries: stationData[id].entries,
+    deviceConfig: _deviceConfigById[id] || null
+  });
 }
 
 function toggleForecastPanel(forceExpand) {

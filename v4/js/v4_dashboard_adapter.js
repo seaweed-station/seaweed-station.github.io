@@ -733,7 +733,7 @@
     var win = windowParams(windowLike);
     try {
       var rows = await getPostgrest("sync_sessions", {
-        select: "station_uid,hub_board_id,node_board_id,slot_number,sync_id,upload_id,sync_started_at,sync_ended_at,status,status_detail,expected_samples,received_total,transfer_mode,requested_files,received_files,received_file_rows,persisted_sd,sat_rssi_avg,sat_rssi_min,sat_drift_s,sat_battery_v,sat_flash_pct,sat_fw_ver,sat_fw_date,hello_seen,mac_ack_ok,ack_sample_id,transfer_elapsed_ms,sync_period_min,sample_period_min,boot_count,received_live,min_sample_id,max_sample_id,sync_duration_ms,last_miss_summary,t0_backlog_stop_reason,sat_file_fail_reason,t0_file_fail_detail,sync_phase,scheduled_heavy_at,service_outcome,sleep_commanded,ota_deployment_id,ota_attempt_id,ota_target_version,post_ota_fw_ver,sync_arrival_offset_s,sync_lead_actual_s,sync_margin_remaining_s,drift_learn_candidate_comp_s,drift_learn_raw_arrival_s,drift_learn_residual_s,drift_learn_confidence,drift_learn_n,drift_learn_spread_s,drift_learn_eligible,drift_learn_reason,drift_learn_reason_text,drift_learn_applied",
+        select: "station_uid,hub_board_id,node_board_id,slot_number,sync_id,upload_id,sync_started_at,sync_ended_at,status,status_detail,expected_samples,received_total,transfer_mode,requested_files,received_files,received_file_rows,persisted_sd,sat_rssi_avg,sat_rssi_min,sat_drift_s,sat_battery_v,sat_flash_pct,sat_fw_ver,sat_fw_date,hello_seen,mac_ack_ok,ack_sample_id,transfer_elapsed_ms,sync_period_min,sample_period_min,boot_count,received_live,min_sample_id,max_sample_id,sync_duration_ms,last_miss_summary,t0_backlog_stop_reason,sat_file_fail_reason,t0_file_fail_detail,file_metrics_version,file_list_ms,file_count_ms,file_read_send_ms,file_ack_wait_ms,file_archive_ms,sat_transfer_total_ms,sat_transfer_rows,file_ack_retry_count,file_ack_max_latency_ms,sample_wake_metrics_version,sample_wake_flags,sample_wake_total_ms,sample_wake_flash_init_ms,sample_wake_sensor_init_ms,sample_wake_work_ms,t0_file_persist_ms,t0_file_persist_max_ms,t0_file_ack_send_ms,t0_file_ack_replay_count,t0_file_storage_backend,sync_phase,scheduled_heavy_at,service_outcome,sleep_commanded,ota_deployment_id,ota_attempt_id,ota_target_version,post_ota_fw_ver,sync_arrival_offset_s,sync_lead_actual_s,sync_margin_remaining_s,drift_learn_candidate_comp_s,drift_learn_raw_arrival_s,drift_learn_residual_s,drift_learn_confidence,drift_learn_n,drift_learn_spread_s,drift_learn_eligible,drift_learn_reason,drift_learn_reason_text,drift_learn_applied",
         station_uid: "eq." + station.station_uid,
         sync_started_at: ["gte." + win.from.toISOString(), "lte." + win.to.toISOString()],
         order: "sync_started_at.desc",
@@ -758,7 +758,7 @@
     var win = windowParams(windowLike);
     try {
       var rows = await getPostgrest("upload_sessions", {
-        select: "station_uid,source_board_id,upload_id,upload_started_at,upload_ended_at,boot_count,upload_duration_ms,transport,csq,espnow_sched_drift_s,abs_time_resync_drift_s,hub_rows_uploaded,sat_rows_uploaded,batches_attempted,batches_succeeded,free_heap,sd_free_kb,files_archived,config_version,config_sync_result,status,status_detail,applied_sample_period_min,applied_upload_interval_hours,applied_upload_anchor_hour_utc,applied_upload_anchor_minute_utc,applied_satellite_sync_period_hours,applied_slot_count,applied_sleep_enable,applied_deploy_mode,applied_fw_version,applied_fw_date",
+        select: "station_uid,source_board_id,upload_id,upload_started_at,upload_ended_at,boot_count,upload_duration_ms,transport,csq,espnow_sched_drift_s,abs_time_resync_drift_s,hub_rows_uploaded,sat_rows_uploaded,batches_attempted,batches_succeeded,free_heap,sd_free_kb,files_archived,config_version,config_sync_result,status,status_detail,applied_sample_period_min,applied_hub_sample_period_min,applied_satellite_sample_period_min,applied_upload_interval_hours,applied_upload_anchor_hour_utc,applied_upload_anchor_minute_utc,applied_satellite_sync_period_hours,applied_slot_count,applied_sleep_enable,applied_deploy_mode,applied_fw_version,applied_fw_date",
         station_uid: "eq." + station.station_uid,
         upload_started_at: ["gte." + win.from.toISOString(), "lte." + win.to.toISOString()],
         order: "upload_started_at.desc",
@@ -814,6 +814,12 @@
       } : null,
       device_config: latestUpload ? {
         sample_period_min: latestUpload.applied_sample_period_min,
+        hub_sample_period_min: latestUpload.applied_hub_sample_period_min != null
+          ? latestUpload.applied_hub_sample_period_min
+          : latestUpload.applied_sample_period_min,
+        satellite_sample_period_min: latestUpload.applied_satellite_sample_period_min != null
+          ? latestUpload.applied_satellite_sample_period_min
+          : latestUpload.applied_sample_period_min,
         upload_interval_hours: latestUpload.applied_upload_interval_hours,
         sat_sync_period_hours: latestUpload.applied_satellite_sync_period_hours,
         deploy_mode: latestUpload.applied_deploy_mode,

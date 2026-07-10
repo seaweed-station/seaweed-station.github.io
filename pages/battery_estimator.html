@@ -531,15 +531,19 @@ if(sessionStorage.getItem('sw_auth')!=='ok'&&sessionStorage.getItem('sw_auth_v4_
 <!-- Configuration Inputs -->
 <div class="panel">
   <div class="panel-title">Configuration</div>
-  <div class="panel-title shared-title" style="font-size:0.85rem; margin-bottom:8px;">Shared</div>
+  <div class="panel-title shared-title" style="font-size:0.85rem; margin-bottom:8px;">Station</div>
   <div class="shared-box">
     <div class="info-box">
-      <strong>Sample Period</strong> is how often each board writes to its own SD card. <strong>ESP-NOW Sync Period</strong> is how often the boards sync.
+      <strong>Hub Sample Period</strong> controls the solar-supported T0. <strong>Satellite Sample Period</strong> controls battery nodes. <strong>ESP-NOW Sync Period</strong> is how often the boards rendezvous and move backlog.
     </div>
     <div class="grid">
       <div class="field">
-        <label>Sample Period <span class="unit">(minutes — SD log only)</span></label>
-        <input type="number" id="sharedSamplePeriod" value="10" min="1" max="1440" step="1">
+        <label>Hub Sample Period <span class="unit">(minutes)</span></label>
+        <input type="number" id="hubSamplePeriod" value="10" min="1" max="1440" step="1">
+      </div>
+      <div class="field">
+        <label>Satellite Sample Period <span class="unit">(minutes)</span></label>
+        <input type="number" id="satelliteSamplePeriod" value="60" min="1" max="1440" step="1">
       </div>
       <div class="field">
         <label>ESP-NOW Sync Period <span class="unit">(minutes)</span></label>
@@ -1018,7 +1022,7 @@ if(sessionStorage.getItem('sw_auth')!=='ok'&&sessionStorage.getItem('sw_auth_v4_
   <div class="panel-title" style="color:var(--accent2);">Cellular Data &amp; Upload Usage Estimate</div>
 
   <div class="info-box" style="margin-bottom:10px;">
-    Values are taken from <strong>Configuration</strong> above: Sample Period, ESP-NOW Sync Period (used as upload batch frequency), T-Energy Nodes, T0 sensor count, and T-Energy sensor count.
+    Values are taken from <strong>Configuration</strong> above: hub and satellite sample periods, ESP-NOW sync period, upload frequency, node count, and sensor counts.
     Hit <strong>Apply</strong> to refresh this section along with the battery estimates.
   </div>
 
@@ -1029,7 +1033,8 @@ if(sessionStorage.getItem('sw_auth')!=='ok'&&sessionStorage.getItem('sw_auth_v4_
     </div>
     <div style="font-size:0.78rem;color:var(--muted);line-height:1.7;">
       <span style="color:var(--text);font-weight:600;">Reading from config:</span><br>
-      Sample period: <span id="de_display_sample" style="color:var(--accent);">—</span> &nbsp;|&nbsp;
+      Hub sample: <span id="de_display_hub_sample" style="color:var(--accent);">—</span> &nbsp;|&nbsp;
+      Satellite sample: <span id="de_display_sat_sample" style="color:var(--accent3);">—</span> &nbsp;|&nbsp;
       Upload every: <span id="de_display_upload" style="color:var(--accent);">—</span> &nbsp;|&nbsp;
       Nodes: <span id="de_display_nodes" style="color:var(--accent3);">—</span> &nbsp;|&nbsp;
       T0 sensors: <span id="de_display_t0s" style="color:var(--accent);">—</span> &nbsp;|&nbsp;
@@ -1071,7 +1076,8 @@ if(sessionStorage.getItem('sw_auth')!=='ok'&&sessionStorage.getItem('sw_auth_v4_
 // ============================================================================
 function calcDataEst() {
   // Read from shared config inputs
-  const sampleMin   = Math.max(1, parseFloat(document.getElementById('sharedSamplePeriod').value) || 10);
+  const hubSampleMin = Math.max(1, parseFloat(document.getElementById('hubSamplePeriod').value) || 10);
+  const satSampleMin = Math.max(1, parseFloat(document.getElementById('satelliteSamplePeriod').value) || 60);
   const satNodes    = Math.min(2, Math.max(0, parseInt(document.getElementById('sharedTENodes').value)    || 0));
   const t0sensors   = Math.min(8, Math.max(0, parseInt(document.getElementById('t0_sensorCount').value)   || 2));
   const satSensors  = Math.min(8, Math.max(0, parseInt(document.getElementById('te_sensorCount').value)   || 2));
@@ -1081,7 +1087,8 @@ function calcDataEst() {
   // Update the inline display labels
   const fmt = (m) => m >= 60 ? (m/60).toFixed(0)+'h' : m+'min';
   const s = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  s('de_display_sample', fmt(sampleMin));
+  s('de_display_hub_sample', fmt(hubSampleMin));
+  s('de_display_sat_sample', fmt(satSampleMin));
   s('de_display_upload', uploadFreqH + 'h');
   s('de_display_nodes',  satNodes);
   s('de_display_t0s',    t0sensors);
@@ -1114,8 +1121,8 @@ function calcDataEst() {
   const bytesPerUpdate = overhead_per_obj + fieldsBytes;
 
   // --- Timing ---
-  const updatesPerDay    = 1440 / sampleMin;
-  const updatesPerBatch  = (uploadFreqH * 60) / sampleMin;
+  const updatesPerDay    = 1440 / hubSampleMin;
+  const updatesPerBatch  = (uploadFreqH * 60) / hubSampleMin;
   const batchesPerDay    = 24 / uploadFreqH;
   const batchesPerMonth  = batchesPerDay * 30;
 
@@ -1137,7 +1144,7 @@ function calcDataEst() {
 
   // --- ESP-NOW (local RF, not SIM data) ---
   const espnowBytesPerPkt = 80; // conservative
-  const espnowPktsPerDay  = satNodes * updatesPerDay;
+  const espnowPktsPerDay  = satNodes * (1440 / satSampleMin);
   const espnowMBMonth     = (espnowPktsPerDay * espnowBytesPerPkt * 30) / (1024 * 1024);
 
   // --- Render ---
@@ -1495,7 +1502,7 @@ function formatSixMonthGap(row) {
 function runT0Estimate() {
   const mode          = getStr('deployMode');
   const sleepEn       = getBool('sleepEnable');
-  const samplePeriodMin = getVal('sharedSamplePeriod', 10);
+  const samplePeriodMin = getVal('hubSamplePeriod', 10);
   const syncPeriodMin   = getVal('sharedSyncPeriod', 60);
   const samplePeriod    = samplePeriodMin * 60;
   const syncPeriod      = syncPeriodMin * 60;
@@ -1742,7 +1749,7 @@ function exportT0CSV() {
 // T-ENERGY ENERGY MODEL  (per-wake cycle budget from T_ENERGY_PLAN.md § 11)
 // ============================================================================
 function runTEEstimate() {
-  const samplePeriodMin = getVal('sharedSamplePeriod', 10);
+  const samplePeriodMin = getVal('satelliteSamplePeriod', 60);
   const syncPeriodMin   = getVal('sharedSyncPeriod', 60);
   const samplePeriod    = samplePeriodMin * 60;
   const syncPeriod      = syncPeriodMin * 60;
@@ -1873,7 +1880,7 @@ function exportTECSV() {
 // FIREBEETLE ENERGY MODEL  (N0008 INA260 measured reference)
 // ============================================================================
 function runFBEstimate() {
-  const samplePeriodMin = getVal('sharedSamplePeriod', 10);
+  const samplePeriodMin = getVal('satelliteSamplePeriod', 60);
   const syncPeriodMin   = getVal('sharedSyncPeriod', 60);
   const samplePeriod    = samplePeriodMin * 60;
   const syncPeriod      = syncPeriodMin * 60;
@@ -1993,7 +2000,7 @@ function autoDriftWindow() {
 }
 
 function calcDriftEst() {
-  const samplePeriod_s  = getVal('sharedSamplePeriod', 10) * 60;
+  const samplePeriod_s  = getVal('satelliteSamplePeriod', 60) * 60;
   const syncPeriod_s    = getVal('sharedSyncPeriod', 60) * 60;
   const rcBest    = getVal('dr_rcBest',    0.5) / 100;
   const rcTypical = getVal('dr_rcTypical', 1.5) / 100;

@@ -4,7 +4,10 @@
 function _buildConfigSnapshotFromUploadSession(row) {
   if (!row) return null;
   // Only use rows that have the applied config fields (post-migration firmware)
-  if (row.applied_sample_period_min == null && row.applied_deploy_mode == null &&
+  if (row.applied_sample_period_min == null &&
+      row.applied_hub_sample_period_min == null &&
+      row.applied_satellite_sample_period_min == null &&
+      row.applied_deploy_mode == null &&
       row.applied_fw_version == null) return null;
   var satSyncHours = typeof getHealthUploadSatSyncPeriodHours === 'function'
     ? getHealthUploadSatSyncPeriodHours(row)
@@ -14,6 +17,12 @@ function _buildConfigSnapshotFromUploadSession(row) {
     deployMode: row.applied_deploy_mode != null ? Number(row.applied_deploy_mode) : null,
     sleepEnable: row.applied_sleep_enable === true || row.applied_sleep_enable === false ? !!row.applied_sleep_enable : null,
     samplePeriod_s: row.applied_sample_period_min != null ? Number(row.applied_sample_period_min) * 60 : null,
+    hubSamplePeriod_s: row.applied_hub_sample_period_min != null
+      ? Number(row.applied_hub_sample_period_min) * 60
+      : (row.applied_sample_period_min != null ? Number(row.applied_sample_period_min) * 60 : null),
+    satelliteSamplePeriod_s: row.applied_satellite_sample_period_min != null
+      ? Number(row.applied_satellite_sample_period_min) * 60
+      : (row.applied_sample_period_min != null ? Number(row.applied_sample_period_min) * 60 : null),
     uploadIntervalHours: row.applied_upload_interval_hours != null ? Number(row.applied_upload_interval_hours) : null,
     espnowSyncPeriod_s: satSyncHours != null && isFinite(satSyncHours) ? Number(satSyncHours) * 3600 : null,
     slotCount: row.applied_slot_count != null ? Number(row.applied_slot_count) : null,
@@ -32,6 +41,8 @@ function _configSnapshotHasSignal(cfg) {
   return cfg.deployMode != null ||
          cfg.sleepEnable === true || cfg.sleepEnable === false ||
          cfg.samplePeriod_s != null ||
+         cfg.hubSamplePeriod_s != null ||
+         cfg.satelliteSamplePeriod_s != null ||
          cfg.uploadIntervalHours != null ||
          cfg.espnowSyncPeriod_s != null ||
          cfg.slotCount != null ||
@@ -45,6 +56,8 @@ function _mergeConfigSnapshots(baseCfg, patchCfg) {
     deployMode: patch.deployMode != null ? patch.deployMode : (base.deployMode != null ? base.deployMode : null),
     sleepEnable: patch.sleepEnable === true || patch.sleepEnable === false ? !!patch.sleepEnable : (base.sleepEnable === true || base.sleepEnable === false ? !!base.sleepEnable : null),
     samplePeriod_s: patch.samplePeriod_s != null ? patch.samplePeriod_s : (base.samplePeriod_s != null ? base.samplePeriod_s : null),
+    hubSamplePeriod_s: patch.hubSamplePeriod_s != null ? patch.hubSamplePeriod_s : (base.hubSamplePeriod_s != null ? base.hubSamplePeriod_s : null),
+    satelliteSamplePeriod_s: patch.satelliteSamplePeriod_s != null ? patch.satelliteSamplePeriod_s : (base.satelliteSamplePeriod_s != null ? base.satelliteSamplePeriod_s : null),
     uploadIntervalHours: patch.uploadIntervalHours != null ? patch.uploadIntervalHours : (base.uploadIntervalHours != null ? base.uploadIntervalHours : null),
     espnowSyncPeriod_s: patch.espnowSyncPeriod_s != null ? patch.espnowSyncPeriod_s : (base.espnowSyncPeriod_s != null ? base.espnowSyncPeriod_s : null),
     slotCount: patch.slotCount != null ? patch.slotCount : (base.slotCount != null ? base.slotCount : null),
@@ -60,6 +73,8 @@ function _configSnapshotsEqual(a, b) {
   return a.deployMode === b.deployMode &&
          a.sleepEnable === b.sleepEnable &&
          a.samplePeriod_s === b.samplePeriod_s &&
+         a.hubSamplePeriod_s === b.hubSamplePeriod_s &&
+         a.satelliteSamplePeriod_s === b.satelliteSamplePeriod_s &&
          a.uploadIntervalHours === b.uploadIntervalHours &&
          a.espnowSyncPeriod_s === b.espnowSyncPeriod_s &&
          a.slotCount === b.slotCount &&
@@ -80,6 +95,12 @@ function _buildConfigSnapshotFromDeviceConfigRow(row) {
     deployMode: row.deploy_mode != null ? Number(row.deploy_mode) : null,
     sleepEnable: row.sleep_enable === true || row.sleep_enable === false ? !!row.sleep_enable : null,
     samplePeriod_s: row.sample_period_min != null && isFinite(row.sample_period_min) ? Number(row.sample_period_min) * 60 : null,
+    hubSamplePeriod_s: row.hub_sample_period_min != null && isFinite(row.hub_sample_period_min)
+      ? Number(row.hub_sample_period_min) * 60
+      : (row.sample_period_min != null && isFinite(row.sample_period_min) ? Number(row.sample_period_min) * 60 : null),
+    satelliteSamplePeriod_s: row.satellite_sample_period_min != null && isFinite(row.satellite_sample_period_min)
+      ? Number(row.satellite_sample_period_min) * 60
+      : (row.sample_period_min != null && isFinite(row.sample_period_min) ? Number(row.sample_period_min) * 60 : null),
     uploadIntervalHours: uih != null && isFinite(uih) ? Number(uih) : null,
     espnowSyncPeriod_s: row.sat_sync_period_hours != null && isFinite(row.sat_sync_period_hours) ? Number(row.sat_sync_period_hours) * 3600 : null,
     slotCount: slotCount,
@@ -106,7 +127,10 @@ function _configSummaryText(cfg) {
   var sleep = (cfg.sleepEnable === true) ? 'ON' : (cfg.sleepEnable === false ? 'OFF' : '--');
   var sats = cfg.slotCount != null ? String(cfg.slotCount) : '--';
   var fw = cfg.fwVersion || '--';
-  return 'Mode ' + mode + ' | Sample ' + _fmtCfgSeconds(cfg.samplePeriod_s) +
+  var hubSample = cfg.hubSamplePeriod_s != null ? cfg.hubSamplePeriod_s : cfg.samplePeriod_s;
+  var satelliteSample = cfg.satelliteSamplePeriod_s != null ? cfg.satelliteSamplePeriod_s : cfg.samplePeriod_s;
+  return 'Mode ' + mode + ' | Hub sample ' + _fmtCfgSeconds(hubSample) +
+         ' | Sat sample ' + _fmtCfgSeconds(satelliteSample) +
          ' | Upload ' + _fmtCfgHours(cfg.uploadIntervalHours) +
          ' | Sync ' + _fmtCfgSeconds(cfg.espnowSyncPeriod_s) +
          ' | Sleep ' + sleep +
@@ -124,7 +148,15 @@ function _configDiffText(oldCfg, newCfg) {
     d.push('Sleep ' + (newCfg.sleepEnable ? 'ON' : 'OFF'));
   }
   if (oldCfg.samplePeriod_s !== newCfg.samplePeriod_s && newCfg.samplePeriod_s != null) {
-    d.push('Sample ' + _fmtCfgSeconds(newCfg.samplePeriod_s));
+    if (newCfg.hubSamplePeriod_s == null && newCfg.satelliteSamplePeriod_s == null) {
+      d.push('Sample ' + _fmtCfgSeconds(newCfg.samplePeriod_s));
+    }
+  }
+  if (oldCfg.hubSamplePeriod_s !== newCfg.hubSamplePeriod_s && newCfg.hubSamplePeriod_s != null) {
+    d.push('Hub sample ' + _fmtCfgSeconds(newCfg.hubSamplePeriod_s));
+  }
+  if (oldCfg.satelliteSamplePeriod_s !== newCfg.satelliteSamplePeriod_s && newCfg.satelliteSamplePeriod_s != null) {
+    d.push('Sat sample ' + _fmtCfgSeconds(newCfg.satelliteSamplePeriod_s));
   }
   if (oldCfg.uploadIntervalHours !== newCfg.uploadIntervalHours && newCfg.uploadIntervalHours != null) {
     d.push('Upload ' + _fmtCfgHours(newCfg.uploadIntervalHours));
