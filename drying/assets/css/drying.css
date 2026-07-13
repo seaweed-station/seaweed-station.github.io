@@ -340,17 +340,11 @@ h1 {
   background: #fbfdfc;
 }
 
-.trials-intro,
-.trial-group-head,
-.trial-actions {
+.trial-group-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-
-.trials-intro {
-  justify-content: flex-end;
 }
 
 .trial-group-head p {
@@ -500,13 +494,8 @@ h1 {
   accent-color: var(--accent);
 }
 
-.trial-actions {
-  justify-content: flex-end;
-  padding-top: 2px;
-}
-
-.trial-actions .admin-status {
-  margin-right: auto;
+.trial-inline-status {
+  margin: 0;
 }
 
 .configuration-select-field select {
@@ -681,28 +670,16 @@ input[readonly] {
 
 .gps-field {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px 12px;
   align-items: end;
 }
 
-.manual-gps {
-  min-width: 0;
-}
-
-.manual-gps summary,
 .bay-summary-details summary {
   color: var(--accent);
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 750;
-}
-
-.manual-gps-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 7px;
-  margin-top: 8px;
 }
 
 .field-hint,
@@ -987,7 +964,8 @@ input[readonly] {
   font-size: 0.73rem;
 }
 
-.confirmation-row {
+.confirmation-row,
+.remember-enumerator {
   grid-template-columns: auto minmax(0, 1fr) !important;
   align-items: center;
   gap: 9px !important;
@@ -999,14 +977,16 @@ input[readonly] {
   text-transform: none !important;
 }
 
-.confirmation-row input {
+.confirmation-row input,
+.remember-enumerator input {
   width: 17px;
   height: 17px;
   margin: 0;
   accent-color: var(--accent);
 }
 
-.confirmation-row span {
+.confirmation-row span,
+.remember-enumerator span {
   min-height: 0 !important;
 }
 
@@ -1298,15 +1278,9 @@ input[readonly] {
     min-height: 160px;
   }
 
-  .trials-intro,
-  .trial-group-head,
-  .trial-actions {
+  .trial-group-head {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .trial-actions button {
-    width: 100%;
   }
 
   .drying-form-panel {
@@ -1319,10 +1293,6 @@ input[readonly] {
   }
 
   .gps-field {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .manual-gps-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -11,8 +11,9 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   updateTrialsRpc: "update_seaweed_drying_trial_schedule",
   draftStorageKey: "seaweed_drying_form_draft_v1",
   recordTokensStorageKey: "seaweed_drying_record_tokens_v1",
+  enumeratorStorageKey: "seaweed_drying_enumerator_v1",
   languageStorageKey: "seaweed_drying_language",
-  clientVersion: "2026-07-13.6",
+  clientVersion: "2026-07-13.7",
   maxPhotoBytes: 8 * 1024 * 1024,
   locations: [
     {

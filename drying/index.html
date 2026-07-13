@@ -57,13 +57,8 @@
     <details id="dryingTrials" class="trials-panel panel">
       <summary>
         <span data-i18n="trials.title">Drying Trials</span>
-        <span class="reference-summary-note" data-i18n="trials.summary">Fixed schedule and completion tracker</span>
       </summary>
       <div class="trials-body">
-        <div class="trials-intro">
-          <span id="trialSyncStatus" class="status-pill status-muted" data-i18n="trials.loading">Loading trial plan...</span>
-        </div>
-
         <section class="trial-group" aria-labelledby="batiTrialsTitle">
           <div class="trial-group-head">
             <div>
@@ -85,10 +80,7 @@
           </div>
         </section>
 
-        <div class="trial-actions">
-          <p id="trialSaveStatus" class="admin-status" aria-live="polite"></p>
-          <button id="saveTrials" type="button" class="primary-button" data-i18n="trials.save">Save completion status</button>
-        </div>
+        <p id="trialSaveStatus" class="admin-status trial-inline-status" hidden aria-live="polite"></p>
       </div>
     </details>
 
@@ -129,6 +121,10 @@
             <span data-i18n="record.dateTime">Record date / time</span>
             <input id="recordedAt" type="datetime-local" data-draft required>
           </label>
+          <label class="remember-enumerator wide-field">
+            <input id="rememberEnumerator" type="checkbox">
+            <span data-i18n="record.rememberEnumerator">Remember enumerator name and ID on this device</span>
+          </label>
           <div class="gps-field wide-field">
             <label>
               <span data-i18n="gps.label">GPS location</span>
@@ -137,23 +133,9 @@
                 <button id="captureGps" type="button" data-i18n="gps.capture">Capture GPS</button>
               </span>
             </label>
-            <details class="manual-gps">
-              <summary data-i18n="gps.manual">Enter coordinates manually</summary>
-              <div class="manual-gps-grid">
-                <label>
-                  <span data-i18n="gps.latitude">Latitude</span>
-                  <input id="gpsLatitude" type="number" data-draft min="-90" max="90" step="any" inputmode="decimal">
-                </label>
-                <label>
-                  <span data-i18n="gps.longitude">Longitude</span>
-                  <input id="gpsLongitude" type="number" data-draft min="-180" max="180" step="any" inputmode="decimal">
-                </label>
-                <label>
-                  <span data-i18n="gps.accuracy">Accuracy (m)</span>
-                  <input id="gpsAccuracy" type="number" data-draft min="0" step="0.1" inputmode="decimal">
-                </label>
-              </div>
-            </details>
+            <input id="gpsLatitude" type="hidden" data-draft>
+            <input id="gpsLongitude" type="hidden" data-draft>
+            <input id="gpsAccuracy" type="hidden" data-draft>
             <p id="gpsStatus" class="field-hint" aria-live="polite" data-i18n="gps.hint">GPS is optional, but useful for confirming the dryer location.</p>
           </div>
         </fieldset>

@@ -17,6 +17,7 @@ const els = {
   dryerLocation: $("dryerLocation"),
   enumeratorName: $("enumeratorName"),
   enumeratorId: $("enumeratorId"),
+  rememberEnumerator: $("rememberEnumerator"),
   recordedAt: $("recordedAt"),
   gpsSummary: $("gpsSummary"),
   gpsLatitude: $("gpsLatitude"),
@@ -62,9 +63,7 @@ const els = {
   recordsList: $("recordsList"),
   refreshRecords: $("refreshRecords"),
   batiTrialsBody: $("batiTrialsBody"),
-  trialSyncStatus: $("trialSyncStatus"),
-  trialSaveStatus: $("trialSaveStatus"),
-  saveTrials: $("saveTrials")
+  trialSaveStatus: $("trialSaveStatus")
 };
 
 const bayControls = [...document.querySelectorAll("[data-bay-field]")];
@@ -99,8 +98,6 @@ function freshState() {
       finishDate: trial.finishDate || "",
       completed: false
     })),
-    trialStatusKey: "trials.loading",
-    trialStatusError: false,
     gpsStatusKey: "gps.hint",
     gpsStatusArgs: {},
     gpsStatusError: false
@@ -111,6 +108,7 @@ function initialize() {
   initDryingLanguage();
   setDefaultDateTime();
   restoreDraft();
+  loadRememberedEnumerator();
   bindEvents();
   applyLocationSelection(false);
   renderAll();
@@ -130,6 +128,13 @@ function bindEvents() {
     control.addEventListener(eventName, () => {
       if ([els.gpsLatitude, els.gpsLongitude, els.gpsAccuracy].includes(control)) updateGpsSummary();
       scheduleDraftSave();
+    });
+  });
+
+  els.rememberEnumerator.addEventListener("change", updateRememberedEnumerator);
+  [els.enumeratorName, els.enumeratorId].forEach((control) => {
+    control.addEventListener("input", () => {
+      if (els.rememberEnumerator.checked) saveRememberedEnumerator();
     });
   });
 
@@ -166,21 +171,21 @@ function bindEvents() {
     els.bayEditor.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
   });
 
-  const updateTrial = (event) => {
+  const updateTrial = async (event) => {
     const control = event.target.closest("[data-trial-code]");
     if (!control) return;
     const trial = state.trials.find((item) => item.trialCode === control.dataset.trialCode);
     if (!trial) return;
-    if (control.type === "checkbox") trial.completed = control.checked;
+    const previous = trial.completed;
+    trial.completed = control.checked;
     control.closest("tr")?.classList.toggle("is-complete", trial.completed);
-    els.trialSaveStatus.textContent = "";
+    await saveTrialCompletion(trial, control, previous);
   };
   els.batiTrialsBody.addEventListener("change", updateTrial);
 
   els.previousBay.addEventListener("click", () => selectBay(Math.max(1, state.currentBay - 1)));
   els.nextBay.addEventListener("click", saveCurrentBay);
   els.captureGps.addEventListener("click", captureGps);
-  els.saveTrials.addEventListener("click", saveTrialSchedule);
   els.clearForm.addEventListener("click", clearFormWithConfirmation);
   els.newRecord.addEventListener("click", resetForNewRecord);
   els.topNewRecord.addEventListener("click", startNewRecord);
@@ -244,6 +249,44 @@ function restoreDraft() {
   state.savedPhotos = sanitizeSavedPhotos(draft.savedPhotos);
   if (state.receiptNumber && state.submissionId && state.uploadToken) {
     rememberRecordAccess(state.receiptNumber, state.submissionId, state.uploadToken);
+  }
+}
+
+function loadRememberedEnumerator() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(CONFIG.enumeratorStorageKey) || "null");
+  } catch {
+    saved = null;
+  }
+  if (!saved || typeof saved !== "object") {
+    els.rememberEnumerator.checked = false;
+    return;
+  }
+  els.rememberEnumerator.checked = true;
+  if (!els.enumeratorName.value) els.enumeratorName.value = saved.name || "";
+  if (!els.enumeratorId.value) els.enumeratorId.value = saved.id || "";
+}
+
+function updateRememberedEnumerator() {
+  if (els.rememberEnumerator.checked) saveRememberedEnumerator();
+  else {
+    try {
+      localStorage.removeItem(CONFIG.enumeratorStorageKey);
+    } catch {
+      // Ignore storage restrictions.
+    }
+  }
+}
+
+function saveRememberedEnumerator() {
+  try {
+    localStorage.setItem(CONFIG.enumeratorStorageKey, JSON.stringify({
+      name: els.enumeratorName.value.trim(),
+      id: els.enumeratorId.value.trim()
+    }));
+  } catch {
+    // The form remains usable when device storage is unavailable.
   }
 }
 
@@ -503,8 +546,6 @@ function renderBaySummary() {
 
 function renderTrials() {
   renderTrialSite(els.batiTrialsBody);
-  els.trialSyncStatus.textContent = t(state.trialStatusKey);
-  els.trialSyncStatus.classList.toggle("status-warning", state.trialStatusError);
 }
 
 function renderTrialSite(container) {
@@ -594,8 +635,6 @@ function parseFixedDate(value) {
 }
 
 async function loadTrialSchedule() {
-  state.trialStatusKey = "trials.loading";
-  state.trialStatusError = false;
   renderTrials();
   try {
     const result = await callRpc(CONFIG.getTrialsRpc, {}, { unwrapSingle: false });
@@ -605,10 +644,10 @@ async function loadTrialSchedule() {
       if (!trial) return;
       trial.completed = Boolean(saved.completed);
     });
-    state.trialStatusKey = "trials.live";
   } catch (error) {
-    state.trialStatusKey = isDatabasePendingError(error) ? "trials.preview" : "trials.loadFailed";
-    state.trialStatusError = true;
+    if (!isDatabasePendingError(error)) {
+      showTrialError(t("trials.loadFailed"));
+    }
   }
   renderTrials();
 }
@@ -624,31 +663,30 @@ function extractTrialRows(result) {
   return nested || [];
 }
 
-async function saveTrialSchedule() {
-  if (els.saveTrials.disabled) return;
-  els.saveTrials.disabled = true;
-  els.saveTrials.textContent = t("trials.saving");
-  els.trialSaveStatus.textContent = t("trials.saving");
-  els.trialSaveStatus.dataset.status = "";
+async function saveTrialCompletion(trial, control, previous) {
+  control.disabled = true;
+  els.trialSaveStatus.hidden = true;
+  els.trialSaveStatus.textContent = "";
   try {
     await callRpc(CONFIG.updateTrialsRpc, {
-      p_updates: state.trials.map((trial) => ({
+      p_updates: [{
         trial_code: trial.trialCode,
         completed: trial.completed
-      }))
+      }]
     }, { unwrapSingle: false });
-    state.trialStatusKey = "trials.live";
-    state.trialStatusError = false;
-    els.trialSaveStatus.textContent = t("trials.saved");
-    els.trialSaveStatus.dataset.status = "success";
   } catch (error) {
-    els.trialSaveStatus.textContent = t("trials.saveFailed", { message: friendlyError(error) });
-    els.trialSaveStatus.dataset.status = "error";
+    trial.completed = previous;
+    showTrialError(t("trials.saveFailed", { message: friendlyError(error) }));
   } finally {
-    els.saveTrials.disabled = false;
-    els.saveTrials.textContent = t("trials.save");
+    control.disabled = false;
     renderTrials();
   }
+}
+
+function showTrialError(message) {
+  els.trialSaveStatus.textContent = message;
+  els.trialSaveStatus.dataset.status = "error";
+  els.trialSaveStatus.hidden = false;
 }
 
 async function loadRecords() {
@@ -1382,21 +1420,18 @@ function resetForNewRecord({ scroll = true } = {}) {
   els.formPanel.hidden = false;
   els.successPanel.hidden = true;
   const trials = state.trials;
-  const trialStatusKey = state.trialStatusKey;
-  const trialStatusError = state.trialStatusError;
   const records = state.records;
   const recordsStatusKey = state.recordsStatusKey;
   const recordsStatusArgs = state.recordsStatusArgs;
   const recordsStatusError = state.recordsStatusError;
   state = freshState();
   state.trials = trials;
-  state.trialStatusKey = trialStatusKey;
-  state.trialStatusError = trialStatusError;
   state.records = records;
   state.recordsStatusKey = recordsStatusKey;
   state.recordsStatusArgs = recordsStatusArgs;
   state.recordsStatusError = recordsStatusError;
   setDefaultDateTime();
+  loadRememberedEnumerator();
   els.saveStatus.textContent = "";
   renderGpsStatus();
   renderAll();
