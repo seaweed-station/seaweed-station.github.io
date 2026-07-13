@@ -9,7 +9,7 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   updateTrialsRpc: "update_seaweed_drying_trial_schedule",
   draftStorageKey: "seaweed_drying_form_draft_v1",
   languageStorageKey: "seaweed_drying_language",
-  clientVersion: "2026-07-13.3",
+  clientVersion: "2026-07-13.4",
   maxPhotoBytes: 8 * 1024 * 1024,
   locations: [
     {
@@ -50,9 +50,11 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   ],
   trials: [
     {
-      trialCode: "BATI-SET-1",
+      trialCode: "BATI-TRIAL-1",
       site: "bati",
       trialNumber: 1,
+      startDate: "2026-07-14",
+      finishDate: "2026-07-17",
       assignments: [
         { table: "Bati (Table 1)", configuration: "cover_open_back_open" },
         { table: "Bati (Table 2)", configuration: "cover_down_back_closed" },
@@ -60,9 +62,11 @@ export const DRYING_FORM_CONFIG = Object.freeze({
       ]
     },
     {
-      trialCode: "BATI-SET-2",
+      trialCode: "BATI-TRIAL-2",
       site: "bati",
       trialNumber: 2,
+      startDate: "2026-07-29",
+      finishDate: "2026-08-02",
       assignments: [
         { table: "Bati (Table 1)", configuration: "cover_down_back_closed" },
         { table: "Bati (Table 2)", configuration: "cover_down_back_open" },
@@ -70,9 +74,11 @@ export const DRYING_FORM_CONFIG = Object.freeze({
       ]
     },
     {
-      trialCode: "BATI-SET-3",
+      trialCode: "BATI-TRIAL-3",
       site: "bati",
       trialNumber: 3,
+      startDate: "2026-08-12",
+      finishDate: "2026-08-15",
       assignments: [
         { table: "Bati (Table 1)", configuration: "cover_down_back_open" },
         { table: "Bati (Table 2)", configuration: "cover_open_back_open" },

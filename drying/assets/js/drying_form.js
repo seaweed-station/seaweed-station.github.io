@@ -81,9 +81,8 @@ function freshState() {
     trials: CONFIG.trials.map((trial) => ({
       ...trial,
       assignments: trial.assignments.map((assignment) => ({ ...assignment })),
-      scheduledDate: "",
-      startDate: "",
-      finishDate: "",
+      startDate: trial.startDate || "",
+      finishDate: trial.finishDate || "",
       completed: false
     })),
     trialStatusKey: "trials.loading",
@@ -157,9 +156,6 @@ function bindEvents() {
     if (!control) return;
     const trial = state.trials.find((item) => item.trialCode === control.dataset.trialCode);
     if (!trial) return;
-    if (control.type === "date" && control.dataset.trialField) {
-      trial[control.dataset.trialField] = control.value;
-    }
     if (control.type === "checkbox") trial.completed = control.checked;
     control.closest("tr")?.classList.toggle("is-complete", trial.completed);
     els.trialSaveStatus.textContent = "";
@@ -453,7 +449,7 @@ function renderTrialSite(site, container) {
     const labelCell = document.createElement("th");
     labelCell.scope = "row";
     labelCell.className = "trial-label";
-    labelCell.textContent = t(site === "bati" ? "trials.setLabel" : "trials.dayLabel", {
+    labelCell.textContent = t(site === "bati" ? "trials.trialLabel" : "trials.dayLabel", {
       number: trial.trialNumber
     });
 
@@ -485,12 +481,7 @@ function renderTrialSite(site, container) {
     });
     assignmentCell.append(assignmentList);
 
-    const dateCells = site === "bati"
-      ? [
-        createTrialDateCell(trial, labelCell.textContent, "startDate", "trials.startDate"),
-        createTrialDateCell(trial, labelCell.textContent, "finishDate", "trials.finishDate")
-      ]
-      : [createTrialDateCell(trial, labelCell.textContent, "scheduledDate", "trials.scheduled")];
+    const dateCells = site === "bati" ? [createFixedTrialDateCell(trial)] : [];
 
     const completeCell = document.createElement("td");
     completeCell.className = "trial-complete-cell";
@@ -507,17 +498,32 @@ function renderTrialSite(site, container) {
   });
 }
 
-function createTrialDateCell(trial, trialLabel, field, translationKey) {
+function createFixedTrialDateCell(trial) {
   const cell = document.createElement("td");
-  const input = document.createElement("input");
-  input.type = "date";
-  input.value = trial[field];
-  input.className = "trial-date";
-  input.dataset.trialCode = trial.trialCode;
-  input.dataset.trialField = field;
-  input.setAttribute("aria-label", `${trialLabel}: ${t(translationKey)}`);
-  cell.append(input);
+  const label = document.createElement("span");
+  label.className = "trial-date-pill";
+  label.textContent = fixedTrialDateLabel(trial.startDate, trial.finishDate);
+  cell.append(label);
   return cell;
+}
+
+function fixedTrialDateLabel(startValue, finishValue) {
+  const start = parseFixedDate(startValue);
+  const finish = parseFixedDate(finishValue);
+  if (!start || !finish) return "-";
+  const month = (date) => new Intl.DateTimeFormat(getLocale(), { month: "long", timeZone: "UTC" }).format(date);
+  const startDay = start.getUTCDate();
+  const finishDay = finish.getUTCDate();
+  if (start.getUTCMonth() === finish.getUTCMonth()) {
+    return `${startDay}\u2013${finishDay} ${month(finish)}`;
+  }
+  return `${startDay} ${month(start)}\u2013${finishDay} ${month(finish)}`;
+}
+
+function parseFixedDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return null;
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isFinite(date.getTime()) ? date : null;
 }
 
 async function loadTrialSchedule() {
@@ -530,9 +536,6 @@ async function loadTrialSchedule() {
     savedTrials.forEach((saved) => {
       const trial = state.trials.find((item) => item.trialCode === saved.trial_code);
       if (!trial) return;
-      trial.scheduledDate = saved.scheduled_date || "";
-      trial.startDate = saved.start_date || "";
-      trial.finishDate = saved.finish_date || "";
       trial.completed = Boolean(saved.completed);
     });
     state.trialStatusKey = "trials.live";
@@ -556,17 +559,6 @@ function extractTrialRows(result) {
 
 async function saveTrialSchedule() {
   if (els.saveTrials.disabled) return;
-  const invalidRange = state.trials.some((trial) => (
-    trial.site === "bati"
-    && trial.startDate
-    && trial.finishDate
-    && trial.finishDate < trial.startDate
-  ));
-  if (invalidRange) {
-    els.trialSaveStatus.textContent = t("trials.invalidRange");
-    els.trialSaveStatus.dataset.status = "error";
-    return;
-  }
   els.saveTrials.disabled = true;
   els.saveTrials.textContent = t("trials.saving");
   els.trialSaveStatus.textContent = t("trials.saving");
@@ -575,9 +567,6 @@ async function saveTrialSchedule() {
     await callRpc(CONFIG.updateTrialsRpc, {
       p_updates: state.trials.map((trial) => ({
         trial_code: trial.trialCode,
-        scheduled_date: trial.scheduledDate || null,
-        start_date: trial.startDate || null,
-        finish_date: trial.finishDate || null,
         completed: trial.completed
       }))
     }, { unwrapSingle: false });

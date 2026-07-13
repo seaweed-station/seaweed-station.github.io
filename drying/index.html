@@ -56,29 +56,26 @@
     <details id="dryingTrials" class="trials-panel panel">
       <summary>
         <span data-i18n="trials.title">Drying Trials</span>
-        <span class="reference-summary-note" data-i18n="trials.summary">Schedule and completion tracker</span>
+        <span class="reference-summary-note" data-i18n="trials.summary">Fixed schedule and completion tracker</span>
       </summary>
       <div class="trials-body">
         <div class="trials-intro">
-          <p data-i18n="trials.intro">Schedule each drying period and mark it complete when the cycle is finished.</p>
           <span id="trialSyncStatus" class="status-pill status-muted" data-i18n="trials.loading">Loading trial plan...</span>
         </div>
 
         <section class="trial-group" aria-labelledby="batiTrialsTitle">
           <div class="trial-group-head">
             <div>
-              <h2 id="batiTrialsTitle" data-i18n="trials.batiTitle">Bati trial sets</h2>
-              <p data-i18n="trials.batiNote">Tables 1-3 rotate through all three configurations. Table 4 remains available for normal drying records.</p>
+              <h2 id="batiTrialsTitle" data-i18n="trials.batiTitle">Bati trials</h2>
             </div>
           </div>
           <div class="table-wrap">
             <table class="trial-table">
               <thead>
                 <tr>
-                  <th data-i18n="trials.set">Trial set</th>
+                  <th data-i18n="trials.trial">Trial</th>
                   <th data-i18n="trials.assignments">Table configurations</th>
-                  <th data-i18n="trials.startDate">Start date</th>
-                  <th data-i18n="trials.finishDate">Finish date</th>
+                  <th data-i18n="trials.dates">Dates</th>
                   <th data-i18n="trials.complete">Complete</th>
                 </tr>
               </thead>
@@ -100,7 +97,6 @@
                 <tr>
                   <th data-i18n="trials.day">Trial day</th>
                   <th data-i18n="trials.assignments">Table configuration</th>
-                  <th data-i18n="trials.scheduled">Date scheduled</th>
                   <th data-i18n="trials.complete">Complete</th>
                 </tr>
               </thead>
@@ -111,7 +107,7 @@
 
         <div class="trial-actions">
           <p id="trialSaveStatus" class="admin-status" aria-live="polite"></p>
-          <button id="saveTrials" type="button" class="primary-button" data-i18n="trials.save">Save trial plan</button>
+          <button id="saveTrials" type="button" class="primary-button" data-i18n="trials.save">Save completion status</button>
         </div>
       </div>
     </details>

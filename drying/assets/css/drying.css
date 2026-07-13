@@ -337,7 +337,10 @@ h1 {
   gap: 12px;
 }
 
-.trials-intro p,
+.trials-intro {
+  justify-content: flex-end;
+}
+
 .trial-group-head p {
   margin: 0;
   color: var(--text-sec);
@@ -461,9 +464,17 @@ h1 {
   font-weight: 750;
 }
 
-.trial-date {
-  width: 150px;
-  min-height: 34px;
+.trial-date-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid #9bcdbb;
+  border-radius: 999px;
+  background: #edf8f4;
+  color: #1d6550;
+  font-weight: 750;
+  white-space: nowrap;
 }
 
 .trial-complete-cell {
