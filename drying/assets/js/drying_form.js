@@ -55,7 +55,6 @@ const els = {
   receiptPhotos: $("receiptPhotos"),
   newRecord: $("newRecord"),
   batiTrialsBody: $("batiTrialsBody"),
-  shanganiTrialsBody: $("shanganiTrialsBody"),
   trialSyncStatus: $("trialSyncStatus"),
   trialSaveStatus: $("trialSaveStatus"),
   saveTrials: $("saveTrials")
@@ -161,7 +160,6 @@ function bindEvents() {
     els.trialSaveStatus.textContent = "";
   };
   els.batiTrialsBody.addEventListener("change", updateTrial);
-  els.shanganiTrialsBody.addEventListener("change", updateTrial);
 
   els.previousBay.addEventListener("click", () => selectBay(Math.max(1, state.currentBay - 1)));
   els.nextBay.addEventListener("click", () => selectBay(Math.min(state.bayCount, state.currentBay + 1)));
@@ -434,22 +432,21 @@ function renderBaySummary() {
 }
 
 function renderTrials() {
-  renderTrialSite("bati", els.batiTrialsBody);
-  renderTrialSite("shangani", els.shanganiTrialsBody);
+  renderTrialSite(els.batiTrialsBody);
   els.trialSyncStatus.textContent = t(state.trialStatusKey);
   els.trialSyncStatus.classList.toggle("status-warning", state.trialStatusError);
 }
 
-function renderTrialSite(site, container) {
+function renderTrialSite(container) {
   container.replaceChildren();
-  state.trials.filter((trial) => trial.site === site).forEach((trial) => {
+  state.trials.forEach((trial) => {
     const row = document.createElement("tr");
     row.classList.toggle("is-complete", trial.completed);
 
     const labelCell = document.createElement("th");
     labelCell.scope = "row";
     labelCell.className = "trial-label";
-    labelCell.textContent = t(site === "bati" ? "trials.trialLabel" : "trials.dayLabel", {
+    labelCell.textContent = t("trials.trialLabel", {
       number: trial.trialNumber
     });
 
@@ -481,7 +478,7 @@ function renderTrialSite(site, container) {
     });
     assignmentCell.append(assignmentList);
 
-    const dateCells = site === "bati" ? [createFixedTrialDateCell(trial)] : [];
+    const dateCells = [createFixedTrialDateCell(trial)];
 
     const completeCell = document.createElement("td");
     completeCell.className = "trial-complete-cell";

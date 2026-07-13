@@ -9,7 +9,7 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   updateTrialsRpc: "update_seaweed_drying_trial_schedule",
   draftStorageKey: "seaweed_drying_form_draft_v1",
   languageStorageKey: "seaweed_drying_language",
-  clientVersion: "2026-07-13.4",
+  clientVersion: "2026-07-13.5",
   maxPhotoBytes: 8 * 1024 * 1024,
   locations: [
     {
@@ -83,78 +83,6 @@ export const DRYING_FORM_CONFIG = Object.freeze({
         { table: "Bati (Table 1)", configuration: "cover_down_back_open" },
         { table: "Bati (Table 2)", configuration: "cover_open_back_open" },
         { table: "Bati (Table 3)", configuration: "cover_down_back_closed" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-1",
-      site: "shangani",
-      trialNumber: 1,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_open_back_open" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-2",
-      site: "shangani",
-      trialNumber: 2,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_down_back_closed" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-3",
-      site: "shangani",
-      trialNumber: 3,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_down_back_open" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-4",
-      site: "shangani",
-      trialNumber: 4,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_open_back_open" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-5",
-      site: "shangani",
-      trialNumber: 5,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_down_back_closed" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-6",
-      site: "shangani",
-      trialNumber: 6,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_down_back_open" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-7",
-      site: "shangani",
-      trialNumber: 7,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_open_back_open" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-8",
-      site: "shangani",
-      trialNumber: 8,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_down_back_closed" }
-      ]
-    },
-    {
-      trialCode: "SHANGANI-DAY-9",
-      site: "shangani",
-      trialNumber: 9,
-      assignments: [
-        { table: "Shangani (Table 1)", configuration: "cover_down_back_open" }
       ]
     }
   ]
