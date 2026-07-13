@@ -222,27 +222,6 @@ h1 {
   box-shadow: var(--shadow);
 }
 
-.form-intro {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 12px;
-  padding: 13px 16px;
-}
-
-.form-intro h2 {
-  margin-bottom: 3px;
-  font-size: 1rem;
-}
-
-.form-intro p:last-child {
-  max-width: 780px;
-  margin-bottom: 0;
-  color: var(--text-sec);
-  font-size: 0.84rem;
-}
-
 .table-reference,
 .trials-panel {
   margin: 0 0 12px;
@@ -511,13 +490,6 @@ h1 {
   max-width: 720px;
 }
 
-.intro-statuses {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
 .status-pill {
   min-height: 28px;
   display: inline-flex;
@@ -531,12 +503,6 @@ h1 {
   font-size: 0.75rem;
   font-weight: 700;
   white-space: nowrap;
-}
-
-.status-public {
-  border-color: #aad5c5;
-  background: #e9f8f1;
-  color: var(--success);
 }
 
 .status-warning {
@@ -1132,7 +1098,6 @@ input[readonly] {
   }
 
   .app-header-inner,
-  .form-intro,
   .form-footer {
     align-items: stretch;
     flex-direction: column;
@@ -1146,10 +1111,6 @@ input[readonly] {
   .app-nav a {
     flex: 1;
     justify-content: center;
-  }
-
-  .intro-statuses {
-    justify-content: flex-start;
   }
 
   .reference-grid {

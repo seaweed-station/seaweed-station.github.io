@@ -44,7 +44,6 @@ const els = {
   workingWell: $("workingWell"),
   notWorking: $("notWorking"),
   confirmedAccurate: $("confirmedAccurate"),
-  draftStatus: $("draftStatus"),
   saveStatus: $("saveStatus"),
   clearForm: $("clearForm"),
   submitForm: $("submitForm"),
@@ -89,8 +88,6 @@ function freshState() {
     })),
     trialStatusKey: "trials.loading",
     trialStatusError: false,
-    draftStatusKey: "draft.default",
-    draftStatusArgs: {},
     gpsStatusKey: "gps.hint",
     gpsStatusArgs: {},
     gpsStatusError: false
@@ -184,7 +181,6 @@ function renderLanguageDependentContent() {
   captureBayEditor();
   renderAll();
   renderTrials();
-  renderDraftStatus();
   renderGpsStatus();
   if (!state.submitting) els.submitForm.textContent = t("action.submit");
 }
@@ -225,11 +221,6 @@ function restoreDraft() {
   state.bays = sanitizeBays(draft.bays);
   state.submissionId = isUuid(draft.submissionId) ? draft.submissionId : null;
   state.uploadToken = typeof draft.uploadToken === "string" ? draft.uploadToken : null;
-  state.draftStatusKey = "draft.restored";
-  state.draftStatusArgs = {
-    time: Number.isFinite(savedAt) ? ` ${formatClock(new Date(savedAt))}` : ""
-  };
-  renderDraftStatus();
 }
 
 function sanitizeBays(value) {
@@ -273,17 +264,9 @@ function saveDraft() {
   };
   try {
     localStorage.setItem(CONFIG.draftStorageKey, JSON.stringify(draft));
-    state.draftStatusKey = "draft.saved";
-    state.draftStatusArgs = { time: formatClock(new Date(savedAt)) };
   } catch {
-    state.draftStatusKey = "draft.failed";
-    state.draftStatusArgs = {};
+    // Draft storage is optional; the form remains usable when it is unavailable.
   }
-  renderDraftStatus();
-}
-
-function renderDraftStatus() {
-  els.draftStatus.textContent = t(state.draftStatusKey, state.draftStatusArgs);
 }
 
 function applyLocationSelection(resetCurrentBay) {
@@ -1004,7 +987,6 @@ function resetForNewRecord() {
   state.trialStatusError = trialStatusError;
   setDefaultDateTime();
   els.saveStatus.textContent = "";
-  renderDraftStatus();
   renderGpsStatus();
   renderAll();
   window.scrollTo({ top: 0, behavior: preferredScrollBehavior() });
@@ -1072,10 +1054,6 @@ function formatLocalInput(value) {
 function displayNumber(value) {
   const number = nullableNumber(value);
   return number === null ? "-" : new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 1 }).format(number);
-}
-
-function formatClock(date) {
-  return new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
 function formatBytes(bytes) {
