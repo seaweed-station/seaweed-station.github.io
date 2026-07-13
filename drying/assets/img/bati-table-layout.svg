@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
-  <title id="title">Bati solar dryer table layout</title>
-  <desc id="desc">Solar shed at the left, four dryer tables numbered 4, 3, 2, 1 from left to right, and the road along the front.</desc>
+  <title id="title">Bati dryer table layout</title>
+  <desc id="desc">Dryer shed at the left, four dryer tables numbered 4, 3, 2, 1 from left to right, and the road along the front.</desc>
   <defs>
     <linearGradient id="shed" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f2eee8"/>
-      <stop offset="1" stop-color="#d7cec2"/>
+      <stop offset="0" stop-color="#eee7de"/>
+      <stop offset="1" stop-color="#cdbda9"/>
     </linearGradient>
     <linearGradient id="table" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#b7dea7"/>
@@ -18,45 +18,40 @@
   <rect width="1200" height="600" rx="24" fill="#fbfdfc"/>
 
   <g filter="url(#shadow)">
-    <rect x="45" y="65" width="235" height="390" rx="10" fill="url(#shed)" stroke="#474f4c" stroke-width="4"/>
-    <path d="M82 176h160v116H82z" fill="#375c67" stroke="#17383f" stroke-width="4"/>
-    <path d="M82 214h160M82 253h160M122 176v116M162 176v116M202 176v116" stroke="#9ac5d2" stroke-width="3"/>
-    <circle cx="162" cy="128" r="25" fill="#f5c85b"/>
-    <g stroke="#dba735" stroke-width="5" stroke-linecap="round">
-      <path d="M162 87v-16M162 185v-16M121 128h-16M219 128h-16M133 99l-12-12M203 157l-12-12M191 99l12-12M121 169l12-12"/>
-    </g>
-    <path d="M72 332h176l-24 45H96z" fill="#e8e1d8" stroke="#474f4c" stroke-width="4"/>
+    <rect x="35" y="50" width="300" height="410" rx="10" fill="url(#shed)" stroke="#474f4c" stroke-width="4"/>
+    <text x="185" y="242" font-family="Arial, sans-serif" font-size="42" font-weight="700" text-anchor="middle" fill="#302d29">DRYER</text>
+    <text x="185" y="294" font-family="Arial, sans-serif" font-size="42" font-weight="700" text-anchor="middle" fill="#302d29">SHED</text>
   </g>
 
   <g fill="url(#table)" stroke="#31513f" stroke-width="4" filter="url(#shadow)">
-    <rect x="378" y="188" width="82" height="245" rx="8"/>
-    <rect x="596" y="188" width="82" height="245" rx="8"/>
-    <rect x="814" y="188" width="82" height="245" rx="8"/>
-    <rect x="1032" y="188" width="82" height="245" rx="8"/>
+    <rect x="390" y="170" width="76" height="230" rx="8"/>
+    <rect x="606" y="170" width="76" height="230" rx="8"/>
+    <rect x="822" y="170" width="76" height="230" rx="8"/>
+    <rect x="1038" y="170" width="76" height="230" rx="8"/>
   </g>
 
   <g font-family="Arial, sans-serif" font-size="38" font-weight="700" text-anchor="middle" fill="#173d32">
     <g>
-      <circle cx="419" cy="133" r="34" fill="#e8f7ef" stroke="#6bb293" stroke-width="3"/>
-      <text x="419" y="146">4</text>
+      <circle cx="428" cy="112" r="34" fill="#e8f7ef" stroke="#6bb293" stroke-width="3"/>
+      <text x="428" y="125">4</text>
     </g>
     <g>
-      <circle cx="637" cy="133" r="34" fill="#e8f7ef" stroke="#6bb293" stroke-width="3"/>
-      <text x="637" y="146">3</text>
+      <circle cx="644" cy="112" r="34" fill="#e8f7ef" stroke="#6bb293" stroke-width="3"/>
+      <text x="644" y="125">3</text>
     </g>
     <g>
-      <circle cx="855" cy="133" r="34" fill="#e8f7ef" stroke="#6bb293" stroke-width="3"/>
-      <text x="855" y="146">2</text>
+      <circle cx="860" cy="112" r="34" fill="#e8f7ef" stroke="#6bb293" stroke-width="3"/>
+      <text x="860" y="125">2</text>
     </g>
     <g>
-      <circle cx="1073" cy="133" r="34" fill="#e8f7ef" stroke="#6bb293" stroke-width="3"/>
-      <text x="1073" y="146">1</text>
+      <circle cx="1076" cy="112" r="34" fill="#e8f7ef" stroke="#6bb293" stroke-width="3"/>
+      <text x="1076" y="125">1</text>
     </g>
   </g>
 
   <g>
-    <path d="M0 490h1200v110H0z" fill="#d8c1a4"/>
-    <path d="M0 490h1200M0 596h1200" stroke="#615240" stroke-width="5"/>
-    <path d="M70 544h120M250 544h120M430 544h120M610 544h120M790 544h120M970 544h120" stroke="#fff8ec" stroke-width="9" stroke-linecap="round"/>
+    <path d="M0 525h1200v75H0z" fill="#d8c1a4"/>
+    <path d="M0 525h1200M0 597h1200" stroke="#615240" stroke-width="5"/>
+    <path d="M70 562h120M250 562h120M430 562h120M610 562h120M790 562h120M970 562h120" stroke="#fff8ec" stroke-width="8" stroke-linecap="round"/>
   </g>
 </svg>

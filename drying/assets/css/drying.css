@@ -341,14 +341,6 @@ h1 {
   object-fit: contain;
 }
 
-.reference-card figcaption {
-  margin-top: auto;
-  color: var(--text-muted);
-  font-size: 0.76rem;
-  line-height: 1.45;
-  text-align: center;
-}
-
 .trials-body {
   display: grid;
   gap: 12px;
@@ -1111,6 +1103,29 @@ input[readonly] {
 }
 
 @media (max-width: 760px) {
+  button,
+  select,
+  input[type="text"],
+  input[type="number"],
+  input[type="datetime-local"],
+  input[type="date"] {
+    min-height: 44px;
+  }
+
+  select,
+  input[type="text"],
+  input[type="number"],
+  input[type="datetime-local"],
+  input[type="date"],
+  textarea {
+    font-size: 16px;
+  }
+
+  .table-reference > summary,
+  .trials-panel > summary {
+    min-height: 46px;
+  }
+
   .app-header-inner,
   .app-shell {
     width: min(100% - 24px, 1500px);
