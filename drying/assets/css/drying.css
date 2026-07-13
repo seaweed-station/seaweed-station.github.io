@@ -1082,6 +1082,31 @@ input[readonly] {
   font-size: 0.79rem;
 }
 
+.records-access {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.7fr) minmax(240px, 1.3fr);
+  align-items: end;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.records-access label {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+
+.records-access p {
+  margin: 0 0 6px;
+  color: var(--text-sec);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .records-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1344,6 +1369,10 @@ input[readonly] {
   }
 
   .records-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .records-access {
     grid-template-columns: minmax(0, 1fr);
   }
 }

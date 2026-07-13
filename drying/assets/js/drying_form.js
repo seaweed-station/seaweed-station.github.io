@@ -62,6 +62,7 @@ const els = {
   recordsStatus: $("recordsStatus"),
   recordsList: $("recordsList"),
   refreshRecords: $("refreshRecords"),
+  recordsRaId: $("recordsRaId"),
   batiTrialsBody: $("batiTrialsBody"),
   trialSaveStatus: $("trialSaveStatus")
 };
@@ -87,6 +88,7 @@ function freshState() {
     savedPhotos: { table: 0, bays: {} },
     records: [],
     recordsLoading: false,
+    recordOpening: false,
     recordsStatusKey: "records.loading",
     recordsStatusArgs: {},
     recordsStatusError: false,
@@ -135,6 +137,9 @@ function bindEvents() {
   [els.enumeratorName, els.enumeratorId].forEach((control) => {
     control.addEventListener("input", () => {
       if (els.rememberEnumerator.checked) saveRememberedEnumerator();
+      if (control === els.enumeratorId && !els.recordsRaId.value.trim()) {
+        els.recordsRaId.value = control.value;
+      }
     });
   });
 
@@ -190,6 +195,14 @@ function bindEvents() {
   els.newRecord.addEventListener("click", resetForNewRecord);
   els.topNewRecord.addEventListener("click", startNewRecord);
   els.refreshRecords.addEventListener("click", loadRecords);
+  els.recordsRaId.addEventListener("input", () => {
+    if (state.recordsStatusKey === "records.enterRaId") {
+      state.recordsStatusKey = state.records.length ? "records.loaded" : "records.empty";
+      state.recordsStatusArgs = { count: state.records.length };
+      state.recordsStatusError = false;
+      renderRecords();
+    }
+  });
   els.recordsList.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-edit-receipt]");
     if (button) openSavedRecord(button.dataset.editReceipt);
@@ -261,11 +274,13 @@ function loadRememberedEnumerator() {
   }
   if (!saved || typeof saved !== "object") {
     els.rememberEnumerator.checked = false;
+    if (!els.recordsRaId.value) els.recordsRaId.value = els.enumeratorId.value;
     return;
   }
   els.rememberEnumerator.checked = true;
   if (!els.enumeratorName.value) els.enumeratorName.value = saved.name || "";
   if (!els.enumeratorId.value) els.enumeratorId.value = saved.id || "";
+  if (!els.recordsRaId.value) els.recordsRaId.value = els.enumeratorId.value || saved.id || "";
 }
 
 function updateRememberedEnumerator() {
@@ -722,7 +737,7 @@ function extractRecordRows(result) {
 }
 
 function renderRecords() {
-  els.refreshRecords.disabled = state.recordsLoading;
+  els.refreshRecords.disabled = state.recordsLoading || state.recordOpening;
   els.recordsStatus.textContent = t(state.recordsStatusKey, state.recordsStatusArgs);
   els.recordsStatus.dataset.status = state.recordsStatusError ? "error" : "";
   els.recordsList.replaceChildren();
@@ -772,10 +787,10 @@ function createRecordCard(record) {
   const edit = document.createElement("button");
   edit.type = "button";
   const access = recordAccessFor(record.receipt_number);
-  edit.disabled = !access;
-  edit.textContent = t(access ? "records.edit" : "records.viewOnly");
-  edit.title = access ? t("records.edit") : t("records.editHint");
-  if (access) edit.dataset.editReceipt = record.receipt_number;
+  edit.disabled = state.recordOpening;
+  edit.textContent = t(access ? "records.edit" : "records.unlockEdit");
+  edit.title = t(access ? "records.edit" : "records.unlockHint");
+  edit.dataset.editReceipt = record.receipt_number;
   footer.append(details, edit);
 
   card.append(head, bayGrid, footer);
@@ -783,24 +798,57 @@ function createRecordCard(record) {
 }
 
 async function openSavedRecord(receiptNumber) {
-  const access = recordAccessFor(receiptNumber);
-  if (!access || state.submitting) return;
+  let access = recordAccessFor(receiptNumber);
+  const raId = els.recordsRaId.value.trim();
+  if (state.recordOpening || state.submitting) return;
+  if (!access && !raId) {
+    state.recordsStatusKey = "records.enterRaId";
+    state.recordsStatusArgs = {};
+    state.recordsStatusError = true;
+    renderRecords();
+    els.recordsRaId.focus();
+    return;
+  }
   if (formHasMeaningfulData() && state.receiptNumber !== receiptNumber
       && !window.confirm(t("confirm.editRecord", { receipt: receiptNumber }))) return;
-  els.recordsStatus.textContent = t("records.opening", { receipt: receiptNumber });
-  els.recordsStatus.dataset.status = "";
+  state.recordOpening = true;
+  state.recordsStatusKey = access ? "records.opening" : "records.unlocking";
+  state.recordsStatusArgs = { receipt: receiptNumber };
+  state.recordsStatusError = false;
+  renderRecords();
   try {
-    const result = await callRpc(CONFIG.getRecordRpc, {
-      p_submission_id: access.id,
-      p_edit_token: access.token
-    });
+    let result;
+    if (access) {
+      try {
+        result = await callRpc(CONFIG.getRecordRpc, {
+          p_submission_id: access.id,
+          p_edit_token: access.token
+        });
+      } catch (error) {
+        if (!raId || !isEditTokenError(error)) throw error;
+        access = null;
+      }
+    }
+    if (!access) {
+      const claimed = await callRpc(CONFIG.claimRecordRpc, {
+        p_receipt_number: receiptNumber,
+        p_enumerator_id: raId
+      });
+      access = { id: claimed?.id, token: claimed?.edit_token };
+      if (!isUuid(access.id) || typeof access.token !== "string") {
+        throw new Error(t("records.unlockInvalid"));
+      }
+      rememberRecordAccess(receiptNumber, access.id, access.token);
+      result = claimed.record;
+    }
     hydrateSavedRecord(result?.record || result, access);
   } catch (error) {
-    els.recordsStatus.textContent = t("records.editFailed", {
-      receipt: receiptNumber,
-      message: simpleErrorMessage(error)
-    });
-    els.recordsStatus.dataset.status = "error";
+    state.recordsStatusKey = "records.editFailed";
+    state.recordsStatusArgs = { receipt: receiptNumber, message: simpleErrorMessage(error) };
+    state.recordsStatusError = true;
+  } finally {
+    state.recordOpening = false;
+    renderRecords();
   }
 }
 
@@ -816,6 +864,7 @@ function hydrateSavedRecord(record, access) {
   els.dryerLocation.value = record.dryer_location_code || "";
   els.enumeratorName.value = record.enumerator_name || "";
   els.enumeratorId.value = record.enumerator_id || "";
+  els.recordsRaId.value = record.enumerator_id || els.recordsRaId.value;
   els.recordedAt.value = localDateTimeFromIso(record.recorded_at);
   els.gpsLatitude.value = record.gps_latitude ?? "";
   els.gpsLongitude.value = record.gps_longitude ?? "";
@@ -1425,6 +1474,10 @@ function simpleErrorMessage(error) {
 
 function isDatabasePendingError(error) {
   return /404.*(seaweed_drying|trial_schedule)|could not find the function/i.test(String(error?.message || error || ""));
+}
+
+function isEditTokenError(error) {
+  return /edit token|record token|token does not match/i.test(String(error?.message || error || ""));
 }
 
 function createUuid() {

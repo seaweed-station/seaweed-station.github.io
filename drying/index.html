@@ -115,8 +115,8 @@
             <input id="enumeratorName" type="text" data-draft maxlength="120" autocomplete="name" required>
           </label>
           <label>
-            <span data-i18n="record.idNumber">ID number</span>
-            <input id="enumeratorId" type="text" data-draft maxlength="80" autocomplete="off">
+            <span data-i18n="record.idNumber">RA / ID number</span>
+            <input id="enumeratorId" type="text" data-draft maxlength="80" autocomplete="off" required>
           </label>
           <label>
             <span data-i18n="record.dateTime">Record date / time</span>
@@ -339,6 +339,14 @@
           <p data-i18n="records.hint">Records created on this device can be reopened and updated.</p>
         </div>
         <button id="refreshRecords" type="button" data-i18n="records.refresh">Refresh</button>
+      </div>
+      <div class="records-access">
+        <label for="recordsRaId">
+          <span data-i18n="records.raIdLabel">RA / ID number</span>
+          <input id="recordsRaId" type="text" maxlength="80" autocomplete="off"
+            placeholder="Enter the ID used on the record" data-i18n-placeholder="records.raIdPlaceholder">
+        </label>
+        <p data-i18n="records.raIdHint">To edit a record from another phone or browser, enter the same RA / ID number used when it was created.</p>
       </div>
       <p id="recordsStatus" class="admin-status" aria-live="polite" data-i18n="records.loading">Loading records...</p>
       <div id="recordsList" class="records-list"></div>
