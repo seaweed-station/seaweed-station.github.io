@@ -1025,24 +1025,8 @@ async function saveCurrentBay() {
 function validateIncrementalBay(bayNumber) {
   const coreMessage = validateCoreRecordFields();
   if (coreMessage) return coreMessage;
+  if (!bayHasData(bayNumber)) return t("validation.bayEmpty", { bay: bayNumber });
   const bay = ensureBay(bayNumber);
-  const files = ensureBayFiles(bayNumber);
-  const savedPhotos = savedBayPhotos(bayNumber);
-  const loadingStarted = phaseHasData(bay, files, savedPhotos, "loading");
-  const unloadingStarted = phaseHasData(bay, files, savedPhotos, "unloading");
-  if (!loadingStarted && !unloadingStarted) return t("validation.bayEmpty", { bay: bayNumber });
-
-  const required = [];
-  if (loadingStarted) required.push(
-    ["loading_at", "validation.loadingTime"],
-    ["loading_weight_kg", "validation.wetWeight"]
-  );
-  if (unloadingStarted) required.push(
-    ["unloading_at", "validation.unloadingTime"],
-    ["unloading_weight_kg", "validation.dryWeight"]
-  );
-  const missing = required.find(([key]) => !String(bay[key] ?? "").trim());
-  if (missing) return t("validation.phaseMissing", { bay: bayNumber, field: t(missing[1]) });
   if (bay.loading_at && bay.unloading_at
       && new Date(bay.unloading_at).getTime() < new Date(bay.loading_at).getTime()) {
     return t("validation.timeOrder", { bay: bayNumber });
@@ -1061,16 +1045,6 @@ function validateCoreRecordFields() {
   const longitude = nullableNumber(els.gpsLongitude.value);
   if ((latitude === null) !== (longitude === null)) return t("validation.gpsPair");
   return "";
-}
-
-function phaseHasData(bay, files, savedPhotos, phase) {
-  return Boolean(
-    String(bay[`${phase}_at`] ?? "").trim()
-    || String(bay[`${phase}_weight_kg`] ?? "").trim()
-    || String(bay[`${phase}_weather`] ?? "").trim()
-    || files[phase]
-    || savedPhotos[phase]
-  );
 }
 
 function ensureRecordIdentity() {
@@ -1106,7 +1080,7 @@ async function submitForm(event) {
   try {
     setStatus(t("status.savingRecord"));
     receipt = await callRpc(CONFIG.submitRpc, {
-      p_payload: buildPayload(true),
+      p_payload: buildPayload(recordCanBeFinalized()),
       p_upload_token: state.uploadToken
     });
     acceptSavedReceipt(receipt);
@@ -1146,17 +1120,6 @@ function validateForm() {
 
   for (const bayNumber of enteredBays) {
     const bay = ensureBay(bayNumber);
-    const required = [
-      ["loading_at", "validation.loadingTime"],
-      ["loading_weight_kg", "validation.wetWeight"],
-      ["unloading_at", "validation.unloadingTime"],
-      ["unloading_weight_kg", "validation.dryWeight"]
-    ];
-    const missing = required.find(([key]) => !String(bay[key] || "").trim());
-    if (missing) {
-      selectBay(bayNumber);
-      return t("validation.bayMissing", { bay: bayNumber, field: t(missing[1]) });
-    }
     const loadingAt = new Date(bay.loading_at).getTime();
     const unloadingAt = new Date(bay.unloading_at).getTime();
     if (Number.isFinite(loadingAt) && Number.isFinite(unloadingAt) && unloadingAt < loadingAt) {
@@ -1165,6 +1128,11 @@ function validateForm() {
     }
   }
   return "";
+}
+
+function recordCanBeFinalized() {
+  const enteredBays = activeBayNumbers().filter((bayNumber) => bayHasData(bayNumber));
+  return enteredBays.length > 0 && enteredBays.every((bayNumber) => bayIsComplete(bayNumber));
 }
 
 function buildPayload(finalize) {

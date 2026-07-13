@@ -13,7 +13,7 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   recordTokensStorageKey: "seaweed_drying_record_tokens_v1",
   enumeratorStorageKey: "seaweed_drying_enumerator_v1",
   languageStorageKey: "seaweed_drying_language",
-  clientVersion: "2026-07-13.7",
+  clientVersion: "2026-07-13.8",
   maxPhotoBytes: 8 * 1024 * 1024,
   locations: [
     {
@@ -43,6 +43,13 @@ export const DRYING_FORM_CONFIG = Object.freeze({
       translationKey: "location.bati4",
       stationUid: "ST-0102",
       bayCount: 8
+    },
+    {
+      value: "bati-dryer-shed",
+      label: "Dryer Shed",
+      translationKey: "location.dryerShed",
+      stationUid: "ST-0102",
+      bayCount: 1
     },
     {
       value: "shangani-table-1",
