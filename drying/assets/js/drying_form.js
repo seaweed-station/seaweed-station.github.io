@@ -54,6 +54,13 @@ const els = {
   receiptBays: $("receiptBays"),
   receiptPhotos: $("receiptPhotos"),
   newRecord: $("newRecord"),
+  topNewRecord: $("topNewRecord"),
+  activeRecordBanner: $("activeRecordBanner"),
+  activeReceiptNumber: $("activeReceiptNumber"),
+  activeRecordStatus: $("activeRecordStatus"),
+  recordsStatus: $("recordsStatus"),
+  recordsList: $("recordsList"),
+  refreshRecords: $("refreshRecords"),
   batiTrialsBody: $("batiTrialsBody"),
   trialSyncStatus: $("trialSyncStatus"),
   trialSaveStatus: $("trialSaveStatus"),
@@ -76,6 +83,14 @@ function freshState() {
     files: { table: [], bays: {} },
     submissionId: null,
     uploadToken: null,
+    receiptNumber: null,
+    recordStatus: "in_progress",
+    savedPhotos: { table: 0, bays: {} },
+    records: [],
+    recordsLoading: false,
+    recordsStatusKey: "records.loading",
+    recordsStatusArgs: {},
+    recordsStatusError: false,
     submitting: false,
     trials: CONFIG.trials.map((trial) => ({
       ...trial,
@@ -101,6 +116,7 @@ function initialize() {
   renderAll();
   renderTrials();
   loadTrialSchedule();
+  loadRecords();
 }
 
 function bindEvents() {
@@ -131,7 +147,7 @@ function bindEvents() {
   els.tablePhotos.addEventListener("change", () => {
     const files = acceptedFiles(els.tablePhotos.files, 5);
     state.files.table = files;
-    renderPhotoPreview(els.tablePhotoPreview, files);
+    renderPhotoPreview(els.tablePhotoPreview, files, state.savedPhotos.table);
     scheduleDraftSave();
   });
 
@@ -162,11 +178,17 @@ function bindEvents() {
   els.batiTrialsBody.addEventListener("change", updateTrial);
 
   els.previousBay.addEventListener("click", () => selectBay(Math.max(1, state.currentBay - 1)));
-  els.nextBay.addEventListener("click", () => selectBay(Math.min(state.bayCount, state.currentBay + 1)));
+  els.nextBay.addEventListener("click", saveCurrentBay);
   els.captureGps.addEventListener("click", captureGps);
   els.saveTrials.addEventListener("click", saveTrialSchedule);
   els.clearForm.addEventListener("click", clearFormWithConfirmation);
   els.newRecord.addEventListener("click", resetForNewRecord);
+  els.topNewRecord.addEventListener("click", startNewRecord);
+  els.refreshRecords.addEventListener("click", loadRecords);
+  els.recordsList.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-edit-receipt]");
+    if (button) openSavedRecord(button.dataset.editReceipt);
+  });
   els.form.addEventListener("submit", submitForm);
   document.addEventListener("seaweed-drying-language-change", renderLanguageDependentContent);
 }
@@ -176,6 +198,8 @@ function renderLanguageDependentContent() {
   renderAll();
   renderTrials();
   renderGpsStatus();
+  renderRecords();
+  renderActiveRecordBanner();
   if (!state.submitting) els.submitForm.textContent = t("action.submit");
 }
 
@@ -215,23 +239,47 @@ function restoreDraft() {
   state.bays = sanitizeBays(draft.bays);
   state.submissionId = isUuid(draft.submissionId) ? draft.submissionId : null;
   state.uploadToken = typeof draft.uploadToken === "string" ? draft.uploadToken : null;
+  state.receiptNumber = typeof draft.receiptNumber === "string" ? draft.receiptNumber : null;
+  state.recordStatus = draft.recordStatus === "complete" ? "complete" : "in_progress";
+  state.savedPhotos = sanitizeSavedPhotos(draft.savedPhotos);
+  if (state.receiptNumber && state.submissionId && state.uploadToken) {
+    rememberRecordAccess(state.receiptNumber, state.submissionId, state.uploadToken);
+  }
 }
 
 function sanitizeBays(value) {
   const allowed = new Set([
     "loading_at",
-    "loading_weight_g",
+    "loading_weight_kg",
     "loading_weather",
     "unloading_at",
-    "unloading_weight_g",
+    "unloading_weight_kg",
     "unloading_weather",
     "notes"
   ]);
   if (!value || typeof value !== "object") return {};
-  return Object.fromEntries(Object.entries(value).map(([bayNumber, bay]) => [
-    bayNumber,
-    Object.fromEntries(Object.entries(bay || {}).filter(([key]) => allowed.has(key)))
-  ]));
+  return Object.fromEntries(Object.entries(value).map(([bayNumber, bay]) => {
+    const clean = Object.fromEntries(Object.entries(bay || {}).filter(([key]) => allowed.has(key)));
+    if (clean.loading_weight_kg === undefined && nullableNumber(bay?.loading_weight_g) !== null) {
+      clean.loading_weight_kg = nullableNumber(bay.loading_weight_g) / 1000;
+    }
+    if (clean.unloading_weight_kg === undefined && nullableNumber(bay?.unloading_weight_g) !== null) {
+      clean.unloading_weight_kg = nullableNumber(bay.unloading_weight_g) / 1000;
+    }
+    return [bayNumber, clean];
+  }));
+}
+
+function sanitizeSavedPhotos(value) {
+  const table = clampInteger(value?.table, 0, 5, 0);
+  const bays = {};
+  Object.entries(value?.bays || {}).forEach(([bayNumber, phases]) => {
+    bays[bayNumber] = {
+      loading: clampInteger(phases?.loading, 0, 1, 0),
+      unloading: clampInteger(phases?.unloading, 0, 1, 0)
+    };
+  });
+  return { table, bays };
 }
 
 function scheduleDraftSave() {
@@ -254,7 +302,10 @@ function saveDraft() {
     bayCount: state.bayCount,
     bays: state.bays,
     submissionId: state.submissionId,
-    uploadToken: state.uploadToken
+    uploadToken: state.uploadToken,
+    receiptNumber: state.receiptNumber,
+    recordStatus: state.recordStatus,
+    savedPhotos: state.savedPhotos
   };
   try {
     localStorage.setItem(CONFIG.draftStorageKey, JSON.stringify(draft));
@@ -293,6 +344,12 @@ function ensureBayFiles(bayNumber) {
   return state.files.bays[key];
 }
 
+function savedBayPhotos(bayNumber) {
+  const key = String(bayNumber);
+  if (!state.savedPhotos.bays[key]) state.savedPhotos.bays[key] = { loading: 0, unloading: 0 };
+  return state.savedPhotos.bays[key];
+}
+
 function selectBay(bayNumber) {
   if (!Number.isInteger(bayNumber) || bayNumber < 1 || bayNumber > state.bayCount) return;
   captureBayEditor();
@@ -307,7 +364,17 @@ function renderAll() {
   renderBayStatus();
   renderBaySummary();
   updateGpsSummary();
-  renderPhotoPreview(els.tablePhotoPreview, state.files.table);
+  renderPhotoPreview(els.tablePhotoPreview, state.files.table, state.savedPhotos.table);
+  renderActiveRecordBanner();
+}
+
+function renderActiveRecordBanner() {
+  const active = Boolean(state.receiptNumber);
+  els.activeRecordBanner.hidden = !active;
+  if (!active) return;
+  els.activeReceiptNumber.textContent = state.receiptNumber;
+  els.activeRecordStatus.textContent = t(state.recordStatus === "complete" ? "records.complete" : "records.inProgress");
+  els.activeRecordStatus.classList.toggle("is-complete", state.recordStatus === "complete");
 }
 
 function renderBaySelector() {
@@ -331,13 +398,14 @@ function renderBayEditor() {
   });
   els.bayEditorTitle.textContent = t("bay.label", { number: state.currentBay });
   els.previousBay.disabled = state.currentBay === 1;
-  els.nextBay.disabled = state.currentBay === state.bayCount;
-  els.nextBay.textContent = state.currentBay === state.bayCount ? t("bay.last") : t("bay.next");
+  els.nextBay.disabled = state.submitting;
+  els.nextBay.textContent = state.currentBay === state.bayCount ? t("bay.save") : t("bay.next");
   els.loadingPhoto.value = "";
   els.unloadingPhoto.value = "";
   const files = ensureBayFiles(state.currentBay);
-  renderPhotoPreview(els.loadingPhotoPreview, files.loading ? [files.loading] : []);
-  renderPhotoPreview(els.unloadingPhotoPreview, files.unloading ? [files.unloading] : []);
+  const savedPhotos = savedBayPhotos(state.currentBay);
+  renderPhotoPreview(els.loadingPhotoPreview, files.loading ? [files.loading] : [], savedPhotos.loading);
+  renderPhotoPreview(els.unloadingPhotoPreview, files.unloading ? [files.unloading] : [], savedPhotos.unloading);
   renderMetrics();
 }
 
@@ -360,16 +428,17 @@ function bayHasData(bayNumber) {
   const bay = ensureBay(bayNumber);
   const hasField = Object.values(bay).some((value) => String(value ?? "").trim() !== "");
   const files = ensureBayFiles(bayNumber);
-  return hasField || Boolean(files.loading || files.unloading);
+  const savedPhotos = savedBayPhotos(bayNumber);
+  return hasField || Boolean(files.loading || files.unloading || savedPhotos.loading || savedPhotos.unloading);
 }
 
 function bayIsComplete(bayNumber) {
   const bay = ensureBay(bayNumber);
   return Boolean(
     String(bay.loading_at || "").trim()
-    && String(bay.loading_weight_g || "").trim()
+    && String(bay.loading_weight_kg || "").trim()
     && String(bay.unloading_at || "").trim()
-    && String(bay.unloading_weight_g || "").trim()
+    && String(bay.unloading_weight_kg || "").trim()
   );
 }
 
@@ -393,8 +462,8 @@ function dryingDurationLabel(bay) {
 }
 
 function weightLossLabel(bay) {
-  const wet = nullableNumber(bay.loading_weight_g);
-  const dry = nullableNumber(bay.unloading_weight_g);
+  const wet = nullableNumber(bay.loading_weight_kg);
+  const dry = nullableNumber(bay.unloading_weight_kg);
   if (wet === null || dry === null || wet <= 0) return "-";
   return `${(((wet - dry) / wet) * 100).toFixed(1)}%`;
 }
@@ -404,15 +473,16 @@ function renderBaySummary() {
   activeBayNumbers().forEach((bayNumber) => {
     const bay = ensureBay(bayNumber);
     const files = ensureBayFiles(bayNumber);
+    const savedPhotos = savedBayPhotos(bayNumber);
     const row = document.createElement("tr");
     const values = [
       t("bay.label", { number: bayNumber }),
       formatLocalInput(bay.loading_at),
-      displayNumber(bay.loading_weight_g),
+      displayNumber(bay.loading_weight_kg, 2),
       formatLocalInput(bay.unloading_at),
-      displayNumber(bay.unloading_weight_g),
+      displayNumber(bay.unloading_weight_kg, 2),
       dryingDurationLabel(bay),
-      `${Number(Boolean(files.loading)) + Number(Boolean(files.unloading))}/2`
+      `${Number(Boolean(files.loading || savedPhotos.loading)) + Number(Boolean(files.unloading || savedPhotos.unloading))}/2`
     ];
     values.forEach((value, index) => {
       const cell = document.createElement("td");
@@ -581,12 +651,193 @@ async function saveTrialSchedule() {
   }
 }
 
+async function loadRecords() {
+  if (state.recordsLoading) return;
+  state.recordsLoading = true;
+  state.recordsStatusKey = "records.loading";
+  state.recordsStatusArgs = {};
+  state.recordsStatusError = false;
+  renderRecords();
+  try {
+    const result = await callRpc(CONFIG.listRecordsRpc, { p_limit: 50 }, { unwrapSingle: false });
+    state.records = extractRecordRows(result);
+    state.recordsStatusKey = state.records.length ? "records.loaded" : "records.empty";
+    state.recordsStatusArgs = { count: state.records.length };
+  } catch (error) {
+    state.recordsStatusKey = isDatabasePendingError(error) ? "records.preview" : "records.loadFailed";
+    state.recordsStatusArgs = { message: simpleErrorMessage(error) };
+    state.recordsStatusError = true;
+  } finally {
+    state.recordsLoading = false;
+    renderRecords();
+  }
+}
+
+function extractRecordRows(result) {
+  if (Array.isArray(result)) {
+    if (result.length === 1 && Array.isArray(result[0])) return result[0];
+    return result;
+  }
+  if (!result || typeof result !== "object") return [];
+  if (Array.isArray(result.records)) return result.records;
+  return [];
+}
+
+function renderRecords() {
+  els.refreshRecords.disabled = state.recordsLoading;
+  els.recordsStatus.textContent = t(state.recordsStatusKey, state.recordsStatusArgs);
+  els.recordsStatus.dataset.status = state.recordsStatusError ? "error" : "";
+  els.recordsList.replaceChildren();
+  state.records.forEach((record) => els.recordsList.append(createRecordCard(record)));
+}
+
+function createRecordCard(record) {
+  const card = document.createElement("article");
+  card.className = "record-card";
+
+  const head = document.createElement("div");
+  head.className = "record-card-head";
+  const titleWrap = document.createElement("div");
+  const title = document.createElement("h3");
+  title.textContent = record.receipt_number || "-";
+  const meta = document.createElement("p");
+  meta.className = "record-card-meta";
+  meta.textContent = `${tableLabel(record.table_location)} · ${formatRecordDate(record.recorded_at)}`;
+  titleWrap.append(title, meta);
+  const status = document.createElement("span");
+  const complete = record.record_status === "complete";
+  status.className = "record-status-pill";
+  status.classList.toggle("is-complete", complete);
+  status.textContent = t(complete ? "records.complete" : "records.inProgress");
+  head.append(titleWrap, status);
+
+  const bayGrid = document.createElement("div");
+  bayGrid.className = "record-bay-grid";
+  const bayStates = Array.isArray(record.bay_states) ? record.bay_states : [];
+  bayStates.forEach((bay) => {
+    const pill = document.createElement("span");
+    const bayComplete = bay.state === "complete";
+    pill.className = "record-bay-pill";
+    pill.classList.toggle("is-complete", bayComplete);
+    const stateLabel = bayComplete
+      ? t("records.bayComplete")
+      : bay.state === "loading" ? t("records.bayLoading") : t("records.bayStarted");
+    pill.textContent = `B${bay.bay_number} · ${stateLabel}`;
+    bayGrid.append(pill);
+  });
+
+  const footer = document.createElement("div");
+  footer.className = "record-card-footer";
+  const details = document.createElement("span");
+  details.className = "record-edit-hint";
+  details.textContent = `${t("records.bays", { count: record.bay_count || bayStates.length })} · ${t("records.updated", { date: formatRecordDate(record.updated_at) })}`;
+  const edit = document.createElement("button");
+  edit.type = "button";
+  const access = recordAccessFor(record.receipt_number);
+  edit.disabled = !access;
+  edit.textContent = t(access ? "records.edit" : "records.viewOnly");
+  edit.title = access ? t("records.edit") : t("records.editHint");
+  if (access) edit.dataset.editReceipt = record.receipt_number;
+  footer.append(details, edit);
+
+  card.append(head, bayGrid, footer);
+  return card;
+}
+
+async function openSavedRecord(receiptNumber) {
+  const access = recordAccessFor(receiptNumber);
+  if (!access || state.submitting) return;
+  if (formHasMeaningfulData() && state.receiptNumber !== receiptNumber
+      && !window.confirm(t("confirm.editRecord", { receipt: receiptNumber }))) return;
+  els.recordsStatus.textContent = t("records.opening", { receipt: receiptNumber });
+  els.recordsStatus.dataset.status = "";
+  try {
+    const result = await callRpc(CONFIG.getRecordRpc, {
+      p_submission_id: access.id,
+      p_edit_token: access.token
+    });
+    hydrateSavedRecord(result?.record || result, access);
+  } catch (error) {
+    els.recordsStatus.textContent = t("records.editFailed", {
+      receipt: receiptNumber,
+      message: simpleErrorMessage(error)
+    });
+    els.recordsStatus.dataset.status = "error";
+  }
+}
+
+function hydrateSavedRecord(record, access) {
+  if (!record || typeof record !== "object") throw new Error("Invalid saved record");
+  resetForNewRecord({ scroll: false });
+  state.submissionId = access.id;
+  state.uploadToken = access.token;
+  state.receiptNumber = record.receipt_number || null;
+  state.recordStatus = record.record_status === "complete" ? "complete" : "in_progress";
+  state.savedPhotos.table = clampInteger(record.table_photo_count, 0, 5, 0);
+
+  els.dryerLocation.value = record.dryer_location_code || "";
+  els.enumeratorName.value = record.enumerator_name || "";
+  els.enumeratorId.value = record.enumerator_id || "";
+  els.recordedAt.value = localDateTimeFromIso(record.recorded_at);
+  els.gpsLatitude.value = record.gps_latitude ?? "";
+  els.gpsLongitude.value = record.gps_longitude ?? "";
+  els.gpsAccuracy.value = record.gps_accuracy_m ?? "";
+  els.dryingConfiguration.value = record.drying_configuration || "";
+  els.generalObservations.value = record.general_observations || "";
+  els.workingWell.value = record.working_well || "";
+  els.notWorking.value = record.not_working || "";
+  els.confirmedAccurate.checked = Boolean(record.confirmed_accurate);
+
+  state.bays = {};
+  (Array.isArray(record.bays) ? record.bays : []).forEach((bay) => {
+    const key = String(bay.bay_number);
+    state.bays[key] = {
+      loading_at: localDateTimeFromIso(bay.loading_at),
+      loading_weight_kg: bay.loading_weight_kg ?? "",
+      loading_weather: bay.loading_weather || "",
+      unloading_at: localDateTimeFromIso(bay.unloading_at),
+      unloading_weight_kg: bay.unloading_weight_kg ?? "",
+      unloading_weather: bay.unloading_weather || "",
+      notes: bay.notes || ""
+    };
+    state.savedPhotos.bays[key] = {
+      loading: clampInteger(bay.loading_photo_count, 0, 1, 0),
+      unloading: clampInteger(bay.unloading_photo_count, 0, 1, 0)
+    };
+  });
+  applyLocationSelection(false);
+  state.currentBay = firstOpenBay();
+  els.formPanel.hidden = false;
+  els.successPanel.hidden = true;
+  setStatus(t("records.editing"), "success");
+  renderAll();
+  saveDraft();
+  els.formPanel.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
+  loadRecords();
+}
+
+function firstOpenBay() {
+  return activeBayNumbers().find((bayNumber) => bayHasData(bayNumber) && !bayIsComplete(bayNumber))
+    || activeBayNumbers().find((bayNumber) => !bayHasData(bayNumber))
+    || 1;
+}
+
+function formHasMeaningfulData() {
+  return Boolean(
+    state.submissionId
+    || els.dryerLocation.value
+    || els.enumeratorName.value.trim()
+    || Object.keys(state.bays).some((bayNumber) => bayHasData(Number(bayNumber)))
+    || state.files.table.length
+  );
+}
+
 function setBayPhoto(phase, file) {
   const accepted = acceptedFiles(file ? [file] : [], 1);
   const files = ensureBayFiles(state.currentBay);
   files[phase] = accepted[0] || null;
   const preview = phase === "loading" ? els.loadingPhotoPreview : els.unloadingPhotoPreview;
-  renderPhotoPreview(preview, files[phase] ? [files[phase]] : []);
+  renderPhotoPreview(preview, files[phase] ? [files[phase]] : [], savedBayPhotos(state.currentBay)[phase]);
   renderBayStatus();
   renderBaySummary();
   scheduleDraftSave();
@@ -609,8 +860,14 @@ function acceptedFiles(fileList, limit) {
   return accepted;
 }
 
-function renderPhotoPreview(container, files) {
+function renderPhotoPreview(container, files, savedCount = 0) {
   container.replaceChildren();
+  if (savedCount) {
+    const saved = document.createElement("span");
+    saved.className = "photo-chip saved-photo-chip";
+    saved.textContent = savedCount > 1 ? `${t("photo.saved")} (${savedCount})` : t("photo.saved");
+    container.append(saved);
+  }
   files.forEach((file) => {
     const chip = document.createElement("span");
     chip.className = "photo-chip";
@@ -684,6 +941,112 @@ function renderGpsStatus() {
   els.gpsStatus.style.color = state.gpsStatusError ? "var(--danger)" : "";
 }
 
+async function saveCurrentBay() {
+  if (state.submitting) return;
+  captureBayEditor();
+  const bayNumber = state.currentBay;
+  const validationMessage = validateIncrementalBay(bayNumber);
+  if (validationMessage) {
+    setStatus(validationMessage, "error");
+    return;
+  }
+
+  ensureRecordIdentity();
+  saveDraft();
+  state.submitting = true;
+  setSubmittingUi(true);
+  setStatus(t("bay.saving", { number: bayNumber }));
+  let receipt;
+  try {
+    receipt = await callRpc(CONFIG.submitRpc, {
+      p_payload: buildPayload(false),
+      p_upload_token: state.uploadToken
+    });
+    acceptSavedReceipt(receipt);
+    saveDraft();
+    const photoResult = await uploadSelectedPhotos({ bayNumbers: [bayNumber], includeTable: true });
+    applyUploadedPhotoResult(photoResult);
+    saveDraft();
+    renderAll();
+    setStatus(t("bay.saved", { number: bayNumber, receipt: state.receiptNumber }), "success");
+    loadRecords();
+    if (bayNumber < state.bayCount) selectBay(bayNumber + 1);
+  } catch (error) {
+    const receiptHint = receipt?.receipt_number
+      ? t("status.recordSavedPhotos", { receipt: receipt.receipt_number })
+      : "";
+    setStatus(`${friendlyError(error)}${receiptHint}`, receipt ? "warning" : "error");
+    saveDraft();
+  } finally {
+    state.submitting = false;
+    setSubmittingUi(false);
+    renderBayEditor();
+  }
+}
+
+function validateIncrementalBay(bayNumber) {
+  const coreMessage = validateCoreRecordFields();
+  if (coreMessage) return coreMessage;
+  const bay = ensureBay(bayNumber);
+  const files = ensureBayFiles(bayNumber);
+  const savedPhotos = savedBayPhotos(bayNumber);
+  const loadingStarted = phaseHasData(bay, files, savedPhotos, "loading");
+  const unloadingStarted = phaseHasData(bay, files, savedPhotos, "unloading");
+  if (!loadingStarted && !unloadingStarted) return t("validation.bayEmpty", { bay: bayNumber });
+
+  const required = [];
+  if (loadingStarted) required.push(
+    ["loading_at", "validation.loadingTime"],
+    ["loading_weight_kg", "validation.wetWeight"]
+  );
+  if (unloadingStarted) required.push(
+    ["unloading_at", "validation.unloadingTime"],
+    ["unloading_weight_kg", "validation.dryWeight"]
+  );
+  const missing = required.find(([key]) => !String(bay[key] ?? "").trim());
+  if (missing) return t("validation.phaseMissing", { bay: bayNumber, field: t(missing[1]) });
+  if (bay.loading_at && bay.unloading_at
+      && new Date(bay.unloading_at).getTime() < new Date(bay.loading_at).getTime()) {
+    return t("validation.timeOrder", { bay: bayNumber });
+  }
+  return "";
+}
+
+function validateCoreRecordFields() {
+  for (const control of [els.dryerLocation, els.enumeratorName, els.recordedAt, els.dryingConfiguration]) {
+    if (!control.checkValidity()) {
+      control.reportValidity();
+      return t("validation.required");
+    }
+  }
+  const latitude = nullableNumber(els.gpsLatitude.value);
+  const longitude = nullableNumber(els.gpsLongitude.value);
+  if ((latitude === null) !== (longitude === null)) return t("validation.gpsPair");
+  return "";
+}
+
+function phaseHasData(bay, files, savedPhotos, phase) {
+  return Boolean(
+    String(bay[`${phase}_at`] ?? "").trim()
+    || String(bay[`${phase}_weight_kg`] ?? "").trim()
+    || String(bay[`${phase}_weather`] ?? "").trim()
+    || files[phase]
+    || savedPhotos[phase]
+  );
+}
+
+function ensureRecordIdentity() {
+  state.submissionId ||= createUuid();
+  state.uploadToken ||= createUploadToken();
+}
+
+function acceptSavedReceipt(receipt) {
+  state.receiptNumber = receipt?.receipt_number || state.receiptNumber || state.submissionId;
+  state.recordStatus = receipt?.record_status === "complete" ? "complete" : "in_progress";
+  rememberRecordAccess(state.receiptNumber, state.submissionId, state.uploadToken);
+  renderActiveRecordBanner();
+}
+
 async function submitForm(event) {
   event.preventDefault();
   if (state.submitting) return;
@@ -696,8 +1059,7 @@ async function submitForm(event) {
     return;
   }
 
-  state.submissionId ||= createUuid();
-  state.uploadToken ||= createUploadToken();
+  ensureRecordIdentity();
   saveDraft();
   state.submitting = true;
   setSubmittingUi(true);
@@ -706,12 +1068,16 @@ async function submitForm(event) {
   try {
     setStatus(t("status.savingRecord"));
     receipt = await callRpc(CONFIG.submitRpc, {
-      p_payload: buildPayload(),
+      p_payload: buildPayload(true),
       p_upload_token: state.uploadToken
     });
+    acceptSavedReceipt(receipt);
+    saveDraft();
     const photoResult = await uploadSelectedPhotos();
+    applyUploadedPhotoResult(photoResult);
     localStorage.removeItem(CONFIG.draftStorageKey);
-    showSuccess(receipt, photoResult);
+    showSuccess(receipt, { count: totalSavedPhotoCount(), attached: photoResult.attached });
+    loadRecords();
   } catch (error) {
     const receiptHint = receipt?.receipt_number
       ? t("status.recordSavedPhotos", { receipt: receipt.receipt_number })
@@ -744,9 +1110,9 @@ function validateForm() {
     const bay = ensureBay(bayNumber);
     const required = [
       ["loading_at", "validation.loadingTime"],
-      ["loading_weight_g", "validation.wetWeight"],
+      ["loading_weight_kg", "validation.wetWeight"],
       ["unloading_at", "validation.unloadingTime"],
-      ["unloading_weight_g", "validation.dryWeight"]
+      ["unloading_weight_kg", "validation.dryWeight"]
     ];
     const missing = required.find(([key]) => !String(bay[key] || "").trim());
     if (missing) {
@@ -763,7 +1129,7 @@ function validateForm() {
   return "";
 }
 
-function buildPayload() {
+function buildPayload(finalize) {
   const location = selectedLocation();
   return {
     submission_id: state.submissionId,
@@ -781,6 +1147,7 @@ function buildPayload() {
     working_well: nullableText(els.workingWell.value),
     not_working: nullableText(els.notWorking.value),
     confirmed_accurate: els.confirmedAccurate.checked,
+    finalize: Boolean(finalize),
     website: els.website.value,
     source: "public_web_form",
     client_version: CONFIG.clientVersion,
@@ -795,26 +1162,27 @@ function bayPayload(bayNumber) {
   return {
     bay_number: bayNumber,
     loading_at: toIso(bay.loading_at),
-    loading_weight_g: nullableNumber(bay.loading_weight_g),
+    loading_weight_kg: nullableNumber(bay.loading_weight_kg),
     loading_weather: nullableText(bay.loading_weather),
     unloading_at: toIso(bay.unloading_at),
-    unloading_weight_g: nullableNumber(bay.unloading_weight_g),
+    unloading_weight_kg: nullableNumber(bay.unloading_weight_kg),
     unloading_weather: nullableText(bay.unloading_weather),
     notes: nullableText(bay.notes)
   };
 }
 
-async function uploadSelectedPhotos() {
+async function uploadSelectedPhotos({ bayNumbers = activeBayNumbers(), includeTable = true } = {}) {
   const uploads = [];
-  state.files.table.forEach((file, index) => uploads.push({ kind: "table", file, index: index + 1 }));
-  activeBayNumbers().forEach((bayNumber) => {
+  if (includeTable) state.files.table.forEach((file) => uploads.push({ kind: "table", file }));
+  bayNumbers.forEach((bayNumber) => {
     const files = ensureBayFiles(bayNumber);
     if (files.loading) uploads.push({ kind: "bay", phase: "loading", bayNumber, file: files.loading });
     if (files.unloading) uploads.push({ kind: "bay", phase: "unloading", bayNumber, file: files.unloading });
   });
-  if (!uploads.length) return { count: 0, attached: false };
+  if (!uploads.length) return { count: 0, attached: false, bayPhotos: [] };
 
-  const manifest = { table: [], bays: [] };
+  const manifest = { bays: [] };
+  if (uploads.some((upload) => upload.kind === "table")) manifest.table = [];
   const manifestByBay = new Map();
   for (let index = 0; index < uploads.length; index += 1) {
     const upload = uploads[index];
@@ -822,30 +1190,72 @@ async function uploadSelectedPhotos() {
     const blob = await preparePhoto(upload.file);
     if (blob.size > CONFIG.maxPhotoBytes) throw new Error(`${upload.file.name} is still larger than 8 MB after compression.`);
     const extension = photoExtension(blob.type);
+    const objectId = createUuid();
     const objectPath = upload.kind === "table"
-      ? `${state.submissionId}/table/${String(upload.index).padStart(2, "0")}.${extension}`
-      : `${state.submissionId}/bay-${String(upload.bayNumber).padStart(2, "0")}/${upload.phase}.${extension}`;
+      ? `${state.submissionId}/table/${objectId}.${extension}`
+      : `${state.submissionId}/bay-${String(upload.bayNumber).padStart(2, "0")}/${upload.phase}/${objectId}.${extension}`;
     await uploadObject(objectPath, blob);
 
     if (upload.kind === "table") {
       manifest.table.push(objectPath);
     } else {
       if (!manifestByBay.has(upload.bayNumber)) {
-        const bayManifest = { bay_number: upload.bayNumber, loading: [], unloading: [] };
+        const bayManifest = { bay_number: upload.bayNumber };
         manifestByBay.set(upload.bayNumber, bayManifest);
         manifest.bays.push(bayManifest);
       }
-      manifestByBay.get(upload.bayNumber)[upload.phase].push(objectPath);
+      manifestByBay.get(upload.bayNumber)[upload.phase] = [objectPath];
     }
   }
 
   setStatus(t("photo.linking"));
-  await callRpc(CONFIG.attachPhotosRpc, {
+  const attachResult = await callRpc(CONFIG.attachPhotosRpc, {
     p_submission_id: state.submissionId,
     p_upload_token: state.uploadToken,
     p_photos: manifest
   });
-  return { count: uploads.length, attached: true };
+  if (manifest.table) {
+    state.files.table = [];
+    els.tablePhotos.value = "";
+  }
+  manifest.bays.forEach((bay) => {
+    const files = ensureBayFiles(bay.bay_number);
+    if (bay.loading) files.loading = null;
+    if (bay.unloading) files.unloading = null;
+  });
+  return {
+    count: uploads.length,
+    attached: true,
+    tableCount: attachResult?.table_photo_count,
+    bayPhotos: Array.isArray(attachResult?.bay_photos) ? attachResult.bay_photos : [],
+    touchedManifest: manifest
+  };
+}
+
+function applyUploadedPhotoResult(result) {
+  if (!result?.attached) return;
+  if (Number.isFinite(Number(result.tableCount))) {
+    state.savedPhotos.table = clampInteger(result.tableCount, 0, 5, state.savedPhotos.table);
+  } else if (result.touchedManifest?.table) {
+    state.savedPhotos.table = Math.min(5, state.savedPhotos.table + result.touchedManifest.table.length);
+  }
+  result.touchedManifest?.bays?.forEach((bay) => {
+    const saved = savedBayPhotos(bay.bay_number);
+    if (bay.loading) saved.loading = 1;
+    if (bay.unloading) saved.unloading = 1;
+  });
+  result.bayPhotos?.forEach((bay) => {
+    const saved = savedBayPhotos(bay.bay_number);
+    saved.loading = clampInteger(bay.loading_photo_count, 0, 1, saved.loading);
+    saved.unloading = clampInteger(bay.unloading_photo_count, 0, 1, saved.unloading);
+  });
+}
+
+function totalSavedPhotoCount() {
+  return state.savedPhotos.table + Object.values(state.savedPhotos.bays).reduce(
+    (total, bay) => total + Number(Boolean(bay.loading)) + Number(Boolean(bay.unloading)),
+    0
+  );
 }
 
 async function preparePhoto(file) {
@@ -951,6 +1361,9 @@ function showSuccess(receipt, photoResult) {
 function setSubmittingUi(isSubmitting) {
   els.submitForm.disabled = isSubmitting;
   els.clearForm.disabled = isSubmitting;
+  els.nextBay.disabled = isSubmitting;
+  els.topNewRecord.disabled = isSubmitting;
+  els.newRecord.disabled = isSubmitting;
   els.submitForm.textContent = t(isSubmitting ? "action.submitting" : "action.submit");
 }
 
@@ -958,7 +1371,11 @@ function clearFormWithConfirmation() {
   if (window.confirm(t("confirm.clear"))) resetForNewRecord();
 }
 
-function resetForNewRecord() {
+function startNewRecord() {
+  if (!formHasMeaningfulData() || window.confirm(t("confirm.newRecord"))) resetForNewRecord();
+}
+
+function resetForNewRecord({ scroll = true } = {}) {
   localStorage.removeItem(CONFIG.draftStorageKey);
   els.form.reset();
   els.form.classList.remove("was-validated");
@@ -967,15 +1384,24 @@ function resetForNewRecord() {
   const trials = state.trials;
   const trialStatusKey = state.trialStatusKey;
   const trialStatusError = state.trialStatusError;
+  const records = state.records;
+  const recordsStatusKey = state.recordsStatusKey;
+  const recordsStatusArgs = state.recordsStatusArgs;
+  const recordsStatusError = state.recordsStatusError;
   state = freshState();
   state.trials = trials;
   state.trialStatusKey = trialStatusKey;
   state.trialStatusError = trialStatusError;
+  state.records = records;
+  state.recordsStatusKey = recordsStatusKey;
+  state.recordsStatusArgs = recordsStatusArgs;
+  state.recordsStatusError = recordsStatusError;
   setDefaultDateTime();
   els.saveStatus.textContent = "";
   renderGpsStatus();
   renderAll();
-  window.scrollTo({ top: 0, behavior: preferredScrollBehavior() });
+  renderRecords();
+  if (scroll) window.scrollTo({ top: 0, behavior: preferredScrollBehavior() });
 }
 
 function setStatus(message, status = "") {
@@ -988,6 +1414,10 @@ function friendlyError(error) {
   if (/failed to fetch|networkerror|load failed/i.test(message)) return t("status.network");
   if (isDatabasePendingError(error)) return t("status.databasePending");
   return t("status.submitFailed", { message });
+}
+
+function simpleErrorMessage(error) {
+  return String(error?.message || error || "Unknown error").replace(/^\d{3}\s+/, "");
 }
 
 function isDatabasePendingError(error) {
@@ -1006,6 +1436,36 @@ function createUuid() {
 function createUploadToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function recordAccessFor(receiptNumber) {
+  if (!receiptNumber) return null;
+  if (state.receiptNumber === receiptNumber && state.submissionId && state.uploadToken) {
+    return { id: state.submissionId, token: state.uploadToken };
+  }
+  try {
+    const records = JSON.parse(localStorage.getItem(CONFIG.recordTokensStorageKey) || "{}");
+    const access = records?.[receiptNumber];
+    return isUuid(access?.id) && typeof access?.token === "string"
+      ? { id: access.id, token: access.token }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberRecordAccess(receiptNumber, submissionId, token) {
+  if (!receiptNumber || !isUuid(submissionId) || typeof token !== "string") return;
+  try {
+    const records = JSON.parse(localStorage.getItem(CONFIG.recordTokensStorageKey) || "{}");
+    records[receiptNumber] = { id: submissionId, token, savedAt: new Date().toISOString() };
+    const trimmed = Object.fromEntries(Object.entries(records)
+      .sort(([, a], [, b]) => String(b?.savedAt || "").localeCompare(String(a?.savedAt || "")))
+      .slice(0, 100));
+    localStorage.setItem(CONFIG.recordTokensStorageKey, JSON.stringify(trimmed));
+  } catch {
+    // Record editing still works for the active draft when local storage is unavailable.
+  }
 }
 
 function nullableText(value) {
@@ -1037,9 +1497,28 @@ function formatLocalInput(value) {
   }).format(date);
 }
 
-function displayNumber(value) {
+function localDateTimeFromIso(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? localDateTimeValue(date) : "";
+}
+
+function formatRecordDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return new Intl.DateTimeFormat(getLocale(), {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function displayNumber(value, maximumFractionDigits = 1) {
   const number = nullableNumber(value);
-  return number === null ? "-" : new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 1 }).format(number);
+  return number === null ? "-" : new Intl.NumberFormat(getLocale(), { maximumFractionDigits }).format(number);
 }
 
 function formatBytes(bytes) {

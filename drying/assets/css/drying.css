@@ -194,7 +194,8 @@ h1 {
   flex-wrap: wrap;
 }
 
-.app-nav a {
+.app-nav a,
+.app-nav .header-new-record {
   min-height: 30px;
   display: inline-flex;
   align-items: center;
@@ -206,6 +207,17 @@ h1 {
   font-size: 0.78rem;
   font-weight: 700;
   text-decoration: none;
+}
+
+.app-nav .header-new-record {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.app-nav .header-new-record:hover:not(:disabled) {
+  background: #0b645d;
+  color: #fff;
 }
 
 .app-nav a:hover,
@@ -536,6 +548,25 @@ h1 {
   gap: 12px;
 }
 
+.active-record-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid #9bcdbb;
+  border-radius: 8px;
+  background: #edf8f4;
+  color: #1d6550;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.active-record-banner strong {
+  margin-left: 4px;
+  color: var(--text);
+}
+
 .public-form-trap {
   position: absolute !important;
   width: 1px !important;
@@ -714,6 +745,12 @@ input[readonly] {
   background: #fff;
 }
 
+.photo-chip.saved-photo-chip {
+  border-color: #a7d7c5;
+  background: #edf8f4;
+  color: var(--success);
+}
+
 .photo-chip img {
   width: 34px;
   height: 34px;
@@ -864,6 +901,12 @@ input[readonly] {
 .phase-title h3 {
   margin-bottom: 0;
   font-size: 0.88rem;
+}
+
+.phase-title h3 small {
+  color: var(--text-muted);
+  font-size: 0.72em;
+  font-weight: 650;
 }
 
 .phase-fields {
@@ -1036,6 +1079,127 @@ input[readonly] {
   color: var(--text-sec);
 }
 
+.records-panel {
+  margin-top: 12px;
+  padding: 16px;
+}
+
+.records-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.records-header h2 {
+  margin-bottom: 3px;
+  font-size: 1.08rem;
+}
+
+.records-header p:not(.eyebrow) {
+  margin-bottom: 0;
+  color: var(--text-sec);
+  font-size: 0.79rem;
+}
+
+.records-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.record-card {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.record-card-head,
+.record-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.record-card h3 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.record-card-meta {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 0.73rem;
+}
+
+.record-status-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 8px;
+  border: 1px solid #e0bd75;
+  border-radius: 999px;
+  background: #fff8e8;
+  color: #76510a;
+  font-size: 0.7rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.record-status-pill.is-complete {
+  border-color: #9bcdbb;
+  background: #e8f7ef;
+  color: #1f694e;
+}
+
+.record-bay-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.record-bay-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid #e4c477;
+  border-radius: 999px;
+  background: #fff7dc;
+  color: #76510a;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.record-bay-pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e6a23c;
+}
+
+.record-bay-pill.is-complete {
+  border-color: #9bcdbb;
+  background: #e8f7ef;
+  color: #1f694e;
+}
+
+.record-bay-pill.is-complete::before {
+  background: var(--success);
+}
+
+.record-edit-hint {
+  color: var(--text-muted);
+  font-size: 0.69rem;
+}
+
 .receipt-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1119,9 +1283,11 @@ input[readonly] {
     gap: 9px;
   }
 
-  .app-nav a {
+  .app-nav a,
+  .app-nav .header-new-record {
     flex: 1;
     justify-content: center;
+    min-height: 44px;
   }
 
   .reference-grid {
@@ -1191,6 +1357,23 @@ input[readonly] {
   }
 
   .success-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .records-header,
+  .record-card-head,
+  .record-card-footer,
+  .active-record-banner {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .records-header button,
+  .record-card-footer button {
+    width: 100%;
+  }
+
+  .records-list {
     grid-template-columns: minmax(0, 1fr);
   }
 }

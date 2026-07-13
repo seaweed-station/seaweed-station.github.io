@@ -15,6 +15,7 @@
         <h1 data-i18n="page.title">Seaweed Drying Record</h1>
       </div>
       <nav class="app-nav" aria-label="Page navigation" data-i18n-aria-label="nav.ariaLabel">
+        <button id="topNewRecord" type="button" class="header-new-record" data-i18n="action.newRecord">New record</button>
         <a href="./" aria-current="page" data-i18n="nav.form">Drying form</a>
         <a href="../login.html" data-i18n="nav.dashboard">Dashboard</a>
       </nav>
@@ -97,6 +98,11 @@
           Website
           <input id="website" type="text" tabindex="-1" autocomplete="off">
         </label>
+
+        <div id="activeRecordBanner" class="active-record-banner" hidden>
+          <span><span data-i18n="records.editing">Editing saved record</span> <strong id="activeReceiptNumber"></strong></span>
+          <span id="activeRecordStatus" class="record-status-pill"></span>
+        </div>
 
         <fieldset>
           <legend data-i18n="record.legend">Record details</legend>
@@ -199,7 +205,7 @@
               <section class="phase-card loading-card" aria-labelledby="loadingTitle">
                 <div class="phase-title">
                   <span class="phase-number">1</span>
-                  <h3 id="loadingTitle" data-i18n="loading.title">Loading</h3>
+                  <h3 id="loadingTitle"><span data-i18n="loading.title">Loading</span> <small data-i18n="loading.qualifier">(Wet)</small></h3>
                 </div>
                 <div class="phase-fields">
                   <label>
@@ -207,8 +213,8 @@
                     <input id="loadingAt" type="datetime-local" data-bay-field="loading_at">
                   </label>
                   <label>
-                    <span data-i18n="loading.weight">Wet weight (g)</span>
-                    <input id="loadingWeight" type="number" data-bay-field="loading_weight_g" min="0" max="1000000" step="0.1" inputmode="decimal">
+                    <span data-i18n="loading.weight">Wet weight (kg)</span>
+                    <input id="loadingWeight" type="number" data-bay-field="loading_weight_kg" min="0" max="1000" step="0.01" inputmode="decimal">
                   </label>
                   <label>
                     <span data-i18n="common.weather">Weather</span>
@@ -231,7 +237,7 @@
               <section class="phase-card unloading-card" aria-labelledby="unloadingTitle">
                 <div class="phase-title">
                   <span class="phase-number">2</span>
-                  <h3 id="unloadingTitle" data-i18n="unloading.title">Unloading</h3>
+                  <h3 id="unloadingTitle"><span data-i18n="unloading.title">Unloading</span> <small data-i18n="unloading.qualifier">(Dry)</small></h3>
                 </div>
                 <div class="phase-fields">
                   <label>
@@ -239,8 +245,8 @@
                     <input id="unloadingAt" type="datetime-local" data-bay-field="unloading_at">
                   </label>
                   <label>
-                    <span data-i18n="unloading.weight">Dry weight (g)</span>
-                    <input id="unloadingWeight" type="number" data-bay-field="unloading_weight_g" min="0" max="1000000" step="0.1" inputmode="decimal">
+                    <span data-i18n="unloading.weight">Dry weight (kg)</span>
+                    <input id="unloadingWeight" type="number" data-bay-field="unloading_weight_kg" min="0" max="1000" step="0.01" inputmode="decimal">
                   </label>
                   <label>
                     <span data-i18n="common.weather">Weather</span>
@@ -280,9 +286,9 @@
                   <tr>
                     <th data-i18n="summary.bay">Bay</th>
                     <th data-i18n="summary.loaded">Loaded</th>
-                    <th data-i18n="summary.wet">Wet g</th>
+                    <th data-i18n="summary.wet">Wet kg</th>
                     <th data-i18n="summary.unloaded">Unloaded</th>
-                    <th data-i18n="summary.dry">Dry g</th>
+                    <th data-i18n="summary.dry">Dry kg</th>
                     <th data-i18n="summary.time">Drying time</th>
                     <th data-i18n="summary.photos">Photos</th>
                   </tr>
@@ -340,6 +346,19 @@
         </dl>
         <button id="newRecord" type="button" class="primary-button" data-i18n="success.another">Enter another record</button>
       </div>
+    </section>
+
+    <section id="recordsPanel" class="panel records-panel" aria-labelledby="recordsTitle">
+      <div class="records-header">
+        <div>
+          <p class="eyebrow" data-i18n="records.eyebrow">Saved data</p>
+          <h2 id="recordsTitle" data-i18n="records.title">Previous drying records</h2>
+          <p data-i18n="records.hint">Records created on this device can be reopened and updated.</p>
+        </div>
+        <button id="refreshRecords" type="button" data-i18n="records.refresh">Refresh</button>
+      </div>
+      <p id="recordsStatus" class="admin-status" aria-live="polite" data-i18n="records.loading">Loading records...</p>
+      <div id="recordsList" class="records-list"></div>
     </section>
   </main>
 
