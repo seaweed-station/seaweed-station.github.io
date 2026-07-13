@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <title data-i18n="meta.title">Seaweed Drying Record - Seaweed Station</title>
+  <link rel="stylesheet" href="./assets/css/drying.css">
+</head>
+<body class="drying-page" data-language="en">
+  <header class="app-header">
+    <div class="app-header-inner">
+      <div>
+        <p class="eyebrow" data-i18n="app.eyebrow">Seaweed station</p>
+        <h1 data-i18n="page.title">Seaweed Drying Record</h1>
+      </div>
+      <nav class="app-nav" aria-label="Page navigation" data-i18n-aria-label="nav.ariaLabel">
+        <a href="./" aria-current="page" data-i18n="nav.form">Drying form</a>
+        <a href="../login.html" data-i18n="nav.dashboard">Dashboard</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <section class="language-card" aria-label="Language" data-i18n-aria-label="language.ariaLabel">
+      <span class="language-card-label" data-i18n="language.label">Language:</span>
+      <div class="language-card-actions" role="group" aria-label="Choose language" data-i18n-aria-label="language.choose">
+        <button type="button" data-language-option="en" aria-pressed="true">English</button>
+        <button type="button" data-language-option="sw" aria-pressed="false">Kiswahili</button>
+      </div>
+    </section>
+
+    <section class="form-intro panel" aria-labelledby="introTitle">
+      <div>
+        <p class="eyebrow" data-i18n="intro.eyebrow">Seaweed drying monitoring</p>
+        <h2 id="introTitle" data-i18n="intro.title">One compact record for the complete drying cycle</h2>
+        <p data-i18n="intro.text">Enter each bay's loading and unloading details. The station and times connect this record to the logger data.</p>
+      </div>
+      <div class="intro-statuses" aria-label="Form information" data-i18n-aria-label="intro.infoLabel">
+        <span class="status-pill status-public" data-i18n="status.public">Public form</span>
+        <span id="draftStatus" class="status-pill status-muted" data-i18n="status.draft">Draft saves on this device</span>
+      </div>
+    </section>
+
+    <details class="table-reference panel">
+      <summary>
+        <span data-i18n="reference.show">Show dryer table bay reference</span>
+        <span class="reference-summary-note" data-i18n="reference.note">B1-B8</span>
+      </summary>
+      <div class="table-reference-body">
+        <img src="./assets/img/dryer-bay-reference.svg" alt="Dryer table showing bays B1 to B4 on the top row and B5 to B8 on the lower row" data-i18n-alt="reference.alt">
+        <p data-i18n="reference.caption">Front view: B1-B4 are the upper bays and B5-B8 are directly below them.</p>
+      </div>
+    </details>
+
+    <details id="dryingTrials" class="trials-panel panel">
+      <summary>
+        <span data-i18n="trials.title">Drying Trials</span>
+        <span class="reference-summary-note" data-i18n="trials.summary">Schedule and completion tracker</span>
+      </summary>
+      <div class="trials-body">
+        <div class="trials-intro">
+          <p data-i18n="trials.intro">Schedule each drying period and mark it complete when the cycle is finished.</p>
+          <span id="trialSyncStatus" class="status-pill status-muted" data-i18n="trials.loading">Loading trial plan...</span>
+        </div>
+
+        <section class="trial-group" aria-labelledby="batiTrialsTitle">
+          <div class="trial-group-head">
+            <div>
+              <h2 id="batiTrialsTitle" data-i18n="trials.batiTitle">Bati trial sets</h2>
+              <p data-i18n="trials.batiNote">Tables 1-3 rotate through all three configurations. Table 4 remains available for normal drying records.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="trial-table">
+              <thead>
+                <tr>
+                  <th data-i18n="trials.set">Trial set</th>
+                  <th data-i18n="trials.assignments">Table configurations</th>
+                  <th data-i18n="trials.startDate">Start date</th>
+                  <th data-i18n="trials.finishDate">Finish date</th>
+                  <th data-i18n="trials.complete">Complete</th>
+                </tr>
+              </thead>
+              <tbody id="batiTrialsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="trial-group" aria-labelledby="shanganiTrialsTitle">
+          <div class="trial-group-head">
+            <div>
+              <h2 id="shanganiTrialsTitle" data-i18n="trials.shanganiTitle">Shangani trial days</h2>
+              <p data-i18n="trials.shanganiNote">Table 1 completes three drying days in each configuration (nine cycles total).</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="trial-table">
+              <thead>
+                <tr>
+                  <th data-i18n="trials.day">Trial day</th>
+                  <th data-i18n="trials.assignments">Table configuration</th>
+                  <th data-i18n="trials.scheduled">Date scheduled</th>
+                  <th data-i18n="trials.complete">Complete</th>
+                </tr>
+              </thead>
+              <tbody id="shanganiTrialsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="trial-actions">
+          <p id="trialSaveStatus" class="admin-status" aria-live="polite"></p>
+          <button id="saveTrials" type="button" class="primary-button" data-i18n="trials.save">Save trial plan</button>
+        </div>
+      </div>
+    </details>
+
+    <section id="formPanel" class="panel drying-form-panel">
+      <form id="dryingForm" class="drying-form" novalidate>
+        <label class="public-form-trap" aria-hidden="true">
+          Website
+          <input id="website" type="text" tabindex="-1" autocomplete="off">
+        </label>
+
+        <fieldset>
+          <legend data-i18n="record.legend">Record details</legend>
+          <label>
+            <span data-i18n="record.location">Dryer location</span>
+            <select id="dryerLocation" data-draft required>
+              <option value="" data-i18n="record.selectLocation">Select location</option>
+              <option value="bati-table-1" data-i18n="location.bati1">Bati (Table 1)</option>
+              <option value="bati-table-2" data-i18n="location.bati2">Bati (Table 2)</option>
+              <option value="bati-table-3" data-i18n="location.bati3">Bati (Table 3)</option>
+              <option value="bati-table-4" data-i18n="location.bati4">Bati (Table 4)</option>
+              <option value="shangani-table-1" data-i18n="location.shangani1">Shangani (Table 1)</option>
+            </select>
+          </label>
+          <label>
+            <span data-i18n="record.enumeratorName">Enumerator name</span>
+            <input id="enumeratorName" type="text" data-draft maxlength="120" autocomplete="name" required>
+          </label>
+          <label>
+            <span data-i18n="record.idNumber">ID number</span>
+            <input id="enumeratorId" type="text" data-draft maxlength="80" autocomplete="off">
+          </label>
+          <label>
+            <span data-i18n="record.dateTime">Record date / time</span>
+            <input id="recordedAt" type="datetime-local" data-draft required>
+          </label>
+          <div class="gps-field wide-field">
+            <label>
+              <span data-i18n="gps.label">GPS location</span>
+              <span class="input-action-row">
+                <input id="gpsSummary" type="text" readonly placeholder="Not captured" data-i18n-placeholder="gps.notCaptured">
+                <button id="captureGps" type="button" data-i18n="gps.capture">Capture GPS</button>
+              </span>
+            </label>
+            <details class="manual-gps">
+              <summary data-i18n="gps.manual">Enter coordinates manually</summary>
+              <div class="manual-gps-grid">
+                <label>
+                  <span data-i18n="gps.latitude">Latitude</span>
+                  <input id="gpsLatitude" type="number" data-draft min="-90" max="90" step="any" inputmode="decimal">
+                </label>
+                <label>
+                  <span data-i18n="gps.longitude">Longitude</span>
+                  <input id="gpsLongitude" type="number" data-draft min="-180" max="180" step="any" inputmode="decimal">
+                </label>
+                <label>
+                  <span data-i18n="gps.accuracy">Accuracy (m)</span>
+                  <input id="gpsAccuracy" type="number" data-draft min="0" step="0.1" inputmode="decimal">
+                </label>
+              </div>
+            </details>
+            <p id="gpsStatus" class="field-hint" aria-live="polite" data-i18n="gps.hint">GPS is optional, but useful for confirming the dryer location.</p>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend data-i18n="configuration.legend">Table configuration</legend>
+          <label class="wide-field configuration-select-field">
+            <span data-i18n="configuration.label">Drying configuration</span>
+            <select id="dryingConfiguration" data-draft required>
+              <option value="" data-i18n="common.select">Select</option>
+              <option value="cover_open_back_open" data-i18n="configuration.openOpen">Cover Open / Back Open</option>
+              <option value="cover_down_back_closed" data-i18n="configuration.downClosed">Cover Down / Back Closed</option>
+              <option value="cover_down_back_open" data-i18n="configuration.downOpen">Cover Down / Back Open</option>
+            </select>
+          </label>
+          <label class="wide-field photo-field">
+            <span data-i18n="configuration.photos">Table overview photos - up to 5</span>
+            <input id="tablePhotos" type="file" accept="image/*" capture="environment" multiple>
+            <span class="field-hint" data-i18n="configuration.photoHint">Photograph the table and its configuration before or during the cycle.</span>
+            <span id="tablePhotoPreview" class="photo-preview"></span>
+          </label>
+        </fieldset>
+
+        <fieldset class="bay-fieldset">
+          <legend data-i18n="bay.legend">Bay records</legend>
+          <div class="bay-toolbar wide-field">
+            <div>
+              <p class="section-label" data-i18n="bay.choose">Choose a bay</p>
+              <p class="field-hint" data-i18n="bay.hint">Work through one bay at a time. Completed bays are marked below.</p>
+            </div>
+            <span id="bayProgress" class="status-pill">0 of 8 entered</span>
+          </div>
+
+          <div id="baySelector" class="bay-selector wide-field" role="tablist" aria-label="Dryer bays" data-i18n-aria-label="bay.ariaLabel"></div>
+
+          <section id="bayEditor" class="bay-editor wide-field" aria-labelledby="bayEditorTitle">
+            <div class="bay-editor-head">
+              <div>
+                <p class="eyebrow" data-i18n="bay.current">Current bay</p>
+                <h2 id="bayEditorTitle">Bay 1</h2>
+              </div>
+              <div class="metric-row" aria-live="polite">
+                <span><span data-i18n="bay.dryingTime">Drying time</span> <strong id="dryingDuration">-</strong></span>
+                <span><span data-i18n="bay.weightLoss">Weight loss</span> <strong id="weightLoss">-</strong></span>
+              </div>
+            </div>
+
+            <div class="phase-grid">
+              <section class="phase-card loading-card" aria-labelledby="loadingTitle">
+                <div class="phase-title">
+                  <span class="phase-number">1</span>
+                  <h3 id="loadingTitle" data-i18n="loading.title">Loading</h3>
+                </div>
+                <div class="phase-fields">
+                  <label>
+                    <span data-i18n="common.dateTime">Date / time</span>
+                    <input id="loadingAt" type="datetime-local" data-bay-field="loading_at">
+                  </label>
+                  <label>
+                    <span data-i18n="loading.weight">Wet weight (g)</span>
+                    <input id="loadingWeight" type="number" data-bay-field="loading_weight_g" min="0" max="1000000" step="0.1" inputmode="decimal">
+                  </label>
+                  <label>
+                    <span data-i18n="common.weather">Weather</span>
+                    <select id="loadingWeather" data-bay-field="loading_weather">
+                      <option value="" data-i18n="common.select">Select</option>
+                      <option value="sunny" data-i18n="weather.sunny">Sunny</option>
+                      <option value="cloudy" data-i18n="weather.cloudy">Cloudy</option>
+                      <option value="rainy" data-i18n="weather.rainy">Rainy</option>
+                      <option value="mixed" data-i18n="weather.mixed">Mixed</option>
+                    </select>
+                  </label>
+                  <label class="photo-field phase-photo">
+                    <span data-i18n="loading.photo">Loading photo</span>
+                    <input id="loadingPhoto" type="file" accept="image/*" capture="environment">
+                    <span id="loadingPhotoPreview" class="photo-preview"></span>
+                  </label>
+                </div>
+              </section>
+
+              <section class="phase-card unloading-card" aria-labelledby="unloadingTitle">
+                <div class="phase-title">
+                  <span class="phase-number">2</span>
+                  <h3 id="unloadingTitle" data-i18n="unloading.title">Unloading</h3>
+                </div>
+                <div class="phase-fields">
+                  <label>
+                    <span data-i18n="common.dateTime">Date / time</span>
+                    <input id="unloadingAt" type="datetime-local" data-bay-field="unloading_at">
+                  </label>
+                  <label>
+                    <span data-i18n="unloading.weight">Dry weight (g)</span>
+                    <input id="unloadingWeight" type="number" data-bay-field="unloading_weight_g" min="0" max="1000000" step="0.1" inputmode="decimal">
+                  </label>
+                  <label>
+                    <span data-i18n="common.weather">Weather</span>
+                    <select id="unloadingWeather" data-bay-field="unloading_weather">
+                      <option value="" data-i18n="common.select">Select</option>
+                      <option value="sunny" data-i18n="weather.sunny">Sunny</option>
+                      <option value="cloudy" data-i18n="weather.cloudy">Cloudy</option>
+                      <option value="rainy" data-i18n="weather.rainy">Rainy</option>
+                      <option value="mixed" data-i18n="weather.mixed">Mixed</option>
+                    </select>
+                  </label>
+                  <label class="photo-field phase-photo">
+                    <span data-i18n="unloading.photo">Unloading photo</span>
+                    <input id="unloadingPhoto" type="file" accept="image/*" capture="environment">
+                    <span id="unloadingPhotoPreview" class="photo-preview"></span>
+                  </label>
+                </div>
+              </section>
+            </div>
+
+            <label class="bay-notes">
+              <span data-i18n="bay.notes">Bay notes</span>
+              <textarea id="bayNotes" data-bay-field="notes" rows="2" maxlength="1000"></textarea>
+            </label>
+
+            <div class="bay-actions">
+              <button id="previousBay" type="button" data-i18n="bay.previous">Previous bay</button>
+              <button id="nextBay" type="button" class="primary-button" data-i18n="bay.next">Save &amp; next bay</button>
+            </div>
+          </section>
+
+          <details class="bay-summary-details wide-field">
+            <summary data-i18n="bay.review">Review all bay entries</summary>
+            <div class="table-wrap">
+              <table class="bay-summary-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="summary.bay">Bay</th>
+                    <th data-i18n="summary.loaded">Loaded</th>
+                    <th data-i18n="summary.wet">Wet g</th>
+                    <th data-i18n="summary.unloaded">Unloaded</th>
+                    <th data-i18n="summary.dry">Dry g</th>
+                    <th data-i18n="summary.time">Drying time</th>
+                    <th data-i18n="summary.photos">Photos</th>
+                  </tr>
+                </thead>
+                <tbody id="baySummaryBody"></tbody>
+              </table>
+            </div>
+          </details>
+        </fieldset>
+
+        <fieldset>
+          <legend data-i18n="observations.legend">Observations</legend>
+          <label class="wide-field">
+            <span data-i18n="observations.general">General observations / recommendations</span>
+            <textarea id="generalObservations" data-draft rows="3" maxlength="3000"></textarea>
+          </label>
+          <label class="wide-field">
+            <span data-i18n="observations.working">What is working with the table?</span>
+            <textarea id="workingWell" data-draft rows="3" maxlength="3000"></textarea>
+          </label>
+          <label class="wide-field">
+            <span data-i18n="observations.notWorking">What is not working with the table?</span>
+            <textarea id="notWorking" data-draft rows="3" maxlength="3000"></textarea>
+          </label>
+          <label class="confirmation-row wide-field">
+            <input id="confirmedAccurate" type="checkbox" data-draft required>
+            <span data-i18n="observations.confirm">I confirm this record is accurate.</span>
+          </label>
+        </fieldset>
+
+        <div class="form-footer">
+          <div>
+            <p class="privacy-note" data-i18n="footer.privacy">GPS and photos are stored privately with the drying record.</p>
+            <p id="saveStatus" class="admin-status" aria-live="polite"></p>
+          </div>
+          <div class="button-row">
+            <button id="clearForm" type="button" data-i18n="action.clear">Clear</button>
+            <button id="submitForm" class="primary-button" type="submit" data-i18n="action.submit">Submit drying record</button>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <section id="successPanel" class="panel success-panel" hidden aria-live="polite">
+      <div class="success-icon" aria-hidden="true">&#10003;</div>
+      <div>
+        <p class="eyebrow" data-i18n="success.eyebrow">Record received</p>
+        <h2 data-i18n="success.title">Drying record submitted</h2>
+        <p id="successSummary"></p>
+        <dl class="receipt-grid">
+          <div><dt data-i18n="success.receipt">Receipt</dt><dd id="receiptNumber">-</dd></div>
+          <div><dt data-i18n="success.location">Location</dt><dd id="receiptLocation">-</dd></div>
+          <div><dt data-i18n="success.bays">Bays</dt><dd id="receiptBays">-</dd></div>
+          <div><dt data-i18n="success.photos">Photos</dt><dd id="receiptPhotos">-</dd></div>
+        </dl>
+        <button id="newRecord" type="button" class="primary-button" data-i18n="success.another">Enter another record</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./assets/js/drying_form.js"></script>
+</body>
+</html>

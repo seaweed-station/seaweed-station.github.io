@@ -1,0 +1,155 @@
+export const DRYING_FORM_CONFIG = Object.freeze({
+  appName: "Seaweed Station",
+  supabaseUrl: "https://iyoihlwtvdshtlzjdoed.supabase.co",
+  supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5b2lobHd0dmRzaHRsempkb2VkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MTA4MTksImV4cCI6MjA5MjI4NjgxOX0.i3jy8WlSF72v7Ypb2ulkL12EJaDfGcDYbdiC--PgjOc",
+  photoBucket: "seaweed-drying-photos",
+  submitRpc: "submit_seaweed_drying_observation",
+  attachPhotosRpc: "attach_seaweed_drying_photos",
+  getTrialsRpc: "get_seaweed_drying_trial_schedule",
+  updateTrialsRpc: "update_seaweed_drying_trial_schedule",
+  draftStorageKey: "seaweed_drying_form_draft_v1",
+  languageStorageKey: "seaweed_drying_language",
+  clientVersion: "2026-07-13.3",
+  maxPhotoBytes: 8 * 1024 * 1024,
+  locations: [
+    {
+      value: "bati-table-1",
+      label: "Bati (Table 1)",
+      translationKey: "location.bati1",
+      stationUid: "ST-0102",
+      bayCount: 8
+    },
+    {
+      value: "bati-table-2",
+      label: "Bati (Table 2)",
+      translationKey: "location.bati2",
+      stationUid: "ST-0102",
+      bayCount: 8
+    },
+    {
+      value: "bati-table-3",
+      label: "Bati (Table 3)",
+      translationKey: "location.bati3",
+      stationUid: "ST-0102",
+      bayCount: 8
+    },
+    {
+      value: "bati-table-4",
+      label: "Bati (Table 4)",
+      translationKey: "location.bati4",
+      stationUid: "ST-0102",
+      bayCount: 8
+    },
+    {
+      value: "shangani-table-1",
+      label: "Shangani (Table 1)",
+      translationKey: "location.shangani1",
+      stationUid: "ST-0003",
+      bayCount: 8
+    }
+  ],
+  trials: [
+    {
+      trialCode: "BATI-SET-1",
+      site: "bati",
+      trialNumber: 1,
+      assignments: [
+        { table: "Bati (Table 1)", configuration: "cover_open_back_open" },
+        { table: "Bati (Table 2)", configuration: "cover_down_back_closed" },
+        { table: "Bati (Table 3)", configuration: "cover_down_back_open" }
+      ]
+    },
+    {
+      trialCode: "BATI-SET-2",
+      site: "bati",
+      trialNumber: 2,
+      assignments: [
+        { table: "Bati (Table 1)", configuration: "cover_down_back_closed" },
+        { table: "Bati (Table 2)", configuration: "cover_down_back_open" },
+        { table: "Bati (Table 3)", configuration: "cover_open_back_open" }
+      ]
+    },
+    {
+      trialCode: "BATI-SET-3",
+      site: "bati",
+      trialNumber: 3,
+      assignments: [
+        { table: "Bati (Table 1)", configuration: "cover_down_back_open" },
+        { table: "Bati (Table 2)", configuration: "cover_open_back_open" },
+        { table: "Bati (Table 3)", configuration: "cover_down_back_closed" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-1",
+      site: "shangani",
+      trialNumber: 1,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_open_back_open" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-2",
+      site: "shangani",
+      trialNumber: 2,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_down_back_closed" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-3",
+      site: "shangani",
+      trialNumber: 3,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_down_back_open" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-4",
+      site: "shangani",
+      trialNumber: 4,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_open_back_open" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-5",
+      site: "shangani",
+      trialNumber: 5,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_down_back_closed" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-6",
+      site: "shangani",
+      trialNumber: 6,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_down_back_open" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-7",
+      site: "shangani",
+      trialNumber: 7,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_open_back_open" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-8",
+      site: "shangani",
+      trialNumber: 8,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_down_back_closed" }
+      ]
+    },
+    {
+      trialCode: "SHANGANI-DAY-9",
+      site: "shangani",
+      trialNumber: 9,
+      assignments: [
+        { table: "Shangani (Table 1)", configuration: "cover_down_back_open" }
+      ]
+    }
+  ]
+});

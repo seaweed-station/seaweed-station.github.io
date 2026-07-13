@@ -116,6 +116,18 @@
   }
   .error.show { display: block; }
 
+  .public-form-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 18px;
+    color: #0f766e;
+    font-size: 0.82rem;
+    font-weight: 650;
+    text-decoration: none;
+  }
+  .public-form-link:hover { text-decoration: underline; }
+
   .water-transition {
     position: fixed;
     inset: 0;
@@ -176,6 +188,7 @@
     <button class="btn" type="submit">Enter Dashboard</button>
     <div class="error" id="errMsg">Incorrect password. Please try again.</div>
   </form>
+  <a class="public-form-link" href="drying/">Open the public seaweed drying form</a>
 </div>
 <div class="water-transition" id="waterTransition" aria-hidden="true"></div>
 
