@@ -1657,8 +1657,12 @@ input[readonly] {
 
   .print-page {
     width: 100%;
+    height: 265mm;
+    max-height: 265mm;
     overflow: hidden;
     background: #fff !important;
+    break-inside: avoid-page;
+    page-break-inside: avoid;
   }
 
   .print-page:not(:last-child) {
@@ -1873,7 +1877,9 @@ input[readonly] {
 
   .print-reference-page {
     display: flex;
-    min-height: 275mm;
+    min-height: 0;
+    height: 265mm;
+    max-height: 265mm;
     flex-direction: column;
     gap: 4mm;
   }
