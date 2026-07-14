@@ -14,7 +14,7 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   recordTokensStorageKey: "seaweed_drying_record_tokens_v1",
   enumeratorStorageKey: "seaweed_drying_enumerator_v1",
   languageStorageKey: "seaweed_drying_language",
-  clientVersion: "2026-07-14.6",
+  clientVersion: "2026-07-14.7",
   maxPhotoBytes: 8 * 1024 * 1024,
   locations: [
     {
@@ -70,7 +70,8 @@ export const DRYING_FORM_CONFIG = Object.freeze({
       assignments: [
         { table: "Bati (Table 1)", configuration: "cover_open_back_open" },
         { table: "Bati (Table 2)", configuration: "cover_down_back_closed" },
-        { table: "Bati (Table 3)", configuration: "cover_down_back_open" }
+        { table: "Bati (Table 3)", configuration: "cover_down_back_open" },
+        { table: "Solar Shed", collectionOnly: true }
       ]
     },
     {
@@ -82,7 +83,8 @@ export const DRYING_FORM_CONFIG = Object.freeze({
       assignments: [
         { table: "Bati (Table 1)", configuration: "cover_down_back_closed" },
         { table: "Bati (Table 2)", configuration: "cover_down_back_open" },
-        { table: "Bati (Table 3)", configuration: "cover_open_back_open" }
+        { table: "Bati (Table 3)", configuration: "cover_open_back_open" },
+        { table: "Solar Shed", collectionOnly: true }
       ]
     },
     {
@@ -94,7 +96,8 @@ export const DRYING_FORM_CONFIG = Object.freeze({
       assignments: [
         { table: "Bati (Table 1)", configuration: "cover_down_back_open" },
         { table: "Bati (Table 2)", configuration: "cover_open_back_open" },
-        { table: "Bati (Table 3)", configuration: "cover_down_back_closed" }
+        { table: "Bati (Table 3)", configuration: "cover_down_back_closed" },
+        { table: "Solar Shed", collectionOnly: true }
       ]
     }
   ]

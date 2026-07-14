@@ -661,19 +661,27 @@ function renderTrialSite(container) {
       tableName.textContent = tableLabel(assignment.table);
       const configuration = document.createElement("span");
       configuration.className = "trial-config-pills";
-      configuration.setAttribute("aria-label", configurationLabel(assignment.configuration));
-      configurationParts(assignment.configuration).forEach((part, index) => {
-        if (index) {
-          const separator = document.createElement("span");
-          separator.className = "config-separator";
-          separator.textContent = "/";
-          configuration.append(separator);
-        }
-        const pill = document.createElement("span");
-        pill.className = `config-pill ${part.className}`;
-        pill.textContent = part.text;
-        configuration.append(pill);
-      });
+      if (assignment.collectionOnly) {
+        const collectionPill = document.createElement("span");
+        collectionPill.className = "config-pill trial-collection-pill";
+        collectionPill.textContent = t("trials.collectionOnly");
+        configuration.setAttribute("aria-label", collectionPill.textContent);
+        configuration.append(collectionPill);
+      } else {
+        configuration.setAttribute("aria-label", configurationLabel(assignment.configuration));
+        configurationParts(assignment.configuration).forEach((part, index) => {
+          if (index) {
+            const separator = document.createElement("span");
+            separator.className = "config-separator";
+            separator.textContent = "/";
+            configuration.append(separator);
+          }
+          const pill = document.createElement("span");
+          pill.className = `config-pill ${part.className}`;
+          pill.textContent = part.text;
+          configuration.append(pill);
+        });
+      }
       item.append(tableName, configuration);
       assignmentList.append(item);
     });
