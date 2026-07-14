@@ -195,7 +195,8 @@ h1 {
 }
 
 .app-nav a,
-.app-nav .header-new-record {
+.app-nav .header-new-record,
+.app-nav .header-print {
   min-height: 30px;
   display: inline-flex;
   align-items: center;
@@ -1289,7 +1290,8 @@ input[readonly] {
   }
 
   .app-nav a,
-  .app-nav .header-new-record {
+  .app-nav .header-new-record,
+  .app-nav .header-print {
     flex: 1;
     justify-content: center;
     min-height: 44px;
@@ -1401,5 +1403,234 @@ input[readonly] {
   *::after {
     scroll-behavior: auto !important;
     transition: none !important;
+  }
+}
+
+@page {
+  size: A4 portrait;
+  margin: 11mm;
+}
+
+@media print {
+  :root {
+    --bg: #fff;
+    --panel: #fff;
+    --panel-soft: #fff;
+    --text: #000;
+    --text-sec: #000;
+    --text-muted: #000;
+    --border: #555;
+    --border-soft: #999;
+    --accent: #000;
+    --danger: #000;
+    --warn: #000;
+    --success: #000;
+    --shadow: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    color: #000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    print-color-adjust: economy;
+    -webkit-print-color-adjust: economy;
+  }
+
+  html,
+  body {
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+    background: #fff !important;
+  }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8.5pt;
+    line-height: 1.28;
+  }
+
+  .app-header {
+    border-bottom: 1.5pt solid #000;
+    background: #fff !important;
+    backdrop-filter: none;
+  }
+
+  .app-header-inner,
+  .app-shell {
+    width: 100%;
+    margin: 0;
+  }
+
+  .app-header-inner {
+    min-height: 0;
+    padding: 0 0 3mm;
+  }
+
+  .app-shell {
+    padding: 3mm 0 0;
+  }
+
+  .app-header h1 {
+    font-size: 15pt;
+  }
+
+  .eyebrow {
+    font-size: 7pt;
+  }
+
+  .app-nav,
+  .language-card,
+  .table-reference,
+  .trials-panel,
+  #successPanel,
+  .records-panel,
+  .public-form-trap,
+  .remember-enumerator,
+  .bay-toolbar,
+  .bay-selector,
+  .bay-editor,
+  .form-footer,
+  .field-hint,
+  input[type="file"] {
+    display: none !important;
+  }
+
+  #formPanel,
+  #formPanel[hidden] {
+    display: block !important;
+    padding: 0;
+    border: 0;
+    background: #fff !important;
+  }
+
+  .drying-form {
+    gap: 3mm;
+  }
+
+  .active-record-banner {
+    padding: 2mm 2.5mm;
+    border: 1px solid #000;
+    background: #fff !important;
+  }
+
+  .drying-form fieldset {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2.5mm;
+    padding: 3mm;
+    border: 1px solid #000;
+    border-radius: 0;
+    background: #fff !important;
+    break-inside: avoid-page;
+  }
+
+  .drying-form fieldset.bay-fieldset {
+    break-inside: auto;
+  }
+
+  .drying-form legend {
+    padding: 0 1.5mm;
+    font-size: 9pt;
+  }
+
+  .drying-form label,
+  .section-label {
+    font-size: 7pt;
+  }
+
+  select,
+  input[type="text"],
+  input[type="number"],
+  input[type="datetime-local"],
+  textarea {
+    min-height: 7mm;
+    padding: 1.2mm 1.8mm;
+    border: 1px solid #555;
+    border-radius: 0;
+    background: #fff !important;
+    font-size: 8pt;
+  }
+
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  textarea {
+    min-height: 10mm;
+    overflow: hidden;
+    resize: none;
+  }
+
+  input[type="checkbox"] {
+    accent-color: #000;
+  }
+
+  .input-action-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .input-action-row button {
+    display: none !important;
+  }
+
+  .confirmation-row {
+    padding: 2mm;
+    border: 1px solid #555;
+    border-radius: 0;
+    background: #fff !important;
+  }
+
+  .bay-summary-details,
+  .bay-summary-details > .table-wrap {
+    display: block !important;
+  }
+
+  .bay-summary-details > summary {
+    display: none;
+  }
+
+  .bay-summary-details > .table-wrap {
+    overflow: visible;
+    margin: 0;
+    border: 1px solid #000;
+    border-radius: 0;
+  }
+
+  .bay-summary-table {
+    min-width: 0;
+    table-layout: fixed;
+    font-size: 7pt;
+  }
+
+  .bay-summary-table th,
+  .bay-summary-table td {
+    padding: 1.3mm 1.5mm;
+    border: 1px solid #999;
+    white-space: normal;
+  }
+
+  .bay-summary-table th {
+    background: #fff !important;
+    font-size: 6.5pt;
+  }
+
+  .bay-summary-table button {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: #fff !important;
+    font-size: inherit;
+  }
+
+  .photo-chip {
+    border: 1px solid #555;
+    background: #fff !important;
+  }
+
+  .photo-chip img {
+    filter: grayscale(100%) contrast(105%);
   }
 }

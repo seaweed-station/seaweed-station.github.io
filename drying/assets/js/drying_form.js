@@ -41,6 +41,7 @@ const els = {
   previousBay: $("previousBay"),
   nextBay: $("nextBay"),
   baySummaryBody: $("baySummaryBody"),
+  baySummaryDetails: document.querySelector(".bay-summary-details"),
   generalObservations: $("generalObservations"),
   workingWell: $("workingWell"),
   notWorking: $("notWorking"),
@@ -56,6 +57,7 @@ const els = {
   receiptPhotos: $("receiptPhotos"),
   newRecord: $("newRecord"),
   topNewRecord: $("topNewRecord"),
+  topPrintPdf: $("topPrintPdf"),
   activeRecordBanner: $("activeRecordBanner"),
   activeReceiptNumber: $("activeReceiptNumber"),
   activeRecordStatus: $("activeRecordStatus"),
@@ -194,6 +196,7 @@ function bindEvents() {
   els.clearForm.addEventListener("click", clearFormWithConfirmation);
   els.newRecord.addEventListener("click", resetForNewRecord);
   els.topNewRecord.addEventListener("click", startNewRecord);
+  els.topPrintPdf.addEventListener("click", printForm);
   els.refreshRecords.addEventListener("click", loadRecords);
   els.recordsRaId.addEventListener("input", () => {
     if (state.recordsStatusKey === "records.enterRaId") {
@@ -209,6 +212,37 @@ function bindEvents() {
   });
   els.form.addEventListener("submit", submitForm);
   document.addEventListener("seaweed-drying-language-change", renderLanguageDependentContent);
+  window.addEventListener("beforeprint", preparePrintView);
+  window.addEventListener("afterprint", restorePrintView);
+}
+
+function printForm() {
+  preparePrintView();
+  window.print();
+}
+
+function preparePrintView() {
+  captureBayEditor();
+  renderBaySummary();
+  if (!("printWasOpen" in els.baySummaryDetails.dataset)) {
+    els.baySummaryDetails.dataset.printWasOpen = String(els.baySummaryDetails.open);
+  }
+  els.baySummaryDetails.open = true;
+  document.querySelectorAll("textarea").forEach((control) => {
+    if (!("printHeight" in control.dataset)) control.dataset.printHeight = control.style.height;
+    control.style.height = `${Math.max(control.scrollHeight, 42)}px`;
+  });
+}
+
+function restorePrintView() {
+  if ("printWasOpen" in els.baySummaryDetails.dataset) {
+    els.baySummaryDetails.open = els.baySummaryDetails.dataset.printWasOpen === "true";
+    delete els.baySummaryDetails.dataset.printWasOpen;
+  }
+  document.querySelectorAll("textarea[data-print-height]").forEach((control) => {
+    control.style.height = control.dataset.printHeight || "";
+    delete control.dataset.printHeight;
+  });
 }
 
 function renderLanguageDependentContent() {
