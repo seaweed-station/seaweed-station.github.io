@@ -656,6 +656,8 @@ input[type="text"],
 input[type="number"],
 input[type="datetime-local"],
 textarea {
+  min-width: 0;
+  max-width: 100%;
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1280,6 +1282,16 @@ input[readonly] {
   background: #fffdf3;
 }
 
+.required-field.is-filled {
+  border-color: var(--border);
+  background: #fff;
+}
+
+.required-field.is-filled input,
+.required-field.is-filled select {
+  background: #fff;
+}
+
 .weight-split-preview {
   min-height: 17px;
   color: #17685f;
@@ -1293,6 +1305,10 @@ input[readonly] {
 .camera-field input[type="file"] {
   border-style: dashed;
   border-color: #cda93d;
+}
+
+.camera-field.is-filled input[type="file"] {
+  border-color: var(--border);
 }
 
 .camera-symbol {
@@ -1398,6 +1414,11 @@ input[readonly] {
 
 .batch-bay-button.is-selected::after {
   background: #d7fff5;
+}
+
+.bay-picker-field.is-filled .batch-bay-button:not(.is-selected) {
+  border-color: var(--border);
+  background: #fff;
 }
 
 .batch-save-row {

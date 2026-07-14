@@ -115,6 +115,7 @@ function initialize() {
   renderTrials();
   loadTrialSchedule();
   loadRecords();
+  updateRequiredFieldStates();
 }
 
 function bindEvents() {
@@ -158,6 +159,9 @@ function bindEvents() {
     });
     captureElement(phase, "Save").addEventListener("click", () => saveBatchCapture(phase));
   });
+
+  els.form.addEventListener("input", updateRequiredFieldStates);
+  els.form.addEventListener("change", updateRequiredFieldStates);
 
   const updateTrial = async (event) => {
     const control = event.target.closest("[data-trial-code]");
@@ -323,6 +327,30 @@ function sanitizeSavedPhotos(value) {
   return { table, bays };
 }
 
+function updateRequiredFieldStates() {
+  document.querySelectorAll(".required-field").forEach((field) => {
+    let isFilled;
+    if (field.classList.contains("bay-picker-field")) {
+      const phase = field.querySelector("#loadingBaySelector") ? "loading" : "unloading";
+      isFilled = state.selectedBays[phase].length > 0;
+    } else {
+      const controls = [...field.querySelectorAll("input, select, textarea")];
+      isFilled = controls.length > 0 && controls.every((control) => {
+        if (control.disabled) return true;
+        if (control.type === "file") {
+          if (control === els.tablePhotos) {
+            return control.files.length > 0 || state.savedPhotos.table > 0;
+          }
+          return control.files.length > 0;
+        }
+        if (control.type === "checkbox" || control.type === "radio") return control.checked;
+        return String(control.value ?? "").trim() !== "";
+      });
+    }
+    field.classList.toggle("is-filled", isFilled);
+  });
+}
+
 function sanitizeSelectedBays(value, bayCount = 8) {
   const clean = (phase) => [...new Set(Array.isArray(value?.[phase]) ? value[phase] : [])]
     .map(Number)
@@ -406,6 +434,7 @@ function renderAll() {
   renderCapturePhotoPreview("unloading");
   renderPhotoPreview(els.tablePhotoPreview, state.files.table, state.savedPhotos.table);
   renderActiveRecordBanner();
+  updateRequiredFieldStates();
 }
 
 function renderActiveRecordBanner() {
@@ -449,6 +478,7 @@ function toggleCaptureBay(phase, bayNumber) {
   state.selectedBays[phase] = [...selected].sort((a, b) => a - b);
   renderBatchBaySelectors();
   renderWeightSplit(phase);
+  updateRequiredFieldStates();
   scheduleDraftSave();
 }
 
