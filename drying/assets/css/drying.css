@@ -1405,7 +1405,10 @@ input[readonly] {
   background: #e2a83d;
 }
 
-.batch-bay-button.is-selected {
+.batch-bay-button.is-selected,
+.batch-bay-button.is-selected:hover:not(:disabled),
+.batch-bay-button.is-selected:focus-visible,
+.batch-bay-button.is-selected:active {
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
@@ -1476,7 +1479,7 @@ input[readonly] {
 
 .records-table {
   width: 100%;
-  min-width: 880px;
+  min-width: 760px;
   border-collapse: collapse;
   font-size: 0.75rem;
 }

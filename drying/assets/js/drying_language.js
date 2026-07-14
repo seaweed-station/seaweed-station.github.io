@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.9";
 
 const packs = {
   en: {
@@ -192,11 +192,11 @@ const packs = {
       "records.bays": "{count} bay(s)",
       "records.receiptHeading": "Receipt",
       "records.tableHeading": "Dryer table",
-      "records.recordedHeading": "Recorded",
+      "records.recordedHeading": "Date",
       "records.statusHeading": "Status",
       "records.baysHeading": "Bays",
       "records.updatedHeading": "Updated",
-      "records.actionHeading": "Action",
+      "records.actionHeading": "Edit",
       "records.edit": "Edit record",
       "records.unlockEdit": "Unlock & edit",
       "records.unlockHint": "Enter the matching RA / ID number above to edit this record.",
@@ -401,11 +401,11 @@ const packs = {
       "records.bays": "Bay {count}",
       "records.receiptHeading": "Risiti",
       "records.tableHeading": "Meza ya kikaushio",
-      "records.recordedHeading": "Ilirekodiwa",
+      "records.recordedHeading": "Tarehe",
       "records.statusHeading": "Hali",
       "records.baysHeading": "Bay",
       "records.updatedHeading": "Ilisasishwa",
-      "records.actionHeading": "Hatua",
+      "records.actionHeading": "Hariri",
       "records.edit": "Hariri rekodi",
       "records.unlockEdit": "Fungua na uhariri",
       "records.unlockHint": "Weka namba ya RA / kitambulisho inayolingana hapo juu ili kuhariri rekodi hii.",

@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.9";
 import {
   configurationLabel,
   configurationParts,
@@ -6,7 +6,7 @@ import {
   initDryingLanguage,
   t,
   tableLabel
-} from "./drying_language.js";
+} from "./drying_language.js?v=20260714.9";
 
 const $ = (id) => document.getElementById(id);
 
@@ -541,6 +541,7 @@ function renderBaySummary() {
       displayNumber(bay.loading_weight_kg, 2),
       formatLocalInput(bay.unloading_at),
       displayNumber(bay.unloading_weight_kg, 2),
+      weightLossLabel(bay),
       dryingDurationLabel(bay),
       `${savedPhotos.loading + savedPhotos.unloading}`
     ];
@@ -876,13 +877,12 @@ function createRecordRow(record) {
   edit.title = t(access ? "records.edit" : "records.unlockHint");
   edit.dataset.editReceipt = record.receipt_number;
   const values = [
-    record.receipt_number || "-",
+    edit,
+    formatRecordDay(record.recorded_at),
     tableLabel(record.table_location),
-    formatRecordDate(record.recorded_at),
     status,
     bayText,
-    formatRecordDate(record.updated_at),
-    edit
+    formatRecordDate(record.updated_at)
   ];
   values.forEach((value) => {
     const cell = document.createElement("td");
@@ -1607,6 +1607,17 @@ function formatRecordDate(value) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit"
+  }).format(date);
+}
+
+function formatRecordDay(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
+  return new Intl.DateTimeFormat(getLocale(), {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
   }).format(date);
 }
 
