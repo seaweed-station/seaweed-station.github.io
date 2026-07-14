@@ -14,7 +14,7 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   recordTokensStorageKey: "seaweed_drying_record_tokens_v1",
   enumeratorStorageKey: "seaweed_drying_enumerator_v1",
   languageStorageKey: "seaweed_drying_language",
-  clientVersion: "2026-07-14.10",
+  clientVersion: "2026-07-14.11",
   maxPhotoBytes: 8 * 1024 * 1024,
   locations: [
     {

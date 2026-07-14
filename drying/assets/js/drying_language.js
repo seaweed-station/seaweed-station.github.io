@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.10";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.11";
 
 const packs = {
   en: {
@@ -105,6 +105,10 @@ const packs = {
       "capture.unloadingPhotos": "Unloading photo",
       "capture.saveLoading": "Save loading capture",
       "capture.saveUnloading": "Save unloading capture",
+      "capture.updateLoading": "Update loading capture",
+      "capture.updateUnloading": "Update unloading capture",
+      "capture.editLoading": "Edit {bays} loading capture",
+      "capture.editUnloading": "Edit {bays} unloading capture",
       "capture.savedLoading": "Saved loading captures",
       "capture.savedUnloading": "Saved unloading captures",
       "capture.empty": "No captures saved yet.",
@@ -314,6 +318,10 @@ const packs = {
       "capture.unloadingPhotos": "Picha ya kupakua",
       "capture.saveLoading": "Hifadhi rekodi ya kupakia",
       "capture.saveUnloading": "Hifadhi rekodi ya kupakua",
+      "capture.updateLoading": "Sasisha rekodi ya kupakia",
+      "capture.updateUnloading": "Sasisha rekodi ya kupakua",
+      "capture.editLoading": "Hariri rekodi ya kupakia ya {bays}",
+      "capture.editUnloading": "Hariri rekodi ya kupakua ya {bays}",
       "capture.savedLoading": "Rekodi za kupakia zilizohifadhiwa",
       "capture.savedUnloading": "Rekodi za kupakua zilizohifadhiwa",
       "capture.empty": "Bado hakuna rekodi iliyohifadhiwa.",

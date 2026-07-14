@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.10";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.11";
 import {
   configurationLabel,
   configurationParts,
@@ -6,7 +6,7 @@ import {
   initDryingLanguage,
   t,
   tableLabel
-} from "./drying_language.js?v=20260714.10";
+} from "./drying_language.js?v=20260714.11";
 
 const $ = (id) => document.getElementById(id);
 
@@ -81,6 +81,7 @@ function freshState() {
     bayCount: 8,
     bays: {},
     selectedBays: { loading: [], unloading: [] },
+    editingCaptureBays: { loading: [], unloading: [] },
     files: { table: [], captures: { loading: [], unloading: [] } },
     submissionId: null,
     uploadToken: null,
@@ -156,6 +157,11 @@ function bindEvents() {
     captureElement(phase, "BaySelector").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-bay]");
       if (button) toggleCaptureBay(phase, Number(button.dataset.bay));
+    });
+    captureElement(phase, "List").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-edit-bays]");
+      if (!button) return;
+      editCaptureGroup(phase, button.dataset.editBays.split(",").map(Number));
     });
     captureElement(phase, "Save").addEventListener("click", () => saveBatchCapture(phase));
   });
@@ -392,7 +398,10 @@ function saveDraft() {
 function applyLocationSelection(resetCurrentBay) {
   const location = selectedLocation();
   if (location) state.bayCount = location.bayCount;
-  if (resetCurrentBay) state.selectedBays = { loading: [], unloading: [] };
+  if (resetCurrentBay) {
+    state.selectedBays = { loading: [], unloading: [] };
+    state.editingCaptureBays = { loading: [], unloading: [] };
+  }
   state.selectedBays = sanitizeSelectedBays(state.selectedBays, state.bayCount);
   renderAll();
 }
@@ -434,6 +443,8 @@ function renderAll() {
   renderCapturePhotoPreview("unloading");
   renderPhotoPreview(els.tablePhotoPreview, state.files.table, state.savedPhotos.table);
   renderActiveRecordBanner();
+  renderCaptureEditingState("loading");
+  renderCaptureEditingState("unloading");
   updateRequiredFieldStates();
 }
 
@@ -587,8 +598,11 @@ function renderCaptureLists() {
     groups.forEach(({ bayNumbers, bay }) => {
       const row = document.createElement("div");
       row.className = "capture-list-row";
+      const content = document.createElement("div");
+      content.className = "capture-list-content";
       const bays = document.createElement("strong");
-      bays.textContent = bayNumbers.map((number) => `B${number}`).join(", ");
+      const bayLabel = bayNumbers.map((number) => `B${number}`).join(", ");
+      bays.textContent = bayLabel;
       const details = document.createElement("span");
       const weather = bay[`${phase}_weather`]
         ? t(`weather.${bay[`${phase}_weather`]}`)
@@ -597,7 +611,7 @@ function renderCaptureLists() {
       const weightSummary = perBayWeight === null
         ? "-"
         : t("capture.savedWeightSplit", {
-          total: displayNumber(perBayWeight * bayNumbers.length, 5),
+          total: displayNumber(reconstructedTotalWeight(perBayWeight, bayNumbers.length), 2),
           perBay: displayNumber(perBayWeight, 5)
         });
       details.textContent = [
@@ -605,10 +619,57 @@ function renderCaptureLists() {
         weightSummary,
         weather
       ].join(" · ");
-      row.append(bays, details);
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "capture-edit-button";
+      edit.dataset.editBays = bayNumbers.join(",");
+      edit.textContent = "\u270e";
+      edit.title = t(`capture.edit${phase[0].toUpperCase()}${phase.slice(1)}`, { bays: bayLabel });
+      edit.setAttribute("aria-label", edit.title);
+      content.append(bays, details);
+      row.append(content, edit);
       container.append(row);
     });
   });
+}
+
+function reconstructedTotalWeight(perBayWeight, bayCount) {
+  const perBay = nullableNumber(perBayWeight);
+  if (perBay === null || !Number.isInteger(bayCount) || bayCount < 1) return null;
+  return Math.round(perBay * bayCount * 100) / 100;
+}
+
+function editCaptureGroup(phase, bayNumbers) {
+  const validBays = [...new Set(bayNumbers)]
+    .filter((bayNumber) => Number.isInteger(bayNumber) && bayNumber >= 1 && bayNumber <= state.bayCount)
+    .sort((a, b) => a - b);
+  if (!validBays.length) return;
+  const bay = ensureBay(validBays[0]);
+  const perBayWeight = nullableNumber(bay[`${phase}_weight_kg`]);
+  const totalWeight = reconstructedTotalWeight(perBayWeight, validBays.length);
+  captureElement(phase, "At").value = bay[`${phase}_at`] || "";
+  captureElement(phase, "Weight").value = totalWeight === null ? "" : String(totalWeight);
+  captureElement(phase, "Weather").value = bay[`${phase}_weather`] || "";
+  captureElement(phase, "Photos").value = "";
+  state.files.captures[phase] = [];
+  state.selectedBays[phase] = validBays;
+  state.editingCaptureBays[phase] = validBays;
+  renderAll();
+  scheduleDraftSave();
+  captureElement(phase, "Weight").closest(".phase-fields")?.scrollIntoView({
+    behavior: preferredScrollBehavior(),
+    block: "center"
+  });
+}
+
+function renderCaptureEditingState(phase) {
+  const editing = state.editingCaptureBays[phase].length > 0;
+  const card = captureElement(phase, "Save").closest(".batch-capture-card");
+  card?.classList.toggle("is-editing", editing);
+  const key = editing
+    ? `capture.update${phase[0].toUpperCase()}${phase.slice(1)}`
+    : `capture.save${phase[0].toUpperCase()}${phase.slice(1)}`;
+  captureElement(phase, "Save").textContent = t(key);
 }
 
 function captureCardData(phase) {
@@ -662,6 +723,7 @@ function clearCaptureCard(phase) {
   captureElement(phase, "Weather").value = "";
   captureElement(phase, "Photos").value = "";
   state.selectedBays[phase] = [];
+  state.editingCaptureBays[phase] = [];
   state.files.captures[phase] = [];
 }
 
