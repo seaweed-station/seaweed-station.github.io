@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.11";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.12";
 
 const packs = {
   en: {
@@ -185,6 +185,21 @@ const packs = {
       "records.raIdPlaceholder": "Enter the ID used on the record",
       "records.raIdHint": "To edit a record from another phone or browser, enter the same RA / ID number used when it was created.",
       "records.refresh": "Refresh",
+      "records.deleteRecords": "Delete records",
+      "records.adminTitle": "Admin deletion",
+      "records.adminHint": "Enter the dashboard admin password to select drying records for deletion.",
+      "records.adminPassword": "Admin password",
+      "records.invalidAdminPassword": "Incorrect admin password.",
+      "records.continueDelete": "Continue",
+      "records.cancelDelete": "Cancel",
+      "records.selectHeading": "Select",
+      "records.selectRecord": "Select {date}, {table} for deletion",
+      "records.selectedCount": "{count} selected",
+      "records.deleteSelected": "Delete selected",
+      "records.deleting": "Deleting...",
+      "records.confirmDelete": "Permanently delete {count} selected drying record(s)? This cannot be undone.",
+      "records.deleted": "Deleted {count} drying record(s).",
+      "records.deleteFailed": "Records could not be deleted: {message}",
       "records.loading": "Loading records...",
       "records.loaded": "Showing the latest {count} record(s).",
       "records.empty": "No drying records have been saved yet.",
@@ -398,6 +413,21 @@ const packs = {
       "records.raIdPlaceholder": "Weka namba iliyotumika kwenye rekodi",
       "records.raIdHint": "Ili kuhariri rekodi kutoka simu au kivinjari kingine, weka namba ileile ya RA / kitambulisho iliyotumika ilipoundwa.",
       "records.refresh": "Onyesha upya",
+      "records.deleteRecords": "Futa rekodi",
+      "records.adminTitle": "Ufutaji wa msimamizi",
+      "records.adminHint": "Weka nenosiri la msimamizi wa dashibodi ili kuchagua rekodi za ukaushaji za kufuta.",
+      "records.adminPassword": "Nenosiri la msimamizi",
+      "records.invalidAdminPassword": "Nenosiri la msimamizi si sahihi.",
+      "records.continueDelete": "Endelea",
+      "records.cancelDelete": "Ghairi",
+      "records.selectHeading": "Chagua",
+      "records.selectRecord": "Chagua {date}, {table} ili kufuta",
+      "records.selectedCount": "{count} zimechaguliwa",
+      "records.deleteSelected": "Futa zilizochaguliwa",
+      "records.deleting": "Inafuta...",
+      "records.confirmDelete": "Ufute kabisa rekodi {count} za ukaushaji zilizochaguliwa? Hili haliwezi kutenduliwa.",
+      "records.deleted": "Rekodi {count} za ukaushaji zimefutwa.",
+      "records.deleteFailed": "Rekodi hazikuweza kufutwa: {message}",
       "records.loading": "Inapakia rekodi...",
       "records.loaded": "Inaonyesha rekodi {count} za hivi karibuni.",
       "records.empty": "Bado hakuna rekodi ya ukaushaji iliyohifadhiwa.",
@@ -516,6 +546,9 @@ function applyLanguage() {
   });
   document.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
     element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((element) => {
+    element.title = t(element.dataset.i18nTitle);
   });
   document.querySelectorAll("[data-i18n-alt]").forEach((element) => {
     element.alt = t(element.dataset.i18nAlt);

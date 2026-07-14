@@ -6,6 +6,8 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   submitRpc: "submit_seaweed_drying_observation",
   attachPhotosRpc: "attach_seaweed_drying_photos",
   listRecordsRpc: "list_seaweed_drying_records",
+  adminAuthRpc: "dashboard_authenticate_access_role",
+  deleteRecordsRpc: "delete_seaweed_drying_records",
   getRecordRpc: "get_seaweed_drying_record",
   claimRecordRpc: "claim_seaweed_drying_record",
   getTrialsRpc: "get_seaweed_drying_trial_schedule",
@@ -14,7 +16,7 @@ export const DRYING_FORM_CONFIG = Object.freeze({
   recordTokensStorageKey: "seaweed_drying_record_tokens_v1",
   enumeratorStorageKey: "seaweed_drying_enumerator_v1",
   languageStorageKey: "seaweed_drying_language",
-  clientVersion: "2026-07-14.11",
+  clientVersion: "2026-07-14.12",
   maxPhotoBytes: 8 * 1024 * 1024,
   locations: [
     {

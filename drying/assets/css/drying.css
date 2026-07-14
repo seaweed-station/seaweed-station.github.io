@@ -1278,6 +1278,112 @@ input[readonly] {
   font-weight: 750;
 }
 
+.records-header-actions,
+.records-delete-bar > div,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.records-delete-icon {
+  width: 38px;
+  min-width: 38px;
+  padding: 0;
+  color: var(--danger);
+  font-size: 1rem;
+}
+
+.records-delete-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #e8b2b9;
+  border-radius: 8px;
+  background: #fff2f3;
+  color: #8d2634;
+  font-size: 0.78rem;
+}
+
+.danger-button {
+  border-color: #d14355;
+  background: #d14355;
+  color: #fff;
+}
+
+.danger-button:hover:not(:disabled) {
+  border-color: #ab2f40;
+  background: #ab2f40;
+  color: #fff;
+}
+
+.record-delete-checkbox {
+  width: 19px;
+  height: 19px;
+  margin: 0;
+  accent-color: var(--danger);
+}
+
+.admin-dialog {
+  width: min(100% - 28px, 420px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 60px rgba(18, 54, 47, 0.28);
+  color: var(--text);
+}
+
+.admin-dialog::backdrop {
+  background: rgba(8, 30, 26, 0.58);
+}
+
+.admin-dialog form {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.admin-dialog h2,
+.admin-dialog p {
+  margin: 0;
+}
+
+.admin-dialog p {
+  color: var(--text-sec);
+  font-size: 0.82rem;
+}
+
+.admin-dialog label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.admin-dialog input[type="password"] {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.admin-dialog .dialog-error {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.dialog-actions {
+  justify-content: flex-end;
+}
+
 .assistant-details-card {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
@@ -1715,6 +1821,29 @@ input[readonly] {
   }
 
   .records-header button {
+    width: 100%;
+  }
+
+  .records-header-actions {
+    width: 100%;
+  }
+
+  .records-header-actions .records-delete-icon {
+    width: 44px;
+    min-width: 44px;
+  }
+
+  .records-header-actions #refreshRecords {
+    flex: 1;
+  }
+
+  .records-delete-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .records-delete-bar > div,
+  .records-delete-bar button {
     width: 100%;
   }
 

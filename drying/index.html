@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title data-i18n="meta.title">Seaweed Drying Record - Seaweed Station</title>
-  <link rel="stylesheet" href="./assets/css/drying.css?v=20260714.11">
+  <link rel="stylesheet" href="./assets/css/drying.css?v=20260714.12">
 </head>
 <body class="drying-page" data-language="en">
   <header class="app-header">
@@ -339,7 +339,12 @@
           <h2 id="recordsTitle" data-i18n="records.title">Previous drying records</h2>
           <p data-i18n="records.hint">Records created on this device can be reopened and updated.</p>
         </div>
-        <button id="refreshRecords" type="button" data-i18n="records.refresh">Refresh</button>
+        <div class="records-header-actions">
+          <button id="openRecordsDelete" type="button" class="records-delete-icon"
+            title="Delete records" aria-label="Delete records" data-i18n-title="records.deleteRecords"
+            data-i18n-aria-label="records.deleteRecords">&#128465;</button>
+          <button id="refreshRecords" type="button" data-i18n="records.refresh">Refresh</button>
+        </div>
       </div>
       <div class="records-access">
         <label for="recordsRaId">
@@ -350,10 +355,18 @@
         <p data-i18n="records.raIdHint">To edit a record from another phone or browser, enter the same RA / ID number used when it was created.</p>
       </div>
       <p id="recordsStatus" class="admin-status" aria-live="polite" data-i18n="records.loading">Loading records...</p>
+      <div id="recordsDeleteBar" class="records-delete-bar" hidden>
+        <strong id="recordsDeleteCount">0 selected</strong>
+        <div>
+          <button id="cancelRecordsDelete" type="button" data-i18n="records.cancelDelete">Cancel</button>
+          <button id="deleteSelectedRecords" type="button" class="danger-button" data-i18n="records.deleteSelected">Delete selected</button>
+        </div>
+      </div>
       <div class="records-table-wrap">
         <table class="records-table">
           <thead>
             <tr>
+              <th id="recordsSelectHeading" hidden data-i18n="records.selectHeading">Select</th>
               <th data-i18n="records.actionHeading">Edit</th>
               <th data-i18n="records.recordedHeading">Date</th>
               <th data-i18n="records.tableHeading">Dryer table</th>
@@ -367,6 +380,22 @@
       </div>
     </section>
   </main>
+
+  <dialog id="recordsDeleteDialog" class="admin-dialog" aria-labelledby="recordsDeleteDialogTitle">
+    <form id="recordsDeleteAuthForm">
+      <h2 id="recordsDeleteDialogTitle" data-i18n="records.adminTitle">Admin deletion</h2>
+      <p data-i18n="records.adminHint">Enter the dashboard admin password to select drying records for deletion.</p>
+      <label for="recordsDeletePassword">
+        <span data-i18n="records.adminPassword">Admin password</span>
+        <input id="recordsDeletePassword" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="recordsDeleteAuthError" class="dialog-error" hidden aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="cancelRecordsDeleteAuth" type="button" data-i18n="records.cancelDelete">Cancel</button>
+        <button id="authorizeRecordsDelete" type="submit" class="primary-button" data-i18n="records.continueDelete">Continue</button>
+      </div>
+    </form>
+  </dialog>
 
   <section class="print-document" aria-hidden="true">
     <article class="print-page print-form-page">
@@ -479,6 +508,6 @@
     </article>
   </section>
 
-  <script type="module" src="./assets/js/drying_form.js?v=20260714.11"></script>
+  <script type="module" src="./assets/js/drying_form.js?v=20260714.12"></script>
 </body>
 </html>

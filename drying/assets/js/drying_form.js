@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.11";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.12";
 import {
   configurationLabel,
   configurationParts,
@@ -6,7 +6,7 @@ import {
   initDryingLanguage,
   t,
   tableLabel
-} from "./drying_language.js?v=20260714.11";
+} from "./drying_language.js?v=20260714.12";
 
 const $ = (id) => document.getElementById(id);
 
@@ -65,6 +65,18 @@ const els = {
   recordsList: $("recordsList"),
   refreshRecords: $("refreshRecords"),
   recordsRaId: $("recordsRaId"),
+  openRecordsDelete: $("openRecordsDelete"),
+  recordsDeleteBar: $("recordsDeleteBar"),
+  recordsDeleteCount: $("recordsDeleteCount"),
+  cancelRecordsDelete: $("cancelRecordsDelete"),
+  deleteSelectedRecords: $("deleteSelectedRecords"),
+  recordsSelectHeading: $("recordsSelectHeading"),
+  recordsDeleteDialog: $("recordsDeleteDialog"),
+  recordsDeleteAuthForm: $("recordsDeleteAuthForm"),
+  recordsDeletePassword: $("recordsDeletePassword"),
+  recordsDeleteAuthError: $("recordsDeleteAuthError"),
+  cancelRecordsDeleteAuth: $("cancelRecordsDeleteAuth"),
+  authorizeRecordsDelete: $("authorizeRecordsDelete"),
   batiTrialsBody: $("batiTrialsBody"),
   trialSaveStatus: $("trialSaveStatus")
 };
@@ -94,6 +106,11 @@ function freshState() {
     recordsStatusKey: "records.loading",
     recordsStatusArgs: {},
     recordsStatusError: false,
+    recordsDeleteMode: false,
+    recordsDeletePassword: "",
+    selectedDeleteReceipts: new Set(),
+    recordsDeleteAuthenticating: false,
+    recordsDeleting: false,
     submitting: false,
     trials: CONFIG.trials.map((trial) => ({
       ...trial,
@@ -186,6 +203,19 @@ function bindEvents() {
   els.topNewRecord.addEventListener("click", startNewRecord);
   els.topPrintPdf.addEventListener("click", printForm);
   els.refreshRecords.addEventListener("click", loadRecords);
+  els.openRecordsDelete.addEventListener("click", openRecordsDeleteAuthorization);
+  els.cancelRecordsDelete.addEventListener("click", exitRecordsDeleteMode);
+  els.deleteSelectedRecords.addEventListener("click", deleteSelectedRecords);
+  els.cancelRecordsDeleteAuth.addEventListener("click", () => els.recordsDeleteDialog.close());
+  els.recordsDeleteAuthForm.addEventListener("submit", authorizeRecordsDelete);
+  els.recordsList.addEventListener("change", (event) => {
+    const checkbox = event.target.closest("input[data-delete-receipt]");
+    if (!checkbox) return;
+    if (checkbox.checked) state.selectedDeleteReceipts.add(checkbox.dataset.deleteReceipt);
+    else state.selectedDeleteReceipts.delete(checkbox.dataset.deleteReceipt);
+    checkbox.closest("tr")?.classList.toggle("is-delete-selected", checkbox.checked);
+    renderRecordsDeleteControls();
+  });
   els.recordsRaId.addEventListener("input", () => {
     if (state.recordsStatusKey === "records.enterRaId") {
       state.recordsStatusKey = state.records.length ? "records.loaded" : "records.empty";
@@ -913,11 +943,27 @@ function extractRecordRows(result) {
 }
 
 function renderRecords() {
-  els.refreshRecords.disabled = state.recordsLoading || state.recordOpening;
+  els.refreshRecords.disabled = state.recordsLoading || state.recordOpening || state.recordsDeleting;
+  els.openRecordsDelete.disabled = state.recordsLoading || state.recordOpening
+    || state.recordsDeleting || !state.records.length;
   els.recordsStatus.textContent = t(state.recordsStatusKey, state.recordsStatusArgs);
   els.recordsStatus.dataset.status = state.recordsStatusError ? "error" : "";
   els.recordsList.replaceChildren();
   state.records.forEach((record) => els.recordsList.append(createRecordRow(record)));
+  renderRecordsDeleteControls();
+}
+
+function renderRecordsDeleteControls() {
+  els.recordsDeleteBar.hidden = !state.recordsDeleteMode;
+  els.recordsSelectHeading.hidden = !state.recordsDeleteMode;
+  els.recordsDeleteCount.textContent = t("records.selectedCount", {
+    count: state.selectedDeleteReceipts.size
+  });
+  els.deleteSelectedRecords.disabled = state.recordsDeleting || !state.selectedDeleteReceipts.size;
+  els.cancelRecordsDelete.disabled = state.recordsDeleting;
+  els.deleteSelectedRecords.textContent = t(state.recordsDeleting
+    ? "records.deleting"
+    : "records.deleteSelected");
 }
 
 function createRecordRow(record) {
@@ -946,6 +992,19 @@ function createRecordRow(record) {
     bayText,
     formatRecordDate(record.updated_at)
   ];
+  if (state.recordsDeleteMode) {
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "record-delete-checkbox";
+    checkbox.dataset.deleteReceipt = record.receipt_number;
+    checkbox.checked = state.selectedDeleteReceipts.has(record.receipt_number);
+    checkbox.setAttribute("aria-label", t("records.selectRecord", {
+      date: formatRecordDay(record.recorded_at),
+      table: tableLabel(record.table_location)
+    }));
+    values.unshift(checkbox);
+    row.classList.toggle("is-delete-selected", checkbox.checked);
+  }
   values.forEach((value) => {
     const cell = document.createElement("td");
     if (value instanceof Node) cell.append(value);
@@ -953,6 +1012,102 @@ function createRecordRow(record) {
     row.append(cell);
   });
   return row;
+}
+
+function openRecordsDeleteAuthorization() {
+  if (!state.records.length || state.recordsLoading || state.recordsDeleting) return;
+  els.recordsDeletePassword.value = "";
+  els.recordsDeleteAuthError.textContent = "";
+  els.recordsDeleteAuthError.hidden = true;
+  els.authorizeRecordsDelete.disabled = false;
+  els.recordsDeleteDialog.showModal();
+  els.recordsDeletePassword.focus();
+}
+
+async function authorizeRecordsDelete(event) {
+  event.preventDefault();
+  if (state.recordsDeleteAuthenticating) return;
+  const password = els.recordsDeletePassword.value;
+  if (!password) {
+    els.recordsDeletePassword.reportValidity();
+    return;
+  }
+  state.recordsDeleteAuthenticating = true;
+  els.authorizeRecordsDelete.disabled = true;
+  els.recordsDeleteAuthError.hidden = true;
+  try {
+    const result = await callRpc(CONFIG.adminAuthRpc, { p_password: password });
+    const roleId = result?.role?.roleId || result?.role?.role_id || "";
+    if (!result?.authenticated || roleId !== "admin") {
+      throw new Error(t("records.invalidAdminPassword"));
+    }
+    state.recordsDeletePassword = password;
+    state.recordsDeleteMode = true;
+    state.selectedDeleteReceipts.clear();
+    els.recordsDeletePassword.value = "";
+    els.recordsDeleteDialog.close();
+    renderRecords();
+  } catch (error) {
+    els.recordsDeleteAuthError.textContent = simpleErrorMessage(error);
+    els.recordsDeleteAuthError.hidden = false;
+    els.recordsDeletePassword.select();
+  } finally {
+    state.recordsDeleteAuthenticating = false;
+    els.authorizeRecordsDelete.disabled = false;
+  }
+}
+
+function exitRecordsDeleteMode({ force = false } = {}) {
+  if (state.recordsDeleting && !force) return;
+  state.recordsDeleteMode = false;
+  state.recordsDeletePassword = "";
+  state.selectedDeleteReceipts.clear();
+  renderRecords();
+}
+
+async function deleteSelectedRecords() {
+  const receiptNumbers = [...state.selectedDeleteReceipts];
+  if (!receiptNumbers.length || state.recordsDeleting) return;
+  if (!window.confirm(t("records.confirmDelete", { count: receiptNumbers.length }))) return;
+  state.recordsDeleting = true;
+  renderRecordsDeleteControls();
+  try {
+    const result = await callRpc(CONFIG.deleteRecordsRpc, {
+      p_admin_password: state.recordsDeletePassword,
+      p_receipt_numbers: receiptNumbers
+    });
+    const deletedReceipts = Array.isArray(result?.receipt_numbers)
+      ? result.receipt_numbers
+      : receiptNumbers;
+    const deletedCount = Number.isFinite(Number(result?.deleted_count))
+      ? Number(result.deleted_count)
+      : deletedReceipts.length;
+    forgetRecordAccess(deletedReceipts);
+    const deletedActiveRecord = deletedReceipts.includes(state.receiptNumber);
+    exitRecordsDeleteMode({ force: true });
+    if (deletedActiveRecord) resetForNewRecord({ scroll: false });
+    await loadRecords();
+    state.recordsStatusKey = "records.deleted";
+    state.recordsStatusArgs = { count: deletedCount };
+    state.recordsStatusError = false;
+  } catch (error) {
+    state.recordsStatusKey = "records.deleteFailed";
+    state.recordsStatusArgs = { message: simpleErrorMessage(error) };
+    state.recordsStatusError = true;
+  } finally {
+    state.recordsDeleting = false;
+    renderRecords();
+  }
+}
+
+function forgetRecordAccess(receiptNumbers) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CONFIG.recordTokensStorageKey) || "{}");
+    receiptNumbers.forEach((receipt) => delete saved[receipt]);
+    localStorage.setItem(CONFIG.recordTokensStorageKey, JSON.stringify(saved));
+  } catch {
+    // Deletion does not depend on local edit-token cleanup.
+  }
 }
 
 async function openSavedRecord(receiptNumber) {
