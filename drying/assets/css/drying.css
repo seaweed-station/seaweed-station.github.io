@@ -673,13 +673,6 @@ input[readonly] {
   min-width: 112px;
 }
 
-.gps-field {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px 12px;
-  align-items: end;
-}
-
 .bay-summary-details summary {
   color: var(--accent);
   cursor: pointer;
@@ -695,10 +688,6 @@ input[readonly] {
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
-}
-
-.gps-field > .field-hint {
-  grid-column: 1 / -1;
 }
 
 .photo-field {
@@ -1238,6 +1227,224 @@ input[readonly] {
   font-weight: 750;
 }
 
+.assistant-details-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+.required-field {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e6ca6b;
+  border-radius: 8px;
+  background: #fff8d8;
+}
+
+.required-field input,
+.required-field select {
+  background: #fffdf3;
+}
+
+.camera-field input[type="file"] {
+  border-style: dashed;
+  border-color: #cda93d;
+}
+
+.camera-symbol {
+  display: inline-flex;
+  width: 25px;
+  height: 25px;
+  align-items: center;
+  justify-content: center;
+  margin-right: 3px;
+  border-radius: 50%;
+  background: #f5df89;
+  color: #55430a;
+  font-size: 0.95rem;
+  vertical-align: middle;
+}
+
+.capture-workflow-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.capture-workflow-intro p {
+  margin: 0;
+  color: var(--text-sec);
+  font-size: 0.8rem;
+}
+
+.batch-phase-grid {
+  padding: 0;
+}
+
+.batch-capture-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 13px;
+  background: #fff;
+}
+
+.batch-capture-card .phase-title {
+  margin-bottom: 0;
+}
+
+.phase-title h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.phase-title h2 small {
+  color: var(--text-muted);
+  font-size: 0.75em;
+  font-weight: 650;
+}
+
+.batch-fields {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bay-picker-field {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.batch-bay-selector {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.batch-bay-button {
+  position: relative;
+  min-height: 42px;
+  border-color: #d6bd65;
+  background: #fffdf4;
+  color: var(--text-sec);
+  font-weight: 750;
+}
+
+.batch-bay-button.has-data::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e2a83d;
+}
+
+.batch-bay-button.is-selected {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.13);
+}
+
+.batch-bay-button.is-selected::after {
+  background: #d7fff5;
+}
+
+.batch-save-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.capture-log {
+  padding-top: 9px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.capture-log h3 {
+  margin: 0 0 7px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.capture-list {
+  display: grid;
+  gap: 5px;
+}
+
+.capture-list-row {
+  display: grid;
+  grid-template-columns: minmax(75px, auto) minmax(0, 1fr);
+  gap: 9px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--text-sec);
+  font-size: 0.72rem;
+}
+
+.capture-list-row strong {
+  color: var(--text);
+}
+
+.capture-list-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.73rem;
+}
+
+.records-table-wrap {
+  overflow-x: auto;
+  margin-top: 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.records-table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.records-table th,
+.records-table td {
+  padding: 8px 9px;
+  border-bottom: 1px solid var(--border-soft);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.records-table th {
+  background: var(--panel-soft);
+  color: var(--text-muted);
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.records-table td:first-child {
+  color: var(--text);
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.records-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.records-table button {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
 @media (max-width: 1080px) {
   .drying-form fieldset {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1323,8 +1530,8 @@ input[readonly] {
     padding: 10px;
   }
 
-  .gps-field {
-    grid-template-columns: minmax(0, 1fr);
+  .assistant-details-card {
+    grid-template-columns: minmax(0, 1fr) !important;
   }
 
   .bay-selector {
@@ -1345,6 +1552,19 @@ input[readonly] {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .capture-workflow-intro {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .batch-bay-selector {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .batch-save-row button {
+    width: 100%;
+  }
+
   .phase-photo {
     grid-column: auto;
   }
@@ -1362,20 +1582,13 @@ input[readonly] {
   }
 
   .records-header,
-  .record-card-head,
-  .record-card-footer,
   .active-record-banner {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .records-header button,
-  .record-card-footer button {
+  .records-header button {
     width: 100%;
-  }
-
-  .records-list {
-    grid-template-columns: minmax(0, 1fr);
   }
 
   .records-access {
@@ -1394,6 +1607,21 @@ input[readonly] {
 
   .phase-grid {
     padding: 7px;
+  }
+
+  .batch-bay-selector {
+    gap: 5px;
+  }
+
+  .batch-bay-button {
+    min-width: 0;
+    padding-inline: 4px;
+    font-size: 0.76rem;
+  }
+
+  .capture-list-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
   }
 
   .receipt-grid {
@@ -1719,6 +1947,15 @@ input[readonly] {
     gap: 2mm;
   }
 
+  .print-record-box .print-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .print-config-field-grid {
+    max-width: 72mm;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .print-field {
     display: grid;
     gap: 0.6mm;
@@ -1816,11 +2053,21 @@ input[readonly] {
   }
 
   .print-bay-table th:first-child {
-    width: 5%;
+    width: 14%;
   }
 
   .print-bay-table th:last-child {
-    width: 15%;
+    width: 8%;
+  }
+
+  .print-bay-table th:nth-child(5) {
+    width: 28%;
+  }
+
+  .print-bay-choices {
+    font-size: 4.9pt;
+    line-height: 1.35;
+    white-space: normal;
   }
 
   .print-bay-table tbody th {

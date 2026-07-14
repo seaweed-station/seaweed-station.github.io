@@ -97,12 +97,32 @@
           <span id="activeRecordStatus" class="record-status-pill"></span>
         </div>
 
-        <fieldset>
-          <legend data-i18n="record.legend">Record details</legend>
-          <label>
-            <span data-i18n="record.location">Dryer location</span>
+        <fieldset class="form-card assistant-details-card">
+          <legend data-i18n="research.legend">Research Assistant Details</legend>
+          <label class="required-field">
+            <span data-i18n="record.enumeratorName">Enumerator name</span>
+            <input id="enumeratorName" type="text" data-draft maxlength="120" autocomplete="name" required>
+          </label>
+          <label class="required-field">
+            <span data-i18n="record.idNumber">RA / ID number</span>
+            <input id="enumeratorId" type="text" data-draft maxlength="80" autocomplete="off" required>
+          </label>
+          <label class="remember-enumerator wide-field">
+            <input id="rememberEnumerator" type="checkbox">
+            <span data-i18n="record.rememberEnumerator">Remember enumerator name and ID on this device</span>
+          </label>
+        </fieldset>
+
+        <fieldset class="form-card table-configuration-card">
+          <legend data-i18n="configuration.legend">Table configuration</legend>
+          <label class="required-field">
+            <span data-i18n="record.dateTime">Record date / time</span>
+            <input id="recordedAt" type="datetime-local" data-draft required>
+          </label>
+          <label class="required-field">
+            <span data-i18n="record.table">Dryer table</span>
             <select id="dryerLocation" data-draft required>
-              <option value="" data-i18n="record.selectLocation">Select location</option>
+              <option value="" data-i18n="record.selectTable">Select dryer table</option>
               <option value="bati-table-1" data-i18n="location.bati1">Bati (Table 1)</option>
               <option value="bati-table-2" data-i18n="location.bati2">Bati (Table 2)</option>
               <option value="bati-table-3" data-i18n="location.bati3">Bati (Table 3)</option>
@@ -111,40 +131,7 @@
               <option value="shangani-table-1" data-i18n="location.shangani1">Shangani (Table 1)</option>
             </select>
           </label>
-          <label>
-            <span data-i18n="record.enumeratorName">Enumerator name</span>
-            <input id="enumeratorName" type="text" data-draft maxlength="120" autocomplete="name" required>
-          </label>
-          <label>
-            <span data-i18n="record.idNumber">RA / ID number</span>
-            <input id="enumeratorId" type="text" data-draft maxlength="80" autocomplete="off" required>
-          </label>
-          <label>
-            <span data-i18n="record.dateTime">Record date / time</span>
-            <input id="recordedAt" type="datetime-local" data-draft required>
-          </label>
-          <label class="remember-enumerator wide-field">
-            <input id="rememberEnumerator" type="checkbox">
-            <span data-i18n="record.rememberEnumerator">Remember enumerator name and ID on this device</span>
-          </label>
-          <div class="gps-field wide-field">
-            <label>
-              <span data-i18n="gps.label">GPS location</span>
-              <span class="input-action-row">
-                <input id="gpsSummary" type="text" readonly placeholder="Not captured" data-i18n-placeholder="gps.notCaptured">
-                <button id="captureGps" type="button" data-i18n="gps.capture">Capture GPS</button>
-              </span>
-            </label>
-            <input id="gpsLatitude" type="hidden" data-draft>
-            <input id="gpsLongitude" type="hidden" data-draft>
-            <input id="gpsAccuracy" type="hidden" data-draft>
-            <p id="gpsStatus" class="field-hint" aria-live="polite" data-i18n="gps.hint">GPS is optional, but useful for confirming the dryer location.</p>
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend data-i18n="configuration.legend">Table configuration</legend>
-          <label class="wide-field configuration-select-field">
+          <label class="required-field configuration-select-field">
             <span data-i18n="configuration.label">Drying configuration</span>
             <select id="dryingConfiguration" data-draft required>
               <option value="" data-i18n="common.select">Select</option>
@@ -153,117 +140,110 @@
               <option value="cover_down_back_open" data-i18n="configuration.downOpen">Cover Down / Back Open</option>
             </select>
           </label>
-          <label class="wide-field photo-field">
-            <span data-i18n="configuration.photos">Table overview photos - up to 5</span>
+          <label class="required-field photo-field camera-field">
+            <span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="configuration.photos">Table overview photos - up to 5</span></span>
             <input id="tablePhotos" type="file" accept="image/*" capture="environment" multiple>
-            <span class="field-hint" data-i18n="configuration.photoHint">Photograph the table and its configuration before or during the cycle.</span>
             <span id="tablePhotoPreview" class="photo-preview"></span>
           </label>
         </fieldset>
 
-        <fieldset class="bay-fieldset">
-          <legend data-i18n="bay.legend">Bay records</legend>
-          <div class="bay-toolbar wide-field">
-            <div>
-              <p class="section-label" data-i18n="bay.choose">Choose a bay</p>
-              <p class="field-hint" data-i18n="bay.hint">Work through one bay at a time. Completed bays are marked below.</p>
-            </div>
+        <fieldset class="form-card capture-workflow-card bay-fieldset">
+          <legend data-i18n="capture.legend">Weight Capture</legend>
+          <div class="capture-workflow-intro wide-field">
+            <p data-i18n="capture.hint">Enter one measurement, then select every bay that shares it. Saving again for a bay replaces that phase.</p>
             <span id="bayProgress" class="status-pill">0 of 8 entered</span>
           </div>
 
-          <div id="baySelector" class="bay-selector wide-field" role="tablist" aria-label="Dryer bays" data-i18n-aria-label="bay.ariaLabel"></div>
-
-          <section id="bayEditor" class="bay-editor wide-field" aria-labelledby="bayEditorTitle">
-            <div class="bay-editor-head">
-              <div>
-                <p class="eyebrow" data-i18n="bay.current">Current bay</p>
-                <h2 id="bayEditorTitle">Bay 1</h2>
+          <div class="phase-grid batch-phase-grid wide-field">
+            <section class="phase-card loading-card batch-capture-card" aria-labelledby="loadingTitle">
+              <div class="phase-title">
+                <span class="phase-number">1</span>
+                <h2 id="loadingTitle"><span data-i18n="loading.title">Loading</span> <small data-i18n="loading.qualifier">(Wet)</small></h2>
               </div>
-              <div class="metric-row" aria-live="polite">
-                <span><span data-i18n="bay.dryingTime">Drying time</span> <strong id="dryingDuration">-</strong></span>
-                <span><span data-i18n="bay.weightLoss">Weight loss</span> <strong id="weightLoss">-</strong></span>
+              <div class="phase-fields batch-fields">
+                <label class="required-field">
+                  <span data-i18n="loading.weight">Wet weight (kg)</span>
+                  <input id="loadingCaptureWeight" type="number" data-draft min="0" max="1000" step="0.01" inputmode="decimal">
+                </label>
+                <label class="required-field">
+                  <span data-i18n="common.dateTime">Date / time</span>
+                  <input id="loadingCaptureAt" type="datetime-local" data-draft>
+                </label>
+                <label class="required-field">
+                  <span data-i18n="common.weather">Weather observation</span>
+                  <select id="loadingCaptureWeather" data-draft>
+                    <option value="" data-i18n="common.select">Select</option>
+                    <option value="sunny" data-i18n="weather.sunny">Sunny</option>
+                    <option value="cloudy" data-i18n="weather.cloudy">Cloudy</option>
+                    <option value="rainy" data-i18n="weather.rainy">Rainy</option>
+                    <option value="mixed" data-i18n="weather.mixed">Mixed</option>
+                  </select>
+                </label>
+                <div class="required-field bay-picker-field">
+                  <span data-i18n="capture.selectBays">Select bays</span>
+                  <div id="loadingBaySelector" class="batch-bay-selector" aria-label="Select loading bays"></div>
+                </div>
+                <label class="required-field photo-field camera-field phase-photo">
+                  <span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="capture.loadingPhotos">Loading photo</span></span>
+                  <input id="loadingCapturePhotos" type="file" accept="image/*" capture="environment">
+                  <span id="loadingCapturePhotoPreview" class="photo-preview"></span>
+                </label>
               </div>
-            </div>
+              <div class="batch-save-row">
+                <button id="saveLoadingCapture" type="button" class="primary-button" data-i18n="capture.saveLoading">Save loading capture</button>
+              </div>
+              <div class="capture-log">
+                <h3 data-i18n="capture.savedLoading">Saved loading captures</h3>
+                <div id="loadingCaptureList" class="capture-list"></div>
+              </div>
+            </section>
 
-            <div class="phase-grid">
-              <section class="phase-card loading-card" aria-labelledby="loadingTitle">
-                <div class="phase-title">
-                  <span class="phase-number">1</span>
-                  <h3 id="loadingTitle"><span data-i18n="loading.title">Loading</span> <small data-i18n="loading.qualifier">(Wet)</small></h3>
+            <section class="phase-card unloading-card batch-capture-card" aria-labelledby="unloadingTitle">
+              <div class="phase-title">
+                <span class="phase-number">2</span>
+                <h2 id="unloadingTitle"><span data-i18n="unloading.title">Unloading</span> <small data-i18n="unloading.qualifier">(Dry)</small></h2>
+              </div>
+              <div class="phase-fields batch-fields">
+                <label class="required-field">
+                  <span data-i18n="unloading.weight">Dry weight (kg)</span>
+                  <input id="unloadingCaptureWeight" type="number" data-draft min="0" max="1000" step="0.01" inputmode="decimal">
+                </label>
+                <label class="required-field">
+                  <span data-i18n="common.dateTime">Date / time</span>
+                  <input id="unloadingCaptureAt" type="datetime-local" data-draft>
+                </label>
+                <label class="required-field">
+                  <span data-i18n="common.weather">Weather observation</span>
+                  <select id="unloadingCaptureWeather" data-draft>
+                    <option value="" data-i18n="common.select">Select</option>
+                    <option value="sunny" data-i18n="weather.sunny">Sunny</option>
+                    <option value="cloudy" data-i18n="weather.cloudy">Cloudy</option>
+                    <option value="rainy" data-i18n="weather.rainy">Rainy</option>
+                    <option value="mixed" data-i18n="weather.mixed">Mixed</option>
+                  </select>
+                </label>
+                <div class="required-field bay-picker-field">
+                  <span data-i18n="capture.selectBays">Select bays</span>
+                  <div id="unloadingBaySelector" class="batch-bay-selector" aria-label="Select unloading bays"></div>
                 </div>
-                <div class="phase-fields">
-                  <label>
-                    <span data-i18n="common.dateTime">Date / time</span>
-                    <input id="loadingAt" type="datetime-local" data-bay-field="loading_at">
-                  </label>
-                  <label>
-                    <span data-i18n="loading.weight">Wet weight (kg)</span>
-                    <input id="loadingWeight" type="number" data-bay-field="loading_weight_kg" min="0" max="1000" step="0.01" inputmode="decimal">
-                  </label>
-                  <label>
-                    <span data-i18n="common.weather">Weather</span>
-                    <select id="loadingWeather" data-bay-field="loading_weather">
-                      <option value="" data-i18n="common.select">Select</option>
-                      <option value="sunny" data-i18n="weather.sunny">Sunny</option>
-                      <option value="cloudy" data-i18n="weather.cloudy">Cloudy</option>
-                      <option value="rainy" data-i18n="weather.rainy">Rainy</option>
-                      <option value="mixed" data-i18n="weather.mixed">Mixed</option>
-                    </select>
-                  </label>
-                  <label class="photo-field phase-photo">
-                    <span data-i18n="loading.photo">Loading photo</span>
-                    <input id="loadingPhoto" type="file" accept="image/*" capture="environment">
-                    <span id="loadingPhotoPreview" class="photo-preview"></span>
-                  </label>
-                </div>
-              </section>
-
-              <section class="phase-card unloading-card" aria-labelledby="unloadingTitle">
-                <div class="phase-title">
-                  <span class="phase-number">2</span>
-                  <h3 id="unloadingTitle"><span data-i18n="unloading.title">Unloading</span> <small data-i18n="unloading.qualifier">(Dry)</small></h3>
-                </div>
-                <div class="phase-fields">
-                  <label>
-                    <span data-i18n="common.dateTime">Date / time</span>
-                    <input id="unloadingAt" type="datetime-local" data-bay-field="unloading_at">
-                  </label>
-                  <label>
-                    <span data-i18n="unloading.weight">Dry weight (kg)</span>
-                    <input id="unloadingWeight" type="number" data-bay-field="unloading_weight_kg" min="0" max="1000" step="0.01" inputmode="decimal">
-                  </label>
-                  <label>
-                    <span data-i18n="common.weather">Weather</span>
-                    <select id="unloadingWeather" data-bay-field="unloading_weather">
-                      <option value="" data-i18n="common.select">Select</option>
-                      <option value="sunny" data-i18n="weather.sunny">Sunny</option>
-                      <option value="cloudy" data-i18n="weather.cloudy">Cloudy</option>
-                      <option value="rainy" data-i18n="weather.rainy">Rainy</option>
-                      <option value="mixed" data-i18n="weather.mixed">Mixed</option>
-                    </select>
-                  </label>
-                  <label class="photo-field phase-photo">
-                    <span data-i18n="unloading.photo">Unloading photo</span>
-                    <input id="unloadingPhoto" type="file" accept="image/*" capture="environment">
-                    <span id="unloadingPhotoPreview" class="photo-preview"></span>
-                  </label>
-                </div>
-              </section>
-            </div>
-
-            <label class="bay-notes">
-              <span data-i18n="bay.notes">Bay notes</span>
-              <textarea id="bayNotes" data-bay-field="notes" rows="2" maxlength="1000"></textarea>
-            </label>
-
-            <div class="bay-actions">
-              <button id="previousBay" type="button" data-i18n="bay.previous">Previous bay</button>
-              <button id="nextBay" type="button" class="primary-button" data-i18n="bay.next">Save &amp; next bay</button>
-            </div>
-          </section>
+                <label class="required-field photo-field camera-field phase-photo">
+                  <span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="capture.unloadingPhotos">Unloading photo</span></span>
+                  <input id="unloadingCapturePhotos" type="file" accept="image/*" capture="environment">
+                  <span id="unloadingCapturePhotoPreview" class="photo-preview"></span>
+                </label>
+              </div>
+              <div class="batch-save-row">
+                <button id="saveUnloadingCapture" type="button" class="primary-button" data-i18n="capture.saveUnloading">Save unloading capture</button>
+              </div>
+              <div class="capture-log">
+                <h3 data-i18n="capture.savedUnloading">Saved unloading captures</h3>
+                <div id="unloadingCaptureList" class="capture-list"></div>
+              </div>
+            </section>
+          </div>
 
           <details class="bay-summary-details wide-field">
-            <summary data-i18n="bay.review">Review all bay entries</summary>
+            <summary data-i18n="bay.review">Review saved bay data</summary>
             <div class="table-wrap">
               <table class="bay-summary-table">
                 <thead>
@@ -304,10 +284,7 @@
         </fieldset>
 
         <div class="form-footer">
-          <div>
-            <p class="privacy-note" data-i18n="footer.privacy">GPS and photos are stored privately with the drying record.</p>
-            <p id="saveStatus" class="admin-status" aria-live="polite"></p>
-          </div>
+          <p id="saveStatus" class="admin-status" aria-live="polite"></p>
           <div class="button-row">
             <button id="clearForm" type="button" data-i18n="action.clear">Clear</button>
             <button id="submitForm" class="primary-button" type="submit" data-i18n="action.submit">Submit drying record</button>
@@ -350,7 +327,22 @@
         <p data-i18n="records.raIdHint">To edit a record from another phone or browser, enter the same RA / ID number used when it was created.</p>
       </div>
       <p id="recordsStatus" class="admin-status" aria-live="polite" data-i18n="records.loading">Loading records...</p>
-      <div id="recordsList" class="records-list"></div>
+      <div class="records-table-wrap">
+        <table class="records-table">
+          <thead>
+            <tr>
+              <th data-i18n="records.receiptHeading">Receipt</th>
+              <th data-i18n="records.tableHeading">Dryer table</th>
+              <th data-i18n="records.recordedHeading">Recorded</th>
+              <th data-i18n="records.statusHeading">Status</th>
+              <th data-i18n="records.baysHeading">Bays</th>
+              <th data-i18n="records.updatedHeading">Updated</th>
+              <th data-i18n="records.actionHeading">Action</th>
+            </tr>
+          </thead>
+          <tbody id="recordsList"></tbody>
+        </table>
+      </div>
     </section>
   </main>
 
@@ -363,7 +355,7 @@
       </header>
 
       <section class="print-box print-record-box">
-        <h2 data-i18n="record.legend">Record details</h2>
+        <h2 data-i18n="research.legend">Research Assistant Details</h2>
         <div class="print-field-grid">
           <div class="print-field">
             <span data-i18n="record.enumeratorName">Enumerator name</span>
@@ -373,17 +365,19 @@
             <span data-i18n="record.idNumber">RA / ID number</span>
             <i></i>
           </div>
+        </div>
+      </section>
+
+      <section class="print-box print-configuration-box">
+        <h2 data-i18n="configuration.legend">Table configuration</h2>
+        <div class="print-field-grid print-config-field-grid">
           <div class="print-field">
             <span data-i18n="record.dateTime">Record date / time</span>
             <i></i>
           </div>
-          <div class="print-field">
-            <span data-i18n="gps.label">GPS location</span>
-            <i></i>
-          </div>
         </div>
         <div class="print-option-field">
-          <strong data-i18n="record.location">Dryer location</strong>
+          <strong data-i18n="record.table">Dryer table</strong>
           <div class="print-option-list">
             <span><b>&#9675;</b> <span data-i18n="location.bati1">Bati (Table 1)</span></span>
             <span><b>&#9675;</b> <span data-i18n="location.bati2">Bati (Table 2)</span></span>
@@ -393,10 +387,6 @@
             <span><b>&#9675;</b> <span data-i18n="location.shangani1">Shangani (Table 1)</span></span>
           </div>
         </div>
-      </section>
-
-      <section class="print-box print-configuration-box">
-        <h2 data-i18n="configuration.legend">Table configuration</h2>
         <div class="print-option-field">
           <strong data-i18n="configuration.label">Drying configuration</strong>
           <div class="print-option-list print-config-options">
@@ -414,37 +404,27 @@
 
       <section class="print-box print-bay-box">
         <div class="print-section-heading">
-          <h2 data-i18n="bay.legend">Bay records</h2>
+          <h2 data-i18n="capture.legend">Weight Capture</h2>
           <p data-i18n="print.shedBayHint">For Dryer Shed, complete Bay 1 only.</p>
         </div>
         <table class="print-bay-table">
           <thead>
             <tr>
-              <th rowspan="2" data-i18n="summary.bay">Bay</th>
-              <th colspan="4"><span data-i18n="loading.title">Loading</span> <small data-i18n="loading.qualifier">(Wet)</small></th>
-              <th colspan="4"><span data-i18n="unloading.title">Unloading</span> <small data-i18n="unloading.qualifier">(Dry)</small></th>
-              <th rowspan="2" data-i18n="bay.notes">Bay notes</th>
-            </tr>
-            <tr>
+              <th data-i18n="capture.phase">Capture</th>
               <th data-i18n="common.dateTime">Date / time</th>
               <th data-i18n="print.weightKg">Weight kg</th>
               <th data-i18n="common.weather">Weather</th>
-              <th data-i18n="summary.photos">Photos</th>
-              <th data-i18n="common.dateTime">Date / time</th>
-              <th data-i18n="print.weightKg">Weight kg</th>
-              <th data-i18n="common.weather">Weather</th>
+              <th data-i18n="capture.selectedBays">Selected bays</th>
               <th data-i18n="summary.photos">Photos</th>
             </tr>
           </thead>
           <tbody>
-            <tr><th>B1</th><td></td><td></td><td></td><td>&#9633;</td><td></td><td></td><td></td><td>&#9633;</td><td></td></tr>
-            <tr><th>B2</th><td></td><td></td><td></td><td>&#9633;</td><td></td><td></td><td></td><td>&#9633;</td><td></td></tr>
-            <tr><th>B3</th><td></td><td></td><td></td><td>&#9633;</td><td></td><td></td><td></td><td>&#9633;</td><td></td></tr>
-            <tr><th>B4</th><td></td><td></td><td></td><td>&#9633;</td><td></td><td></td><td></td><td>&#9633;</td><td></td></tr>
-            <tr><th>B5</th><td></td><td></td><td></td><td>&#9633;</td><td></td><td></td><td></td><td>&#9633;</td><td></td></tr>
-            <tr><th>B6</th><td></td><td></td><td></td><td>&#9633;</td><td></td><td></td><td></td><td>&#9633;</td><td></td></tr>
-            <tr><th>B7</th><td></td><td></td><td></td><td>&#9633;</td><td></td><td></td><td></td><td>&#9633;</td><td></td></tr>
-            <tr><th>B8</th><td></td><td></td><td></td><td>&#9633;</td><td></td><td></td><td></td><td>&#9633;</td><td></td></tr>
+            <tr><th><span data-i18n="loading.title">Loading</span> <small data-i18n="loading.qualifier">(Wet)</small></th><td></td><td></td><td></td><td class="print-bay-choices">&#9633;B1 &#9633;B2 &#9633;B3 &#9633;B4 &#9633;B5 &#9633;B6 &#9633;B7 &#9633;B8</td><td>&#9633;</td></tr>
+            <tr><th><span data-i18n="loading.title">Loading</span> <small data-i18n="loading.qualifier">(Wet)</small></th><td></td><td></td><td></td><td class="print-bay-choices">&#9633;B1 &#9633;B2 &#9633;B3 &#9633;B4 &#9633;B5 &#9633;B6 &#9633;B7 &#9633;B8</td><td>&#9633;</td></tr>
+            <tr><th><span data-i18n="loading.title">Loading</span> <small data-i18n="loading.qualifier">(Wet)</small></th><td></td><td></td><td></td><td class="print-bay-choices">&#9633;B1 &#9633;B2 &#9633;B3 &#9633;B4 &#9633;B5 &#9633;B6 &#9633;B7 &#9633;B8</td><td>&#9633;</td></tr>
+            <tr><th><span data-i18n="unloading.title">Unloading</span> <small data-i18n="unloading.qualifier">(Dry)</small></th><td></td><td></td><td></td><td class="print-bay-choices">&#9633;B1 &#9633;B2 &#9633;B3 &#9633;B4 &#9633;B5 &#9633;B6 &#9633;B7 &#9633;B8</td><td>&#9633;</td></tr>
+            <tr><th><span data-i18n="unloading.title">Unloading</span> <small data-i18n="unloading.qualifier">(Dry)</small></th><td></td><td></td><td></td><td class="print-bay-choices">&#9633;B1 &#9633;B2 &#9633;B3 &#9633;B4 &#9633;B5 &#9633;B6 &#9633;B7 &#9633;B8</td><td>&#9633;</td></tr>
+            <tr><th><span data-i18n="unloading.title">Unloading</span> <small data-i18n="unloading.qualifier">(Dry)</small></th><td></td><td></td><td></td><td class="print-bay-choices">&#9633;B1 &#9633;B2 &#9633;B3 &#9633;B4 &#9633;B5 &#9633;B6 &#9633;B7 &#9633;B8</td><td>&#9633;</td></tr>
           </tbody>
         </table>
       </section>

@@ -19,27 +19,26 @@ const els = {
   enumeratorId: $("enumeratorId"),
   rememberEnumerator: $("rememberEnumerator"),
   recordedAt: $("recordedAt"),
-  gpsSummary: $("gpsSummary"),
-  gpsLatitude: $("gpsLatitude"),
-  gpsLongitude: $("gpsLongitude"),
-  gpsAccuracy: $("gpsAccuracy"),
-  captureGps: $("captureGps"),
-  gpsStatus: $("gpsStatus"),
   dryingConfiguration: $("dryingConfiguration"),
   tablePhotos: $("tablePhotos"),
   tablePhotoPreview: $("tablePhotoPreview"),
-  baySelector: $("baySelector"),
   bayProgress: $("bayProgress"),
-  bayEditorTitle: $("bayEditorTitle"),
-  bayEditor: $("bayEditor"),
-  dryingDuration: $("dryingDuration"),
-  weightLoss: $("weightLoss"),
-  loadingPhoto: $("loadingPhoto"),
-  unloadingPhoto: $("unloadingPhoto"),
-  loadingPhotoPreview: $("loadingPhotoPreview"),
-  unloadingPhotoPreview: $("unloadingPhotoPreview"),
-  previousBay: $("previousBay"),
-  nextBay: $("nextBay"),
+  loadingCaptureWeight: $("loadingCaptureWeight"),
+  loadingCaptureAt: $("loadingCaptureAt"),
+  loadingCaptureWeather: $("loadingCaptureWeather"),
+  loadingBaySelector: $("loadingBaySelector"),
+  loadingCapturePhotos: $("loadingCapturePhotos"),
+  loadingCapturePhotoPreview: $("loadingCapturePhotoPreview"),
+  saveLoadingCapture: $("saveLoadingCapture"),
+  loadingCaptureList: $("loadingCaptureList"),
+  unloadingCaptureWeight: $("unloadingCaptureWeight"),
+  unloadingCaptureAt: $("unloadingCaptureAt"),
+  unloadingCaptureWeather: $("unloadingCaptureWeather"),
+  unloadingBaySelector: $("unloadingBaySelector"),
+  unloadingCapturePhotos: $("unloadingCapturePhotos"),
+  unloadingCapturePhotoPreview: $("unloadingCapturePhotoPreview"),
+  saveUnloadingCapture: $("saveUnloadingCapture"),
+  unloadingCaptureList: $("unloadingCaptureList"),
   baySummaryBody: $("baySummaryBody"),
   generalObservations: $("generalObservations"),
   workingWell: $("workingWell"),
@@ -68,7 +67,6 @@ const els = {
   trialSaveStatus: $("trialSaveStatus")
 };
 
-const bayControls = [...document.querySelectorAll("[data-bay-field]")];
 const draftControls = [...document.querySelectorAll("[data-draft]")];
 
 let state = freshState();
@@ -78,10 +76,10 @@ initialize();
 
 function freshState() {
   return {
-    currentBay: 1,
     bayCount: 8,
     bays: {},
-    files: { table: [], bays: {} },
+    selectedBays: { loading: [], unloading: [] },
+    files: { table: [], captures: { loading: [], unloading: [] } },
     submissionId: null,
     uploadToken: null,
     receiptNumber: null,
@@ -100,10 +98,7 @@ function freshState() {
       startDate: trial.startDate || "",
       finishDate: trial.finishDate || "",
       completed: false
-    })),
-    gpsStatusKey: "gps.hint",
-    gpsStatusArgs: {},
-    gpsStatusError: false
+    }))
   };
 }
 
@@ -128,10 +123,7 @@ function bindEvents() {
 
   draftControls.forEach((control) => {
     const eventName = control.type === "checkbox" || control.tagName === "SELECT" ? "change" : "input";
-    control.addEventListener(eventName, () => {
-      if ([els.gpsLatitude, els.gpsLongitude, els.gpsAccuracy].includes(control)) updateGpsSummary();
-      scheduleDraftSave();
-    });
+    control.addEventListener(eventName, scheduleDraftSave);
   });
 
   els.rememberEnumerator.addEventListener("change", updateRememberedEnumerator);
@@ -144,17 +136,6 @@ function bindEvents() {
     });
   });
 
-  bayControls.forEach((control) => {
-    const eventName = control.tagName === "SELECT" ? "change" : "input";
-    control.addEventListener(eventName, () => {
-      captureBayEditor();
-      renderBayStatus();
-      renderMetrics();
-      renderBaySummary();
-      scheduleDraftSave();
-    });
-  });
-
   els.tablePhotos.addEventListener("change", () => {
     const files = acceptedFiles(els.tablePhotos.files, 5);
     state.files.table = files;
@@ -162,19 +143,17 @@ function bindEvents() {
     scheduleDraftSave();
   });
 
-  els.loadingPhoto.addEventListener("change", () => setBayPhoto("loading", els.loadingPhoto.files[0]));
-  els.unloadingPhoto.addEventListener("change", () => setBayPhoto("unloading", els.unloadingPhoto.files[0]));
-
-  els.baySelector.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-bay]");
-    if (button) selectBay(Number(button.dataset.bay));
-  });
-
-  els.baySummaryBody.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-bay]");
-    if (!button) return;
-    selectBay(Number(button.dataset.bay));
-    els.bayEditor.scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
+  ["loading", "unloading"].forEach((phase) => {
+    const input = captureElement(phase, "Photos");
+    input.addEventListener("change", () => {
+      state.files.captures[phase] = acceptedFiles(input.files, 1);
+      renderCapturePhotoPreview(phase);
+    });
+    captureElement(phase, "BaySelector").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-bay]");
+      if (button) toggleCaptureBay(phase, Number(button.dataset.bay));
+    });
+    captureElement(phase, "Save").addEventListener("click", () => saveBatchCapture(phase));
   });
 
   const updateTrial = async (event) => {
@@ -189,9 +168,6 @@ function bindEvents() {
   };
   els.batiTrialsBody.addEventListener("change", updateTrial);
 
-  els.previousBay.addEventListener("click", () => selectBay(Math.max(1, state.currentBay - 1)));
-  els.nextBay.addEventListener("click", saveCurrentBay);
-  els.captureGps.addEventListener("click", captureGps);
   els.clearForm.addEventListener("click", clearFormWithConfirmation);
   els.newRecord.addEventListener("click", resetForNewRecord);
   els.topNewRecord.addEventListener("click", startNewRecord);
@@ -218,10 +194,8 @@ function printForm() {
 }
 
 function renderLanguageDependentContent() {
-  captureBayEditor();
   renderAll();
   renderTrials();
-  renderGpsStatus();
   renderRecords();
   renderActiveRecordBanner();
   if (!state.submitting) els.submitForm.textContent = t("action.submit");
@@ -258,9 +232,9 @@ function restoreDraft() {
     else control.value = value ?? "";
   });
 
-  state.currentBay = clampInteger(draft.currentBay, 1, 8, 1);
   state.bayCount = clampInteger(draft.bayCount, 1, 8, 8);
   state.bays = sanitizeBays(draft.bays);
+  state.selectedBays = sanitizeSelectedBays(draft.selectedBays, state.bayCount);
   state.submissionId = isUuid(draft.submissionId) ? draft.submissionId : null;
   state.uploadToken = typeof draft.uploadToken === "string" ? draft.uploadToken : null;
   state.receiptNumber = typeof draft.receiptNumber === "string" ? draft.receiptNumber : null;
@@ -339,11 +313,18 @@ function sanitizeSavedPhotos(value) {
   const bays = {};
   Object.entries(value?.bays || {}).forEach(([bayNumber, phases]) => {
     bays[bayNumber] = {
-      loading: clampInteger(phases?.loading, 0, 1, 0),
-      unloading: clampInteger(phases?.unloading, 0, 1, 0)
+      loading: clampInteger(phases?.loading, 0, 5, 0),
+      unloading: clampInteger(phases?.unloading, 0, 5, 0)
     };
   });
   return { table, bays };
+}
+
+function sanitizeSelectedBays(value, bayCount = 8) {
+  const clean = (phase) => [...new Set(Array.isArray(value?.[phase]) ? value[phase] : [])]
+    .map(Number)
+    .filter((bayNumber) => Number.isInteger(bayNumber) && bayNumber >= 1 && bayNumber <= bayCount);
+  return { loading: clean("loading"), unloading: clean("unloading") };
 }
 
 function scheduleDraftSave() {
@@ -352,7 +333,6 @@ function scheduleDraftSave() {
 }
 
 function saveDraft() {
-  captureBayEditor();
   const root = {};
   draftControls.forEach((control) => {
     root[control.id] = control.type === "checkbox" ? control.checked : control.value;
@@ -362,9 +342,9 @@ function saveDraft() {
     version: 2,
     savedAt,
     root,
-    currentBay: state.currentBay,
     bayCount: state.bayCount,
     bays: state.bays,
+    selectedBays: state.selectedBays,
     submissionId: state.submissionId,
     uploadToken: state.uploadToken,
     receiptNumber: state.receiptNumber,
@@ -381,19 +361,13 @@ function saveDraft() {
 function applyLocationSelection(resetCurrentBay) {
   const location = selectedLocation();
   if (location) state.bayCount = location.bayCount;
-  if (resetCurrentBay || state.currentBay > state.bayCount) state.currentBay = 1;
+  if (resetCurrentBay) state.selectedBays = { loading: [], unloading: [] };
+  state.selectedBays = sanitizeSelectedBays(state.selectedBays, state.bayCount);
   renderAll();
 }
 
 function selectedLocation() {
   return CONFIG.locations.find((location) => location.value === els.dryerLocation.value) || null;
-}
-
-function captureBayEditor() {
-  const bay = ensureBay(state.currentBay);
-  bayControls.forEach((control) => {
-    bay[control.dataset.bayField] = control.value;
-  });
 }
 
 function ensureBay(bayNumber) {
@@ -402,32 +376,29 @@ function ensureBay(bayNumber) {
   return state.bays[key];
 }
 
-function ensureBayFiles(bayNumber) {
-  const key = String(bayNumber);
-  if (!state.files.bays[key]) state.files.bays[key] = { loading: null, unloading: null };
-  return state.files.bays[key];
-}
-
 function savedBayPhotos(bayNumber) {
   const key = String(bayNumber);
   if (!state.savedPhotos.bays[key]) state.savedPhotos.bays[key] = { loading: 0, unloading: 0 };
   return state.savedPhotos.bays[key];
 }
 
-function selectBay(bayNumber) {
-  if (!Number.isInteger(bayNumber) || bayNumber < 1 || bayNumber > state.bayCount) return;
-  captureBayEditor();
-  state.currentBay = bayNumber;
-  renderAll();
-  scheduleDraftSave();
+function captureElement(phase, part) {
+  const phaseTitle = `${phase[0].toUpperCase()}${phase.slice(1)}`;
+  const key = part === "Save" ? `save${phaseTitle}Capture`
+    : part === "BaySelector" ? `${phase}BaySelector`
+      : part === "List" ? `${phase}CaptureList`
+        : part === "PhotoPreview" ? `${phase}CapturePhotoPreview`
+          : `${phase}Capture${part}`;
+  return els[key];
 }
 
 function renderAll() {
-  renderBaySelector();
-  renderBayEditor();
+  renderBatchBaySelectors();
   renderBayStatus();
   renderBaySummary();
-  updateGpsSummary();
+  renderCaptureLists();
+  renderCapturePhotoPreview("loading");
+  renderCapturePhotoPreview("unloading");
   renderPhotoPreview(els.tablePhotoPreview, state.files.table, state.savedPhotos.table);
   renderActiveRecordBanner();
 }
@@ -441,59 +412,55 @@ function renderActiveRecordBanner() {
   els.activeRecordStatus.classList.toggle("is-complete", state.recordStatus === "complete");
 }
 
-function renderBaySelector() {
-  els.baySelector.replaceChildren();
-  for (let bayNumber = 1; bayNumber <= state.bayCount; bayNumber += 1) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.bay = String(bayNumber);
-    button.setAttribute("role", "tab");
-    button.setAttribute("aria-selected", String(bayNumber === state.currentBay));
-    button.textContent = t("bay.label", { number: bayNumber });
-    applyBayStatusClass(button, bayNumber);
-    els.baySelector.append(button);
-  }
-}
-
-function renderBayEditor() {
-  const bay = ensureBay(state.currentBay);
-  bayControls.forEach((control) => {
-    control.value = bay[control.dataset.bayField] ?? "";
+function renderBatchBaySelectors() {
+  ["loading", "unloading"].forEach((phase) => {
+    const container = captureElement(phase, "BaySelector");
+    container.replaceChildren();
+    for (let bayNumber = 1; bayNumber <= state.bayCount; bayNumber += 1) {
+      const button = document.createElement("button");
+      const selected = state.selectedBays[phase].includes(bayNumber);
+      button.type = "button";
+      button.dataset.bay = String(bayNumber);
+      button.className = "batch-bay-button";
+      button.setAttribute("aria-pressed", String(selected));
+      button.classList.toggle("is-selected", selected);
+      button.classList.toggle("has-data", bayPhaseHasData(bayNumber, phase));
+      button.textContent = t("bay.label", { number: bayNumber });
+      container.append(button);
+    }
   });
-  els.bayEditorTitle.textContent = t("bay.label", { number: state.currentBay });
-  els.previousBay.disabled = state.currentBay === 1;
-  els.nextBay.disabled = state.submitting;
-  els.nextBay.textContent = state.currentBay === state.bayCount ? t("bay.save") : t("bay.next");
-  els.loadingPhoto.value = "";
-  els.unloadingPhoto.value = "";
-  const files = ensureBayFiles(state.currentBay);
-  const savedPhotos = savedBayPhotos(state.currentBay);
-  renderPhotoPreview(els.loadingPhotoPreview, files.loading ? [files.loading] : [], savedPhotos.loading);
-  renderPhotoPreview(els.unloadingPhotoPreview, files.unloading ? [files.unloading] : [], savedPhotos.unloading);
-  renderMetrics();
 }
 
 function renderBayStatus() {
-  els.baySelector.querySelectorAll("button[data-bay]").forEach((button) => {
-    applyBayStatusClass(button, Number(button.dataset.bay));
-  });
   const entered = activeBayNumbers().filter((bayNumber) => bayHasData(bayNumber)).length;
   els.bayProgress.textContent = t("bay.progress", { entered, total: state.bayCount });
 }
 
-function applyBayStatusClass(button, bayNumber) {
-  button.classList.toggle("has-data", bayHasData(bayNumber));
-  button.classList.toggle("complete", bayIsComplete(bayNumber));
-  const statusKey = bayIsComplete(bayNumber) ? "bay.complete" : bayHasData(bayNumber) ? "bay.started" : "bay.empty";
-  button.setAttribute("aria-label", `${t("bay.label", { number: bayNumber })}, ${t(statusKey)}`);
+function toggleCaptureBay(phase, bayNumber) {
+  if (!Number.isInteger(bayNumber) || bayNumber < 1 || bayNumber > state.bayCount) return;
+  const selected = new Set(state.selectedBays[phase]);
+  if (selected.has(bayNumber)) selected.delete(bayNumber);
+  else selected.add(bayNumber);
+  state.selectedBays[phase] = [...selected].sort((a, b) => a - b);
+  renderBatchBaySelectors();
+  scheduleDraftSave();
 }
 
 function bayHasData(bayNumber) {
   const bay = ensureBay(bayNumber);
   const hasField = Object.values(bay).some((value) => String(value ?? "").trim() !== "");
-  const files = ensureBayFiles(bayNumber);
   const savedPhotos = savedBayPhotos(bayNumber);
-  return hasField || Boolean(files.loading || files.unloading || savedPhotos.loading || savedPhotos.unloading);
+  return hasField || Boolean(savedPhotos.loading || savedPhotos.unloading);
+}
+
+function bayPhaseHasData(bayNumber, phase) {
+  const bay = ensureBay(bayNumber);
+  return Boolean(
+    String(bay[`${phase}_at`] || "").trim()
+    || String(bay[`${phase}_weight_kg`] || "").trim()
+    || String(bay[`${phase}_weather`] || "").trim()
+    || savedBayPhotos(bayNumber)[phase]
+  );
 }
 
 function bayIsComplete(bayNumber) {
@@ -508,12 +475,6 @@ function bayIsComplete(bayNumber) {
 
 function activeBayNumbers() {
   return Array.from({ length: state.bayCount }, (_, index) => index + 1);
-}
-
-function renderMetrics() {
-  const bay = ensureBay(state.currentBay);
-  els.dryingDuration.textContent = dryingDurationLabel(bay);
-  els.weightLoss.textContent = weightLossLabel(bay);
 }
 
 function dryingDurationLabel(bay) {
@@ -536,7 +497,6 @@ function renderBaySummary() {
   els.baySummaryBody.replaceChildren();
   activeBayNumbers().forEach((bayNumber) => {
     const bay = ensureBay(bayNumber);
-    const files = ensureBayFiles(bayNumber);
     const savedPhotos = savedBayPhotos(bayNumber);
     const row = document.createElement("tr");
     const values = [
@@ -546,23 +506,98 @@ function renderBaySummary() {
       formatLocalInput(bay.unloading_at),
       displayNumber(bay.unloading_weight_kg, 2),
       dryingDurationLabel(bay),
-      `${Number(Boolean(files.loading || savedPhotos.loading)) + Number(Boolean(files.unloading || savedPhotos.unloading))}/2`
+      `${savedPhotos.loading + savedPhotos.unloading}`
     ];
     values.forEach((value, index) => {
       const cell = document.createElement("td");
-      if (index === 0) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.dataset.bay = String(bayNumber);
-        button.textContent = value;
-        cell.append(button);
-      } else {
-        cell.textContent = value;
-      }
+      cell.textContent = value;
       row.append(cell);
     });
     els.baySummaryBody.append(row);
   });
+}
+
+function renderCapturePhotoPreview(phase) {
+  renderPhotoPreview(
+    captureElement(phase, "PhotoPreview"),
+    state.files.captures[phase]
+  );
+}
+
+function renderCaptureLists() {
+  ["loading", "unloading"].forEach((phase) => {
+    const container = captureElement(phase, "List");
+    container.replaceChildren();
+    const groups = new Map();
+    activeBayNumbers().forEach((bayNumber) => {
+      if (!bayPhaseHasData(bayNumber, phase)) return;
+      const bay = ensureBay(bayNumber);
+      const key = JSON.stringify([
+        bay[`${phase}_at`] || "",
+        bay[`${phase}_weight_kg`] ?? "",
+        bay[`${phase}_weather`] || ""
+      ]);
+      if (!groups.has(key)) groups.set(key, { bayNumbers: [], bay });
+      groups.get(key).bayNumbers.push(bayNumber);
+    });
+    if (!groups.size) {
+      const empty = document.createElement("p");
+      empty.className = "capture-list-empty";
+      empty.textContent = t("capture.empty");
+      container.append(empty);
+      return;
+    }
+    groups.forEach(({ bayNumbers, bay }) => {
+      const row = document.createElement("div");
+      row.className = "capture-list-row";
+      const bays = document.createElement("strong");
+      bays.textContent = bayNumbers.map((number) => `B${number}`).join(", ");
+      const details = document.createElement("span");
+      const weather = bay[`${phase}_weather`]
+        ? t(`weather.${bay[`${phase}_weather`]}`)
+        : "-";
+      details.textContent = [
+        formatLocalInput(bay[`${phase}_at`]),
+        `${displayNumber(bay[`${phase}_weight_kg`], 2)} kg`,
+        weather
+      ].join(" · ");
+      row.append(bays, details);
+      container.append(row);
+    });
+  });
+}
+
+function captureCardData(phase) {
+  return {
+    at: captureElement(phase, "At").value,
+    weight: captureElement(phase, "Weight").value,
+    weather: captureElement(phase, "Weather").value,
+    photos: state.files.captures[phase]
+  };
+}
+
+function captureCardHasData(phase) {
+  const capture = captureCardData(phase);
+  return Boolean(capture.at || capture.weight || capture.weather || capture.photos.length);
+}
+
+function applyCaptureToBays(phase) {
+  const capture = captureCardData(phase);
+  state.selectedBays[phase].forEach((bayNumber) => {
+    const bay = ensureBay(bayNumber);
+    bay[`${phase}_at`] = capture.at;
+    bay[`${phase}_weight_kg`] = capture.weight;
+    bay[`${phase}_weather`] = capture.weather;
+  });
+}
+
+function clearCaptureCard(phase) {
+  captureElement(phase, "At").value = "";
+  captureElement(phase, "Weight").value = "";
+  captureElement(phase, "Weather").value = "";
+  captureElement(phase, "Photos").value = "";
+  state.selectedBays[phase] = [];
+  state.files.captures[phase] = [];
 }
 
 function renderTrials() {
@@ -747,49 +782,20 @@ function renderRecords() {
   els.recordsStatus.textContent = t(state.recordsStatusKey, state.recordsStatusArgs);
   els.recordsStatus.dataset.status = state.recordsStatusError ? "error" : "";
   els.recordsList.replaceChildren();
-  state.records.forEach((record) => els.recordsList.append(createRecordCard(record)));
+  state.records.forEach((record) => els.recordsList.append(createRecordRow(record)));
 }
 
-function createRecordCard(record) {
-  const card = document.createElement("article");
-  card.className = "record-card";
-
-  const head = document.createElement("div");
-  head.className = "record-card-head";
-  const titleWrap = document.createElement("div");
-  const title = document.createElement("h3");
-  title.textContent = record.receipt_number || "-";
-  const meta = document.createElement("p");
-  meta.className = "record-card-meta";
-  meta.textContent = `${tableLabel(record.table_location)} · ${formatRecordDate(record.recorded_at)}`;
-  titleWrap.append(title, meta);
+function createRecordRow(record) {
+  const row = document.createElement("tr");
   const status = document.createElement("span");
   const complete = record.record_status === "complete";
   status.className = "record-status-pill";
   status.classList.toggle("is-complete", complete);
   status.textContent = t(complete ? "records.complete" : "records.inProgress");
-  head.append(titleWrap, status);
-
-  const bayGrid = document.createElement("div");
-  bayGrid.className = "record-bay-grid";
   const bayStates = Array.isArray(record.bay_states) ? record.bay_states : [];
-  bayStates.forEach((bay) => {
-    const pill = document.createElement("span");
-    const bayComplete = bay.state === "complete";
-    pill.className = "record-bay-pill";
-    pill.classList.toggle("is-complete", bayComplete);
-    const stateLabel = bayComplete
-      ? t("records.bayComplete")
-      : bay.state === "loading" ? t("records.bayLoading") : t("records.bayStarted");
-    pill.textContent = `B${bay.bay_number} · ${stateLabel}`;
-    bayGrid.append(pill);
-  });
-
-  const footer = document.createElement("div");
-  footer.className = "record-card-footer";
-  const details = document.createElement("span");
-  details.className = "record-edit-hint";
-  details.textContent = `${t("records.bays", { count: record.bay_count || bayStates.length })} · ${t("records.updated", { date: formatRecordDate(record.updated_at) })}`;
+  const bayText = bayStates.length
+    ? bayStates.map((bay) => `B${bay.bay_number}`).join(", ")
+    : t("records.bays", { count: record.bay_count || 0 });
   const edit = document.createElement("button");
   edit.type = "button";
   const access = recordAccessFor(record.receipt_number);
@@ -797,10 +803,22 @@ function createRecordCard(record) {
   edit.textContent = t(access ? "records.edit" : "records.unlockEdit");
   edit.title = t(access ? "records.edit" : "records.unlockHint");
   edit.dataset.editReceipt = record.receipt_number;
-  footer.append(details, edit);
-
-  card.append(head, bayGrid, footer);
-  return card;
+  const values = [
+    record.receipt_number || "-",
+    tableLabel(record.table_location),
+    formatRecordDate(record.recorded_at),
+    status,
+    bayText,
+    formatRecordDate(record.updated_at),
+    edit
+  ];
+  values.forEach((value) => {
+    const cell = document.createElement("td");
+    if (value instanceof Node) cell.append(value);
+    else cell.textContent = value;
+    row.append(cell);
+  });
+  return row;
 }
 
 async function openSavedRecord(receiptNumber) {
@@ -872,9 +890,6 @@ function hydrateSavedRecord(record, access) {
   els.enumeratorId.value = record.enumerator_id || "";
   els.recordsRaId.value = record.enumerator_id || els.recordsRaId.value;
   els.recordedAt.value = localDateTimeFromIso(record.recorded_at);
-  els.gpsLatitude.value = record.gps_latitude ?? "";
-  els.gpsLongitude.value = record.gps_longitude ?? "";
-  els.gpsAccuracy.value = record.gps_accuracy_m ?? "";
   els.dryingConfiguration.value = record.drying_configuration || "";
   els.generalObservations.value = record.general_observations || "";
   els.workingWell.value = record.working_well || "";
@@ -894,12 +909,11 @@ function hydrateSavedRecord(record, access) {
       notes: bay.notes || ""
     };
     state.savedPhotos.bays[key] = {
-      loading: clampInteger(bay.loading_photo_count, 0, 1, 0),
-      unloading: clampInteger(bay.unloading_photo_count, 0, 1, 0)
+      loading: clampInteger(bay.loading_photo_count, 0, 5, 0),
+      unloading: clampInteger(bay.unloading_photo_count, 0, 5, 0)
     };
   });
   applyLocationSelection(false);
-  state.currentBay = firstOpenBay();
   els.formPanel.hidden = false;
   els.successPanel.hidden = true;
   setStatus(t("records.editing"), "success");
@@ -909,12 +923,6 @@ function hydrateSavedRecord(record, access) {
   loadRecords();
 }
 
-function firstOpenBay() {
-  return activeBayNumbers().find((bayNumber) => bayHasData(bayNumber) && !bayIsComplete(bayNumber))
-    || activeBayNumbers().find((bayNumber) => !bayHasData(bayNumber))
-    || 1;
-}
-
 function formHasMeaningfulData() {
   return Boolean(
     state.submissionId
@@ -922,18 +930,11 @@ function formHasMeaningfulData() {
     || els.enumeratorName.value.trim()
     || Object.keys(state.bays).some((bayNumber) => bayHasData(Number(bayNumber)))
     || state.files.table.length
+    || captureCardHasData("loading")
+    || captureCardHasData("unloading")
+    || state.selectedBays.loading.length
+    || state.selectedBays.unloading.length
   );
-}
-
-function setBayPhoto(phase, file) {
-  const accepted = acceptedFiles(file ? [file] : [], 1);
-  const files = ensureBayFiles(state.currentBay);
-  files[phase] = accepted[0] || null;
-  const preview = phase === "loading" ? els.loadingPhotoPreview : els.unloadingPhotoPreview;
-  renderPhotoPreview(preview, files[phase] ? [files[phase]] : [], savedBayPhotos(state.currentBay)[phase]);
-  renderBayStatus();
-  renderBaySummary();
-  scheduleDraftSave();
 }
 
 function acceptedFiles(fileList, limit) {
@@ -976,79 +977,21 @@ function renderPhotoPreview(container, files, savedCount = 0) {
   });
 }
 
-function captureGps() {
-  if (!navigator.geolocation) {
-    setGpsStatus("gps.unavailable", {}, true);
-    return;
-  }
-  els.captureGps.disabled = true;
-  els.captureGps.textContent = t("gps.locating");
-  setGpsStatus("gps.requesting");
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      els.gpsLatitude.value = position.coords.latitude.toFixed(6);
-      els.gpsLongitude.value = position.coords.longitude.toFixed(6);
-      els.gpsAccuracy.value = Number.isFinite(position.coords.accuracy) ? position.coords.accuracy.toFixed(1) : "";
-      updateGpsSummary();
-      setGpsStatus("gps.captured", {
-        accuracy: Number.isFinite(position.coords.accuracy) ? ` ±${Math.round(position.coords.accuracy)} m` : ""
-      });
-      els.captureGps.disabled = false;
-      els.captureGps.textContent = t("gps.refresh");
-      scheduleDraftSave();
-    },
-    (error) => {
-      const key = { 1: "gps.permission", 2: "gps.position", 3: "gps.timeout" }[error.code] || "gps.failed";
-      setGpsStatus(key, {}, true);
-      els.captureGps.disabled = false;
-      els.captureGps.textContent = t("gps.capture");
-    },
-    { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 }
-  );
-}
-
-function updateGpsSummary() {
-  const latitude = nullableNumber(els.gpsLatitude.value);
-  const longitude = nullableNumber(els.gpsLongitude.value);
-  const accuracy = nullableNumber(els.gpsAccuracy.value);
-  if (latitude === null && longitude === null) {
-    els.gpsSummary.value = "";
-    return;
-  }
-  if (latitude === null || longitude === null) {
-    els.gpsSummary.value = t("gps.enterBoth");
-    return;
-  }
-  els.gpsSummary.value = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}${accuracy !== null ? ` (±${Math.round(accuracy)} m)` : ""}`;
-}
-
-function setGpsStatus(key, args = {}, isError = false) {
-  state.gpsStatusKey = key;
-  state.gpsStatusArgs = args;
-  state.gpsStatusError = isError;
-  renderGpsStatus();
-}
-
-function renderGpsStatus() {
-  els.gpsStatus.textContent = t(state.gpsStatusKey, state.gpsStatusArgs);
-  els.gpsStatus.style.color = state.gpsStatusError ? "var(--danger)" : "";
-}
-
-async function saveCurrentBay() {
+async function saveBatchCapture(phase) {
   if (state.submitting) return;
-  captureBayEditor();
-  const bayNumber = state.currentBay;
-  const validationMessage = validateIncrementalBay(bayNumber);
+  const bayNumbers = [...state.selectedBays[phase]];
+  const validationMessage = validateBatchCapture(phase, bayNumbers);
   if (validationMessage) {
     setStatus(validationMessage, "error");
     return;
   }
 
+  applyCaptureToBays(phase);
   ensureRecordIdentity();
   saveDraft();
   state.submitting = true;
   setSubmittingUi(true);
-  setStatus(t("bay.saving", { number: bayNumber }));
+  setStatus(t("capture.saving"));
   let receipt;
   try {
     receipt = await callRpc(CONFIG.submitRpc, {
@@ -1057,13 +1000,19 @@ async function saveCurrentBay() {
     });
     acceptSavedReceipt(receipt);
     saveDraft();
-    const photoResult = await uploadSelectedPhotos({ bayNumbers: [bayNumber], includeTable: true });
+    const photoResult = await uploadSelectedPhotos({
+      phaseBayNumbers: { [phase]: bayNumbers },
+      includeTable: true
+    });
     applyUploadedPhotoResult(photoResult);
+    clearCaptureCard(phase);
     saveDraft();
     renderAll();
-    setStatus(t("bay.saved", { number: bayNumber, receipt: state.receiptNumber }), "success");
+    setStatus(t("capture.saved", {
+      bays: bayNumbers.map((number) => `B${number}`).join(", "),
+      receipt: state.receiptNumber
+    }), "success");
     loadRecords();
-    if (bayNumber < state.bayCount) selectBay(bayNumber + 1);
   } catch (error) {
     const receiptHint = receipt?.receipt_number
       ? t("status.recordSavedPhotos", { receipt: receipt.receipt_number })
@@ -1073,32 +1022,35 @@ async function saveCurrentBay() {
   } finally {
     state.submitting = false;
     setSubmittingUi(false);
-    renderBayEditor();
+    renderAll();
   }
 }
 
-function validateIncrementalBay(bayNumber) {
+function validateBatchCapture(phase, bayNumbers) {
   const coreMessage = validateCoreRecordFields();
   if (coreMessage) return coreMessage;
-  if (!bayHasData(bayNumber)) return t("validation.bayEmpty", { bay: bayNumber });
-  const bay = ensureBay(bayNumber);
-  if (bay.loading_at && bay.unloading_at
-      && new Date(bay.unloading_at).getTime() < new Date(bay.loading_at).getTime()) {
-    return t("validation.timeOrder", { bay: bayNumber });
+  if (!bayNumbers.length) return t("capture.selectAtLeastOneBay");
+  if (!captureCardHasData(phase)) return t("capture.enterMeasurement");
+  const capture = captureCardData(phase);
+  for (const bayNumber of bayNumbers) {
+    const bay = ensureBay(bayNumber);
+    const loadingAt = phase === "loading" ? capture.at : bay.loading_at;
+    const unloadingAt = phase === "unloading" ? capture.at : bay.unloading_at;
+    if (loadingAt && unloadingAt
+        && new Date(unloadingAt).getTime() < new Date(loadingAt).getTime()) {
+      return t("validation.timeOrder", { bay: bayNumber });
+    }
   }
   return "";
 }
 
 function validateCoreRecordFields() {
-  for (const control of [els.dryerLocation, els.enumeratorName, els.recordedAt, els.dryingConfiguration]) {
+  for (const control of [els.enumeratorName, els.enumeratorId, els.recordedAt, els.dryerLocation, els.dryingConfiguration]) {
     if (!control.checkValidity()) {
       control.reportValidity();
       return t("validation.required");
     }
   }
-  const latitude = nullableNumber(els.gpsLatitude.value);
-  const longitude = nullableNumber(els.gpsLongitude.value);
-  if ((latitude === null) !== (longitude === null)) return t("validation.gpsPair");
   return "";
 }
 
@@ -1117,8 +1069,17 @@ function acceptSavedReceipt(receipt) {
 async function submitForm(event) {
   event.preventDefault();
   if (state.submitting) return;
-  captureBayEditor();
   els.form.classList.add("was-validated");
+
+  for (const phase of ["loading", "unloading"]) {
+    if (!captureCardHasData(phase) && !state.selectedBays[phase].length) continue;
+    const captureMessage = validateBatchCapture(phase, state.selectedBays[phase]);
+    if (captureMessage) {
+      setStatus(captureMessage, "error");
+      return;
+    }
+    applyCaptureToBays(phase);
+  }
 
   const validationMessage = validateForm();
   if (validationMessage) {
@@ -1163,13 +1124,8 @@ function validateForm() {
     return t("validation.required");
   }
 
-  const latitude = nullableNumber(els.gpsLatitude.value);
-  const longitude = nullableNumber(els.gpsLongitude.value);
-  if ((latitude === null) !== (longitude === null)) return t("validation.gpsPair");
-
   const enteredBays = activeBayNumbers().filter((bayNumber) => bayHasData(bayNumber));
   if (!enteredBays.length) {
-    selectBay(1);
     return t("validation.oneBay");
   }
 
@@ -1178,7 +1134,6 @@ function validateForm() {
     const loadingAt = new Date(bay.loading_at).getTime();
     const unloadingAt = new Date(bay.unloading_at).getTime();
     if (Number.isFinite(loadingAt) && Number.isFinite(unloadingAt) && unloadingAt < loadingAt) {
-      selectBay(bayNumber);
       return t("validation.timeOrder", { bay: bayNumber });
     }
   }
@@ -1200,9 +1155,6 @@ function buildPayload(finalize) {
     enumerator_name: els.enumeratorName.value.trim(),
     enumerator_id: nullableText(els.enumeratorId.value),
     recorded_at: toIso(els.recordedAt.value),
-    gps_latitude: nullableNumber(els.gpsLatitude.value),
-    gps_longitude: nullableNumber(els.gpsLongitude.value),
-    gps_accuracy_m: nullableNumber(els.gpsAccuracy.value),
     drying_configuration: els.dryingConfiguration.value,
     general_observations: nullableText(els.generalObservations.value),
     working_well: nullableText(els.workingWell.value),
@@ -1232,13 +1184,16 @@ function bayPayload(bayNumber) {
   };
 }
 
-async function uploadSelectedPhotos({ bayNumbers = activeBayNumbers(), includeTable = true } = {}) {
+async function uploadSelectedPhotos({ phaseBayNumbers = state.selectedBays, includeTable = true } = {}) {
   const uploads = [];
   if (includeTable) state.files.table.forEach((file) => uploads.push({ kind: "table", file }));
-  bayNumbers.forEach((bayNumber) => {
-    const files = ensureBayFiles(bayNumber);
-    if (files.loading) uploads.push({ kind: "bay", phase: "loading", bayNumber, file: files.loading });
-    if (files.unloading) uploads.push({ kind: "bay", phase: "unloading", bayNumber, file: files.unloading });
+  ["loading", "unloading"].forEach((phase) => {
+    const bayNumbers = Array.isArray(phaseBayNumbers?.[phase]) ? phaseBayNumbers[phase] : [];
+    bayNumbers.forEach((bayNumber) => {
+      state.files.captures[phase].forEach((file) => {
+        uploads.push({ kind: "bay", phase, bayNumber, file });
+      });
+    });
   });
   if (!uploads.length) return { count: 0, attached: false, bayPhotos: [] };
 
@@ -1265,7 +1220,9 @@ async function uploadSelectedPhotos({ bayNumbers = activeBayNumbers(), includeTa
         manifestByBay.set(upload.bayNumber, bayManifest);
         manifest.bays.push(bayManifest);
       }
-      manifestByBay.get(upload.bayNumber)[upload.phase] = [objectPath];
+      const bayManifest = manifestByBay.get(upload.bayNumber);
+      bayManifest[upload.phase] ||= [];
+      bayManifest[upload.phase].push(objectPath);
     }
   }
 
@@ -1279,11 +1236,14 @@ async function uploadSelectedPhotos({ bayNumbers = activeBayNumbers(), includeTa
     state.files.table = [];
     els.tablePhotos.value = "";
   }
-  manifest.bays.forEach((bay) => {
-    const files = ensureBayFiles(bay.bay_number);
-    if (bay.loading) files.loading = null;
-    if (bay.unloading) files.unloading = null;
-  });
+  if (manifest.bays.some((bay) => bay.loading)) {
+    state.files.captures.loading = [];
+    els.loadingCapturePhotos.value = "";
+  }
+  if (manifest.bays.some((bay) => bay.unloading)) {
+    state.files.captures.unloading = [];
+    els.unloadingCapturePhotos.value = "";
+  }
   return {
     count: uploads.length,
     attached: true,
@@ -1307,8 +1267,8 @@ function applyUploadedPhotoResult(result) {
   });
   result.bayPhotos?.forEach((bay) => {
     const saved = savedBayPhotos(bay.bay_number);
-    saved.loading = clampInteger(bay.loading_photo_count, 0, 1, saved.loading);
-    saved.unloading = clampInteger(bay.unloading_photo_count, 0, 1, saved.unloading);
+    saved.loading = clampInteger(bay.loading_photo_count, 0, 5, saved.loading);
+    saved.unloading = clampInteger(bay.unloading_photo_count, 0, 5, saved.unloading);
   });
 }
 
@@ -1422,7 +1382,8 @@ function showSuccess(receipt, photoResult) {
 function setSubmittingUi(isSubmitting) {
   els.submitForm.disabled = isSubmitting;
   els.clearForm.disabled = isSubmitting;
-  els.nextBay.disabled = isSubmitting;
+  els.saveLoadingCapture.disabled = isSubmitting;
+  els.saveUnloadingCapture.disabled = isSubmitting;
   els.topNewRecord.disabled = isSubmitting;
   els.newRecord.disabled = isSubmitting;
   els.submitForm.textContent = t(isSubmitting ? "action.submitting" : "action.submit");
@@ -1456,7 +1417,6 @@ function resetForNewRecord({ scroll = true } = {}) {
   setDefaultDateTime();
   loadRememberedEnumerator();
   els.saveStatus.textContent = "";
-  renderGpsStatus();
   renderAll();
   renderRecords();
   if (scroll) window.scrollTo({ top: 0, behavior: preferredScrollBehavior() });
