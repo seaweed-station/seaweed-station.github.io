@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.9";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.10";
 
 const packs = {
   en: {

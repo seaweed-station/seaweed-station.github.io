@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title data-i18n="meta.title">Seaweed Drying Record - Seaweed Station</title>
-  <link rel="stylesheet" href="./assets/css/drying.css?v=20260714.9">
+  <link rel="stylesheet" href="./assets/css/drying.css?v=20260714.10">
 </head>
 <body class="drying-page" data-language="en">
   <header class="app-header">
@@ -135,7 +135,7 @@
 
         <fieldset class="form-card table-configuration-card">
           <legend data-i18n="configuration.legend">Table configuration</legend>
-          <label class="required-field">
+          <label class="required-field datetime-field">
             <span data-i18n="record.dateTime">Record date / time</span>
             <input id="recordedAt" type="datetime-local" data-draft required>
           </label>
@@ -186,7 +186,7 @@
                   <input id="loadingCaptureWeight" type="number" data-draft min="0" max="1000" step="0.01" inputmode="decimal">
                   <output id="loadingWeightSplit" class="weight-split-preview" aria-live="polite"></output>
                 </label>
-                <label class="required-field">
+                <label class="required-field datetime-field">
                   <span data-i18n="common.dateTime">Date / time</span>
                   <input id="loadingCaptureAt" type="datetime-local" data-draft>
                 </label>
@@ -230,7 +230,7 @@
                   <input id="unloadingCaptureWeight" type="number" data-draft min="0" max="1000" step="0.01" inputmode="decimal">
                   <output id="unloadingWeightSplit" class="weight-split-preview" aria-live="polite"></output>
                 </label>
-                <label class="required-field">
+                <label class="required-field datetime-field">
                   <span data-i18n="common.dateTime">Date / time</span>
                   <input id="unloadingCaptureAt" type="datetime-local" data-draft>
                 </label>
@@ -479,6 +479,6 @@
     </article>
   </section>
 
-  <script type="module" src="./assets/js/drying_form.js?v=20260714.9"></script>
+  <script type="module" src="./assets/js/drying_form.js?v=20260714.10"></script>
 </body>
 </html>

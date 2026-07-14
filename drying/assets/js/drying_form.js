@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.9";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.10";
 import {
   configurationLabel,
   configurationParts,
@@ -6,7 +6,7 @@ import {
   initDryingLanguage,
   t,
   tableLabel
-} from "./drying_language.js?v=20260714.9";
+} from "./drying_language.js?v=20260714.10";
 
 const $ = (id) => document.getElementById(id);
 

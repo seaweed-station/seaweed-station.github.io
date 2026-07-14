@@ -666,6 +666,19 @@ textarea {
   padding: 0 10px;
 }
 
+.datetime-field {
+  overflow: hidden;
+}
+
+.datetime-field input[type="datetime-local"] {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  inline-size: 100%;
+  box-sizing: border-box;
+  justify-self: stretch;
+}
+
 textarea {
   min-height: 68px;
   padding: 8px 10px;
@@ -1547,6 +1560,16 @@ input[readonly] {
   input[type="date"],
   textarea {
     font-size: 16px;
+  }
+
+  @supports (-webkit-touch-callout: none) {
+    .datetime-field input[type="datetime-local"] {
+      width: -webkit-fill-available;
+      max-width: -webkit-fill-available;
+      inline-size: -webkit-fill-available;
+      -webkit-appearance: none;
+      appearance: none;
+    }
   }
 
   .table-reference > summary,
