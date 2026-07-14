@@ -24,6 +24,7 @@ const els = {
   tablePhotoPreview: $("tablePhotoPreview"),
   bayProgress: $("bayProgress"),
   loadingCaptureWeight: $("loadingCaptureWeight"),
+  loadingWeightSplit: $("loadingWeightSplit"),
   loadingCaptureAt: $("loadingCaptureAt"),
   loadingCaptureWeather: $("loadingCaptureWeather"),
   loadingBaySelector: $("loadingBaySelector"),
@@ -32,6 +33,7 @@ const els = {
   saveLoadingCapture: $("saveLoadingCapture"),
   loadingCaptureList: $("loadingCaptureList"),
   unloadingCaptureWeight: $("unloadingCaptureWeight"),
+  unloadingWeightSplit: $("unloadingWeightSplit"),
   unloadingCaptureAt: $("unloadingCaptureAt"),
   unloadingCaptureWeather: $("unloadingCaptureWeather"),
   unloadingBaySelector: $("unloadingBaySelector"),
@@ -145,6 +147,7 @@ function bindEvents() {
 
   ["loading", "unloading"].forEach((phase) => {
     const input = captureElement(phase, "Photos");
+    captureElement(phase, "Weight").addEventListener("input", () => renderWeightSplit(phase));
     input.addEventListener("change", () => {
       state.files.captures[phase] = acceptedFiles(input.files, 1);
       renderCapturePhotoPreview(phase);
@@ -397,6 +400,8 @@ function renderAll() {
   renderBayStatus();
   renderBaySummary();
   renderCaptureLists();
+  renderWeightSplit("loading");
+  renderWeightSplit("unloading");
   renderCapturePhotoPreview("loading");
   renderCapturePhotoPreview("unloading");
   renderPhotoPreview(els.tablePhotoPreview, state.files.table, state.savedPhotos.table);
@@ -443,6 +448,7 @@ function toggleCaptureBay(phase, bayNumber) {
   else selected.add(bayNumber);
   state.selectedBays[phase] = [...selected].sort((a, b) => a - b);
   renderBatchBaySelectors();
+  renderWeightSplit(phase);
   scheduleDraftSave();
 }
 
@@ -556,9 +562,16 @@ function renderCaptureLists() {
       const weather = bay[`${phase}_weather`]
         ? t(`weather.${bay[`${phase}_weather`]}`)
         : "-";
+      const perBayWeight = nullableNumber(bay[`${phase}_weight_kg`]);
+      const weightSummary = perBayWeight === null
+        ? "-"
+        : t("capture.savedWeightSplit", {
+          total: displayNumber(perBayWeight * bayNumbers.length, 5),
+          perBay: displayNumber(perBayWeight, 5)
+        });
       details.textContent = [
         formatLocalInput(bay[`${phase}_at`]),
-        `${displayNumber(bay[`${phase}_weight_kg`], 2)} kg`,
+        weightSummary,
         weather
       ].join(" · ");
       row.append(bays, details);
@@ -583,12 +596,33 @@ function captureCardHasData(phase) {
 
 function applyCaptureToBays(phase) {
   const capture = captureCardData(phase);
+  const weightPerBay = splitWeightAcrossBays(capture.weight, state.selectedBays[phase].length);
   state.selectedBays[phase].forEach((bayNumber) => {
     const bay = ensureBay(bayNumber);
     bay[`${phase}_at`] = capture.at;
-    bay[`${phase}_weight_kg`] = capture.weight;
+    bay[`${phase}_weight_kg`] = weightPerBay === null ? "" : String(weightPerBay);
     bay[`${phase}_weather`] = capture.weather;
   });
+}
+
+function splitWeightAcrossBays(totalWeight, bayCount) {
+  const total = nullableNumber(totalWeight);
+  if (total === null || !Number.isInteger(bayCount) || bayCount < 1) return null;
+  return Math.round((total / bayCount) * 100_000) / 100_000;
+}
+
+function renderWeightSplit(phase) {
+  const output = els[`${phase}WeightSplit`];
+  const total = nullableNumber(captureElement(phase, "Weight").value);
+  const count = state.selectedBays[phase].length;
+  const perBay = splitWeightAcrossBays(total, count);
+  output.textContent = perBay === null
+    ? t("capture.splitHint")
+    : t("capture.splitPreview", {
+      total: displayNumber(total, 5),
+      count,
+      perBay: displayNumber(perBay, 5)
+    });
 }
 
 function clearCaptureCard(phase) {

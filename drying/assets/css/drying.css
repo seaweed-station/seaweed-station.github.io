@@ -1244,6 +1244,16 @@ input[readonly] {
   background: #fffdf3;
 }
 
+.weight-split-preview {
+  min-height: 17px;
+  color: #17685f;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: none;
+}
+
 .camera-field input[type="file"] {
   border-style: dashed;
   border-color: #cda93d;
