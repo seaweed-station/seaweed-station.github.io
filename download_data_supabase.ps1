@@ -43,8 +43,8 @@ if (!(Test-Path $openMeteoHelpers)) {
 # Keep in sync with config.json "stations".
 $defaultStations = @(
     @{ id = "shangani"; name = "Shangani Aramani"; dataFolder = "data_Shangani" }
-    @{ id = "funzi";    name = "Funzi Island";     dataFolder = "data_Funzi" }
-    @{ id = "spare";    name = "Spare";            dataFolder = "data_spare" }
+    @{ id = "funzi";    name = "Bati (Table 3)";   dataFolder = "data_Funzi" }
+    @{ id = "spare";    name = "Bati (Table 2)";   dataFolder = "data_spare" }
     @{ id = "perth";    name = "Perth Test";       dataFolder = "data_3262071_TT" }
 )
 
@@ -563,7 +563,8 @@ if ($weatherLocations.Count -eq 0) {
     $weatherLocations = @(
         @{ name = "Perth / Noranda";  lat = -31.87; lon = 115.90; stationKey = "perth" }
         @{ name = "Shangani Aramani, Kenya"; lat = -4.55; lon =  39.50; stationKey = "shangani" }
-        @{ name = "Funzi Island, Kenya";     lat =  -4.581429; lon =  39.437527; stationKey = "funzi" }
+        @{ name = "Bati, Kenya"; lat = -4.592111; lon = 39.392351; stationKey = "funzi" }
+        @{ name = "Bati, Kenya"; lat = -4.592111; lon = 39.392351; stationKey = "spare" }
     )
 }
 

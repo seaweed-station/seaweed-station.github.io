@@ -109,7 +109,7 @@ var SENSOR_MAPS = {
   },
   bati: {
     viewBox: '0 0 900 300',
-    label: 'Bati seaweed table sensor placement diagram',
+    label: 'Bati Table 1 seaweed table sensor placement diagram',
     svg: '<rect x="40" y="266" width="760" height="8" fill="#334155" rx="2"/>' +
       '<rect x="78" y="24" width="16" height="242" fill="#107c41" rx="3"/>' +
       '<rect x="238" y="24" width="16" height="242" fill="#107c41" rx="3"/>' +
@@ -208,6 +208,7 @@ var SENSOR_MAPS = {
       '<text x="326" y="154" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B6</text>' +
       '<text x="486" y="154" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B7</text>' +
       '<text x="646" y="154" font-family="sans-serif" font-size="22" font-weight="800" fill="#33c481" opacity="0.58" text-anchor="middle">B8</text>' +
+      '<!-- sensor-placements -->' +
       '<rect x="190" y="38" width="44" height="26" rx="4" fill="none" stroke="#ef4444" stroke-width="2"/>' +
       '<text x="212" y="56" font-family="sans-serif" font-size="13" font-weight="700" fill="#ef4444" text-anchor="middle">S5</text>' +
       '<rect x="578" y="38" width="44" height="26" rx="4" fill="none" stroke="#eab308" stroke-width="2"/>' +
@@ -226,61 +227,37 @@ var SENSOR_MAPS = {
       { color: '#ef4444', label: 'S5' },
     ],
   },
-  funzi: {
-    viewBox: '0 0 930 280',
-    label: 'Funzi sensor placement diagram',
-    svg: '<rect x="55" y="132" width="12" height="108" fill="#3a7d44" rx="3"/>' +
-      '<rect x="265" y="132" width="12" height="108" fill="#3a7d44" rx="3"/>' +
-      '<rect x="475" y="132" width="12" height="108" fill="#3a7d44" rx="3"/>' +
-      '<rect x="685" y="132" width="12" height="108" fill="#3a7d44" rx="3"/>' +
-      '<line x1="58" y1="132" x2="58" y2="240" stroke="#6fc47e" stroke-width="2" stroke-opacity="0.6"/>' +
-      '<line x1="268" y1="132" x2="268" y2="240" stroke="#6fc47e" stroke-width="2" stroke-opacity="0.6"/>' +
-      '<line x1="478" y1="132" x2="478" y2="240" stroke="#6fc47e" stroke-width="2" stroke-opacity="0.6"/>' +
-      '<line x1="688" y1="132" x2="688" y2="240" stroke="#6fc47e" stroke-width="2" stroke-opacity="0.6"/>' +
-      '<rect x="55" y="132" width="642" height="8" fill="#3a7d44" rx="2"/>' +
-      '<rect x="55" y="144" width="642" height="8" fill="#3a7d44" rx="2"/>' +
-      '<line x1="55" y1="134" x2="697" y2="134" stroke="#6fc47e" stroke-width="1.5" stroke-opacity="0.6"/>' +
-      '<line x1="55" y1="146" x2="697" y2="146" stroke="#6fc47e" stroke-width="1.5" stroke-opacity="0.6"/>' +
-      '<rect x="55" y="194" width="642" height="8" fill="#3a7d44" rx="2"/>' +
-      '<rect x="55" y="206" width="642" height="8" fill="#3a7d44" rx="2"/>' +
-      '<line x1="55" y1="196" x2="697" y2="196" stroke="#6fc47e" stroke-width="1.5" stroke-opacity="0.6"/>' +
-      '<line x1="55" y1="208" x2="697" y2="208" stroke="#6fc47e" stroke-width="1.5" stroke-opacity="0.6"/>' +
-      '<rect x="50" y="127" width="22" height="28" fill="#2d5e35" rx="3"/><rect x="50" y="189" width="22" height="28" fill="#2d5e35" rx="3"/>' +
-      '<rect x="260" y="127" width="22" height="28" fill="#2d5e35" rx="3"/><rect x="260" y="189" width="22" height="28" fill="#2d5e35" rx="3"/>' +
-      '<rect x="470" y="127" width="22" height="28" fill="#2d5e35" rx="3"/><rect x="470" y="189" width="22" height="28" fill="#2d5e35" rx="3"/>' +
-      '<rect x="680" y="127" width="22" height="28" fill="#2d5e35" rx="3"/><rect x="680" y="189" width="22" height="28" fill="#2d5e35" rx="3"/>' +
-      '<line x1="30" y1="252" x2="720" y2="252" stroke="#888" stroke-width="2"/>' +
-      '<rect x="48" y="249" width="26" height="6" fill="#555" rx="1"/><rect x="258" y="249" width="26" height="6" fill="#555" rx="1"/>' +
-      '<rect x="468" y="249" width="26" height="6" fill="#555" rx="1"/><rect x="678" y="249" width="26" height="6" fill="#555" rx="1"/>' +
-      '<line x1="61" y1="240" x2="61" y2="255" stroke="#888" stroke-width="1.5"/>' +
-      '<line x1="271" y1="240" x2="271" y2="255" stroke="#888" stroke-width="1.5"/>' +
-      '<line x1="481" y1="240" x2="481" y2="255" stroke="#888" stroke-width="1.5"/>' +
-      '<line x1="691" y1="240" x2="691" y2="255" stroke="#888" stroke-width="1.5"/>' +
-      '<rect x="107" y="74" width="120" height="36" fill="#7e22ce" fill-opacity="0.15" stroke="#a855f7" stroke-width="1.5" rx="5"/>' +
-      '<text x="167" y="88" text-anchor="middle" fill="#a855f7" font-size="12" font-weight="700">S4</text>' +
-      '<text x="167" y="103" text-anchor="middle" fill="#a855f7" font-size="10">Upper West</text>' +
-      '<rect x="527" y="74" width="120" height="36" fill="#15803d" fill-opacity="0.15" stroke="#22c55e" stroke-width="1.5" rx="5"/>' +
-      '<text x="587" y="88" text-anchor="middle" fill="#22c55e" font-size="12" font-weight="700">S2</text>' +
-      '<text x="587" y="103" text-anchor="middle" fill="#22c55e" font-size="10">Upper East</text>' +
-      '<rect x="107" y="220" width="120" height="36" fill="#0369a1" fill-opacity="0.15" stroke="#38bdf8" stroke-width="1.5" rx="5"/>' +
-      '<text x="167" y="234" text-anchor="middle" fill="#38bdf8" font-size="12" font-weight="700">S1</text>' +
-      '<text x="167" y="249" text-anchor="middle" fill="#38bdf8" font-size="10">Lower West</text>' +
-      '<rect x="527" y="220" width="120" height="36" fill="#854d0e" fill-opacity="0.15" stroke="#eab308" stroke-width="1.5" rx="5"/>' +
-      '<text x="587" y="234" text-anchor="middle" fill="#eab308" font-size="12" font-weight="700">S3</text>' +
-      '<text x="587" y="249" text-anchor="middle" fill="#eab308" font-size="10">Lower East</text>' +
-      '<line x1="697" y1="138" x2="762" y2="138" stroke="#f97316" stroke-width="1.5" stroke-dasharray="6,4"/>' +
-      '<rect x="762" y="120" width="120" height="36" fill="#9a3412" fill-opacity="0.15" stroke="#f97316" stroke-width="1.5" rx="5"/>' +
-      '<text x="822" y="134" text-anchor="middle" fill="#f97316" font-size="12" font-weight="700">Control</text>' +
-      '<text x="822" y="149" text-anchor="middle" fill="#f97316" font-size="10">External Ref</text>' +
-      '<text x="376" y="270" text-anchor="middle" fill="#64748b" font-size="9">Green Metal Rack (4 posts)</text>',
-    legend: [
-      { color: '#38bdf8', label: 'S1 — Lower West' },
-      { color: '#22c55e', label: 'S2 — Upper East' },
-      { color: '#eab308', label: 'S3 — Lower East' },
-      { color: '#a855f7', label: 'S4 — Upper West' },
-      { color: '#f97316', label: 'Control — External Ref' },
-    ],
-  },
+};
+
+// Funzi uses the same rack and the same five sensor positions as Shangani.
+SENSOR_MAPS.funzi = {
+  viewBox: SENSOR_MAPS.shangani.viewBox,
+  label: 'Bati Table 3 seaweed table sensor placement diagram',
+  svg: SENSOR_MAPS.shangani.svg,
+  legend: SENSOR_MAPS.shangani.legend.map(function(item) {
+    return { color: item.color, label: item.label };
+  }),
+};
+
+// Spare shares the rack, but only S1-S3 are installed. Their heights match
+// Shangani and their labels sit one post to the left, beside the central leg.
+var SHARED_GREEN_TABLE_RACK_SVG = SENSOR_MAPS.shangani.svg.split('<!-- sensor-placements -->')[0];
+SENSOR_MAPS.spare = {
+  viewBox: SENSOR_MAPS.shangani.viewBox,
+  label: 'Bati Table 2 seaweed table sensor placement diagram',
+  svg: SHARED_GREEN_TABLE_RACK_SVG +
+    '<!-- sensor-placements -->' +
+    '<rect x="418" y="38" width="44" height="26" rx="4" fill="none" stroke="#eab308" stroke-width="2"/>' +
+    '<text x="440" y="56" font-family="sans-serif" font-size="13" font-weight="700" fill="#eab308" text-anchor="middle">S3</text>' +
+    '<rect x="418" y="112" width="44" height="26" rx="4" fill="none" stroke="#22c55e" stroke-width="2"/>' +
+    '<text x="440" y="130" font-family="sans-serif" font-size="13" font-weight="700" fill="#22c55e" text-anchor="middle">S2</text>' +
+    '<rect x="418" y="215" width="44" height="26" rx="4" fill="none" stroke="#38bdf8" stroke-width="2"/>' +
+    '<text x="440" y="233" font-family="sans-serif" font-size="13" font-weight="700" fill="#38bdf8" text-anchor="middle">S1</text>',
+  legend: [
+    { color: '#38bdf8', label: 'S1' },
+    { color: '#22c55e', label: 'S2' },
+    { color: '#eab308', label: 'S3' },
+  ],
 };
 
 // =====================================================================

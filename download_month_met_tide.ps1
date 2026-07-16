@@ -95,7 +95,8 @@ if ($locMap.Count -eq 0) {
     $locMap = @{
         perth = [ordered]@{ lat = -31.87; lon = 115.90; tideStation = "perth"; label = "Perth / Noranda" }
         shangani = [ordered]@{ lat = -4.55; lon = 39.50; tideStation = "kenya"; label = "Shangani Aramani, Kenya" }
-        funzi = [ordered]@{ lat = -4.581429; lon = 39.437527; tideStation = "kenya"; label = "Funzi Island, Kenya" }
+        funzi = [ordered]@{ lat = -4.592111; lon = 39.392351; tideStation = "kenya"; label = "Bati, Kenya" }
+        spare = [ordered]@{ lat = -4.592111; lon = 39.392351; tideStation = "kenya"; label = "Bati, Kenya" }
     }
 }
 

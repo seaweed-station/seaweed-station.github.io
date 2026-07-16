@@ -150,8 +150,8 @@ function dashboardClampInt(value, fallback, minValue, maxValue) {
  */
 var STATION_REGISTRY = [
   { id: 'shangani', name: 'Shangani Aramani', location: 'Kwale County, Kenya', enabled: true, dataFolder: 'data_Shangani', lat: -4.55, lon: 39.50, weatherName: 'Shangani Aramani, Kenya', tideStation: 'kenya', sensorMap: 'shangani', hasSatellite: true },
-  { id: 'funzi', name: 'Funzi Island', location: 'Funzi Island, Kenya', enabled: true, dataFolder: 'data_Funzi', lat: -4.581429, lon: 39.437527, weatherName: 'Funzi Island, Kenya', tideStation: 'kenya', sensorMap: 'funzi', hasSatellite: true },
-  { id: 'spare', name: 'Spare', location: 'Spare Station', enabled: true, dataFolder: 'data_spare', lat: null, lon: null, weatherName: null, tideStation: 'kenya', sensorMap: 'funzi', hasSatellite: true },
+  { id: 'funzi', name: 'Bati (Table 3)', location: 'Bati, Kenya', enabled: true, dataFolder: 'data_Funzi', lat: -4.592111, lon: 39.392351, weatherName: 'Bati, Kenya', tideStation: 'kenya', sensorMap: 'funzi', hasSatellite: true },
+  { id: 'spare', name: 'Bati (Table 2)', location: 'Bati, Kenya', enabled: true, dataFolder: 'data_spare', lat: -4.592111, lon: 39.392351, weatherName: 'Bati, Kenya', tideStation: 'kenya', sensorMap: 'spare', hasSatellite: true },
   { id: 'perth', name: 'Perth Test', location: 'Noranda, WA', enabled: true, dataFolder: 'data_3262071_TT', lat: -31.87, lon: 115.90, weatherName: 'Perth / Noranda', tideStation: 'perth', sensorMap: 'perth', hasSatellite: true },
   { id: 'perth_table', name: 'Perth Table', location: 'Noranda, WA', enabled: true, dataFolder: 'data_perth_table', lat: -31.87, lon: 115.90, weatherName: 'Perth Table / Noranda', tideStation: 'perth', sensorMap: 'perth', hasSatellite: true }
 ];

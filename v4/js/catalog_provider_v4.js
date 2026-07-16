@@ -17,7 +17,7 @@
   var CANONICAL_BATI_STATION = {
     station_uid: "ST-0102",
     station_key: "bati",
-    station_name: "Bati",
+    station_name: "Bati (Table 1)",
     legacy_device_id: "tb-02",
     data_folder: "data_tb-02"
   };
