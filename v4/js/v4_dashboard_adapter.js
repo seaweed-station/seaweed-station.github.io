@@ -75,6 +75,8 @@
 
   var CANONICAL_V4_STATION_PATCHES = {
     "st-0002": {
+      id: "funzi",
+      station_key: "funzi-island",
       name: "Bati (Table 3)",
       location: "Bati, Kenya",
       dataFolder: "data_Funzi",
@@ -86,6 +88,8 @@
       displayTime: "UTC +3"
     },
     "st-0004": {
+      id: "spare",
+      station_key: "spare",
       name: "Bati (Table 2)",
       location: "Bati, Kenya",
       dataFolder: "data_spare",
