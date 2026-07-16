@@ -21,6 +21,22 @@
     legacy_device_id: "tb-02",
     data_folder: "data_tb-02"
   };
+  var CANONICAL_MOVED_STATIONS = {
+    "st-0002": {
+      station_uid: "ST-0002",
+      station_key: "funzi-island",
+      station_name: "Bati (Table 3)",
+      legacy_device_id: "funzi",
+      data_folder: "data_Funzi"
+    },
+    "st-0004": {
+      station_uid: "ST-0004",
+      station_key: "spare",
+      station_name: "Bati (Table 2)",
+      legacy_device_id: "spare",
+      data_folder: "data_spare"
+    }
+  };
 
   function text(value) {
     return String(value == null ? "" : value).trim();
@@ -128,6 +144,18 @@
   }
 
   function applyCanonicalBatiStation(row) {
+    var stationUid = text(row && row.station_uid).toLowerCase();
+    var movedStation = CANONICAL_MOVED_STATIONS[stationUid];
+    if (movedStation) {
+      var movedHistorical = Array.isArray(row.historical_source_keys) ? row.historical_source_keys.slice() : [];
+      [movedStation.legacy_device_id, movedStation.station_key].forEach(function(alias) {
+        if (movedHistorical.indexOf(alias) === -1) movedHistorical.push(alias);
+      });
+      return Object.assign({}, row, movedStation, {
+        historical_source_keys: movedHistorical,
+        catalog_aliases: [stationUid, movedStation.station_key, movedStation.legacy_device_id]
+      });
+    }
     if (!isBatiCatalogRow(row)) return row;
     var historical = Array.isArray(row.historical_source_keys) ? row.historical_source_keys.slice() : [];
     if (historical.indexOf(CANONICAL_BATI_STATION.legacy_device_id) === -1) historical.unshift(CANONICAL_BATI_STATION.legacy_device_id);
