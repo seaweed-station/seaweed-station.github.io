@@ -17,8 +17,8 @@ except Exception:
     # Fallback – keep in sync with config.json
     folders = {
         'Shangani Aramani': 'data_Shangani',
-        'Funzi Island': 'data_Funzi',
-        'Spare': 'data_spare',
+        'Bati (Table 3)': 'data_Funzi',
+        'Bati (Table 2)': 'data_spare',
         'Perth Test': 'data_3262071_TT',
     }
 

@@ -33,14 +33,14 @@
       id: "tb-02",
       station_uid: "ST-0102",
       station_key: "bati",
-      name: "Bati",
-      location: "Bati station",
+      name: "Bati (Table 1)",
+      location: "Bati, Kenya",
       dataFolder: "data_tb-02",
-      lat: -31.87,
-      lon: 115.90,
-      weatherName: "Bati",
-      tideStation: "perth",
-      sensorMap: "perth",
+      lat: -4.592111,
+      lon: 39.392351,
+      weatherName: "Bati, Kenya",
+      tideStation: "kenya",
+      sensorMap: "bati",
       project_profile_id: "v4-clean-bench"
     },
     {
@@ -74,13 +74,35 @@
   ];
 
   var CANONICAL_V4_STATION_PATCHES = {
+    "st-0002": {
+      name: "Bati (Table 3)",
+      location: "Bati, Kenya",
+      dataFolder: "data_Funzi",
+      weatherName: "Bati, Kenya",
+      lat: -4.592111,
+      lon: 39.392351,
+      tideStation: "kenya",
+      sensorMap: "funzi",
+      displayTime: "UTC +3"
+    },
+    "st-0004": {
+      name: "Bati (Table 2)",
+      location: "Bati, Kenya",
+      dataFolder: "data_spare",
+      weatherName: "Bati, Kenya",
+      lat: -4.592111,
+      lon: 39.392351,
+      tideStation: "kenya",
+      sensorMap: "spare",
+      displayTime: "UTC +3"
+    },
     "st-0102": {
       id: "tb-02",
       station_key: "bati",
-      name: "Bati",
-      location: "Bati station",
+      name: "Bati (Table 1)",
+      location: "Bati, Kenya",
       dataFolder: "data_tb-02",
-      weatherName: "Bati",
+      weatherName: "Bati, Kenya",
       lat: -4.592111,
       lon: 39.392351,
       tideStation: "kenya",
@@ -102,17 +124,17 @@
     },
     {
       match: ["funzi"],
-      location: "Funzi Island, Kenya",
+      location: "Bati, Kenya",
       data_folder: "data_Funzi",
-      lat: -4.581429,
-      lon: 39.437527,
-      weather_name: "Funzi Island, Kenya",
+      lat: -4.592111,
+      lon: 39.392351,
+      weather_name: "Bati, Kenya",
       tide_station: "kenya",
       sensor_map: "funzi"
     },
     {
       match: ["bati", "st-0102"],
-      location: "Bati station",
+      location: "Bati, Kenya",
       data_folder: "data_tb-02",
       lat: -4.592111,
       lon: 39.392351,
@@ -122,11 +144,13 @@
     },
     {
       match: ["spare"],
-      location: "Spare Station",
+      location: "Bati, Kenya",
       data_folder: "data_spare",
-      weather_name: "Spare Station, Kenya",
+      lat: -4.592111,
+      lon: 39.392351,
+      weather_name: "Bati, Kenya",
       tide_station: "kenya",
-      sensor_map: "funzi"
+      sensor_map: "spare"
     }
   ];
 
@@ -379,6 +403,12 @@
     ];
     if (keys.indexOf("st-0102") !== -1 || keys.indexOf("tb-02") !== -1 || keys.indexOf("bati") !== -1) {
       return CANONICAL_V4_STATION_PATCHES["st-0102"];
+    }
+    if (keys.indexOf("st-0004") !== -1 || keys.indexOf("spare") !== -1) {
+      return CANONICAL_V4_STATION_PATCHES["st-0004"];
+    }
+    if (keys.indexOf("st-0002") !== -1 || keys.indexOf("funzi") !== -1 || keys.indexOf("funzi-island") !== -1) {
+      return CANONICAL_V4_STATION_PATCHES["st-0002"];
     }
     return null;
   }
