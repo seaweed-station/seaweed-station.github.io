@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f766e">
   <title data-i18n="meta.title">Seaweed Drying Record - Seaweed Station</title>
-  <link rel="stylesheet" href="./assets/css/drying.css?v=20260714.12">
+  <link rel="stylesheet" href="./assets/css/drying.css?v=20260718.1">
 </head>
 <body class="drying-page" data-language="en">
   <header class="app-header">
@@ -160,11 +160,11 @@
               <option value="cover_down_back_open" data-i18n="configuration.downOpen">Cover Down / Back Open</option>
             </select>
           </label>
-          <label class="required-field photo-field camera-field">
-            <span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="configuration.photos">Table overview photos - up to 5</span></span>
-            <input id="tablePhotos" type="file" accept="image/*" capture="environment" multiple>
+          <div class="required-field photo-field camera-field">
+            <label for="tablePhotos"><span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="configuration.photos">Table overview photo - 1 photo</span></span></label>
+            <input id="tablePhotos" type="file" accept="image/*" capture="environment">
             <span id="tablePhotoPreview" class="photo-preview"></span>
-          </label>
+          </div>
         </fieldset>
 
         <fieldset class="form-card capture-workflow-card bay-fieldset">
@@ -204,11 +204,11 @@
                   <span data-i18n="capture.selectBays">Select bays</span>
                   <div id="loadingBaySelector" class="batch-bay-selector" aria-label="Select loading bays"></div>
                 </div>
-                <label class="required-field photo-field camera-field phase-photo">
-                  <span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="capture.loadingPhotos">Loading photo</span></span>
-                  <input id="loadingCapturePhotos" type="file" accept="image/*" capture="environment">
+                <div class="required-field photo-field camera-field phase-photo">
+                  <label for="loadingCapturePhotos"><span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="capture.loadingPhotos">Loading photos - up to 2</span></span></label>
+                  <input id="loadingCapturePhotos" type="file" accept="image/*" capture="environment" multiple>
                   <span id="loadingCapturePhotoPreview" class="photo-preview"></span>
-                </label>
+                </div>
               </div>
               <div class="batch-save-row">
                 <button id="saveLoadingCapture" type="button" class="primary-button" data-i18n="capture.saveLoading">Save loading capture</button>
@@ -248,11 +248,11 @@
                   <span data-i18n="capture.selectBays">Select bays</span>
                   <div id="unloadingBaySelector" class="batch-bay-selector" aria-label="Select unloading bays"></div>
                 </div>
-                <label class="required-field photo-field camera-field phase-photo">
-                  <span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="capture.unloadingPhotos">Unloading photo</span></span>
-                  <input id="unloadingCapturePhotos" type="file" accept="image/*" capture="environment">
+                <div class="required-field photo-field camera-field phase-photo">
+                  <label for="unloadingCapturePhotos"><span><span class="camera-symbol" aria-hidden="true">&#128247;</span> <span data-i18n="capture.unloadingPhotos">Unloading photos - up to 2</span></span></label>
+                  <input id="unloadingCapturePhotos" type="file" accept="image/*" capture="environment" multiple>
                   <span id="unloadingCapturePhotoPreview" class="photo-preview"></span>
-                </label>
+                </div>
               </div>
               <div class="batch-save-row">
                 <button id="saveUnloadingCapture" type="button" class="primary-button" data-i18n="capture.saveUnloading">Save unloading capture</button>
@@ -397,6 +397,20 @@
     </form>
   </dialog>
 
+  <dialog id="dryingPhotoActions" class="admin-dialog photo-actions-dialog" aria-labelledby="dryingPhotoActionsTitle">
+    <div class="photo-actions-panel">
+      <h2 id="dryingPhotoActionsTitle" data-i18n="photo.actionsTitle">Photo options</h2>
+      <img id="dryingPhotoActionPreview" alt="" data-i18n-alt="photo.previewAlt">
+      <p id="dryingPhotoActionName"></p>
+      <div class="dialog-actions">
+        <button id="retakeDryingPhoto" type="button" data-i18n="photo.retake">Take again</button>
+        <button id="deleteDryingPhoto" type="button" class="danger-button" data-i18n="photo.delete">Delete photo</button>
+        <button id="cancelDryingPhotoAction" type="button" data-i18n="photo.cancel">Cancel</button>
+      </div>
+    </div>
+  </dialog>
+  <input id="dryingPhotoRetake" class="visually-hidden-file" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+
   <section class="print-document" aria-hidden="true">
     <article class="print-page print-form-page">
       <header class="print-sheet-header">
@@ -508,6 +522,6 @@
     </article>
   </section>
 
-  <script type="module" src="./assets/js/drying_form.js?v=20260714.12"></script>
+  <script type="module" src="./assets/js/drying_form.js?v=20260718.1"></script>
 </body>
 </html>

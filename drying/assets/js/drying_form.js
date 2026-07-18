@@ -1,4 +1,4 @@
-import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260714.12";
+import { DRYING_FORM_CONFIG as CONFIG } from "./config.js?v=20260718.1";
 import {
   configurationLabel,
   configurationParts,
@@ -6,7 +6,7 @@ import {
   initDryingLanguage,
   t,
   tableLabel
-} from "./drying_language.js?v=20260714.12";
+} from "./drying_language.js?v=20260718.1";
 
 const $ = (id) => document.getElementById(id);
 
@@ -78,10 +78,19 @@ const els = {
   cancelRecordsDeleteAuth: $("cancelRecordsDeleteAuth"),
   authorizeRecordsDelete: $("authorizeRecordsDelete"),
   batiTrialsBody: $("batiTrialsBody"),
-  trialSaveStatus: $("trialSaveStatus")
+  trialSaveStatus: $("trialSaveStatus"),
+  dryingPhotoActions: $("dryingPhotoActions"),
+  dryingPhotoActionPreview: $("dryingPhotoActionPreview"),
+  dryingPhotoActionName: $("dryingPhotoActionName"),
+  retakeDryingPhoto: $("retakeDryingPhoto"),
+  deleteDryingPhoto: $("deleteDryingPhoto"),
+  cancelDryingPhotoAction: $("cancelDryingPhotoAction"),
+  dryingPhotoRetake: $("dryingPhotoRetake")
 };
 
 const draftControls = [...document.querySelectorAll("[data-draft]")];
+const TABLE_PHOTO_LIMIT = 1;
+const PHASE_PHOTO_LIMIT = 2;
 
 let state = freshState();
 let draftTimer = null;
@@ -100,6 +109,7 @@ function freshState() {
     receiptNumber: null,
     recordStatus: "in_progress",
     savedPhotos: { table: 0, bays: {} },
+    photoAction: { context: null, index: null, objectUrl: null, retakeContext: null, retakeIndex: null },
     records: [],
     recordsLoading: false,
     recordOpening: false,
@@ -157,20 +167,12 @@ function bindEvents() {
     });
   });
 
-  els.tablePhotos.addEventListener("change", () => {
-    const files = acceptedFiles(els.tablePhotos.files, 5);
-    state.files.table = files;
-    renderPhotoPreview(els.tablePhotoPreview, files, state.savedPhotos.table);
-    scheduleDraftSave();
-  });
+  els.tablePhotos.addEventListener("change", () => addSelectedPhotos({ kind: "table" }));
 
   ["loading", "unloading"].forEach((phase) => {
     const input = captureElement(phase, "Photos");
     captureElement(phase, "Weight").addEventListener("input", () => renderWeightSplit(phase));
-    input.addEventListener("change", () => {
-      state.files.captures[phase] = acceptedFiles(input.files, 1);
-      renderCapturePhotoPreview(phase);
-    });
+    input.addEventListener("change", () => addSelectedPhotos({ kind: "capture", phase }));
     captureElement(phase, "BaySelector").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-bay]");
       if (button) toggleCaptureBay(phase, Number(button.dataset.bay));
@@ -182,6 +184,16 @@ function bindEvents() {
     });
     captureElement(phase, "Save").addEventListener("click", () => saveBatchCapture(phase));
   });
+
+  els.retakeDryingPhoto.addEventListener("click", beginDryingPhotoRetake);
+  els.deleteDryingPhoto.addEventListener("click", deleteActiveDryingPhoto);
+  els.cancelDryingPhotoAction.addEventListener("click", closeDryingPhotoActions);
+  els.dryingPhotoRetake.addEventListener("change", replaceDryingPhoto);
+  els.dryingPhotoActions.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeDryingPhotoActions();
+  });
+  els.dryingPhotoActions.addEventListener("close", releaseDryingPhotoActionUrl);
 
   els.form.addEventListener("input", updateRequiredFieldStates);
   els.form.addEventListener("change", updateRequiredFieldStates);
@@ -352,12 +364,12 @@ function sanitizeBays(value) {
 }
 
 function sanitizeSavedPhotos(value) {
-  const table = clampInteger(value?.table, 0, 5, 0);
+  const table = clampInteger(value?.table, 0, TABLE_PHOTO_LIMIT, 0);
   const bays = {};
   Object.entries(value?.bays || {}).forEach(([bayNumber, phases]) => {
     bays[bayNumber] = {
-      loading: clampInteger(phases?.loading, 0, 5, 0),
-      unloading: clampInteger(phases?.unloading, 0, 5, 0)
+      loading: clampInteger(phases?.loading, 0, PHASE_PHOTO_LIMIT, 0),
+      unloading: clampInteger(phases?.unloading, 0, PHASE_PHOTO_LIMIT, 0)
     };
   });
   return { table, bays };
@@ -375,8 +387,10 @@ function updateRequiredFieldStates() {
         if (control.disabled) return true;
         if (control.type === "file") {
           if (control === els.tablePhotos) {
-            return control.files.length > 0 || state.savedPhotos.table > 0;
+            return state.files.table.length > 0 || state.savedPhotos.table > 0;
           }
+          if (control === els.loadingCapturePhotos) return state.files.captures.loading.length > 0;
+          if (control === els.unloadingCapturePhotos) return state.files.captures.unloading.length > 0;
           return control.files.length > 0;
         }
         if (control.type === "checkbox" || control.type === "radio") return control.checked;
@@ -471,7 +485,7 @@ function renderAll() {
   renderWeightSplit("unloading");
   renderCapturePhotoPreview("loading");
   renderCapturePhotoPreview("unloading");
-  renderPhotoPreview(els.tablePhotoPreview, state.files.table, state.savedPhotos.table);
+  renderPhotoPreview(els.tablePhotoPreview, state.files.table, state.savedPhotos.table, { kind: "table" });
   renderActiveRecordBanner();
   renderCaptureEditingState("loading");
   renderCaptureEditingState("unloading");
@@ -598,7 +612,9 @@ function renderBaySummary() {
 function renderCapturePhotoPreview(phase) {
   renderPhotoPreview(
     captureElement(phase, "PhotoPreview"),
-    state.files.captures[phase]
+    state.files.captures[phase],
+    0,
+    { kind: "capture", phase }
   );
 }
 
@@ -1172,7 +1188,7 @@ function hydrateSavedRecord(record, access) {
   state.uploadToken = access.token;
   state.receiptNumber = record.receipt_number || null;
   state.recordStatus = record.record_status === "complete" ? "complete" : "in_progress";
-  state.savedPhotos.table = clampInteger(record.table_photo_count, 0, 5, 0);
+  state.savedPhotos.table = clampInteger(record.table_photo_count, 0, TABLE_PHOTO_LIMIT, 0);
 
   els.dryerLocation.value = record.dryer_location_code || "";
   els.enumeratorName.value = record.enumerator_name || "";
@@ -1198,8 +1214,8 @@ function hydrateSavedRecord(record, access) {
       notes: bay.notes || ""
     };
     state.savedPhotos.bays[key] = {
-      loading: clampInteger(bay.loading_photo_count, 0, 5, 0),
-      unloading: clampInteger(bay.unloading_photo_count, 0, 5, 0)
+      loading: clampInteger(bay.loading_photo_count, 0, PHASE_PHOTO_LIMIT, 0),
+      unloading: clampInteger(bay.unloading_photo_count, 0, PHASE_PHOTO_LIMIT, 0)
     };
   });
   applyLocationSelection(false);
@@ -1243,7 +1259,30 @@ function acceptedFiles(fileList, limit) {
   return accepted;
 }
 
-function renderPhotoPreview(container, files, savedCount = 0) {
+function addSelectedPhotos(context) {
+  const input = photoInput(context);
+  const files = photoFiles(context);
+  const limit = photoLimit(context);
+  const additions = acceptedFiles(input.files, Math.max(0, limit - files.length));
+  if (additions.length) files.push(...additions);
+  input.value = "";
+  renderAll();
+  scheduleDraftSave();
+}
+
+function photoInput(context) {
+  return context?.kind === "table" ? els.tablePhotos : captureElement(context?.phase, "Photos");
+}
+
+function photoFiles(context) {
+  return context?.kind === "table" ? state.files.table : state.files.captures[context?.phase];
+}
+
+function photoLimit(context) {
+  return context?.kind === "table" ? TABLE_PHOTO_LIMIT : PHASE_PHOTO_LIMIT;
+}
+
+function renderPhotoPreview(container, files, savedCount = 0, context = null) {
   container.replaceChildren();
   if (savedCount) {
     const saved = document.createElement("span");
@@ -1251,19 +1290,86 @@ function renderPhotoPreview(container, files, savedCount = 0) {
     saved.textContent = savedCount > 1 ? `${t("photo.saved")} (${savedCount})` : t("photo.saved");
     container.append(saved);
   }
-  files.forEach((file) => {
-    const chip = document.createElement("span");
-    chip.className = "photo-chip";
+  files.forEach((file, index) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "photo-chip selected-photo-chip";
+    chip.setAttribute("aria-label", t("photo.openActions", { number: index + 1 }));
+    chip.addEventListener("click", () => openDryingPhotoActions(context, index));
     const image = document.createElement("img");
     const objectUrl = URL.createObjectURL(file);
     image.src = objectUrl;
-    image.alt = t("photo.previewAlt");
+    image.alt = t("photo.previewAlt", { number: index + 1 });
     image.addEventListener("load", () => URL.revokeObjectURL(objectUrl), { once: true });
     const name = document.createElement("span");
     name.textContent = `${file.name} (${formatBytes(file.size)})`;
     chip.append(image, name);
     container.append(chip);
   });
+}
+
+function openDryingPhotoActions(context, index) {
+  const file = photoFiles(context)?.[index];
+  if (!file) return;
+  releaseDryingPhotoActionUrl();
+  state.photoAction.context = { ...context };
+  state.photoAction.index = index;
+  state.photoAction.objectUrl = URL.createObjectURL(file);
+  els.dryingPhotoActionPreview.src = state.photoAction.objectUrl;
+  els.dryingPhotoActionPreview.alt = t("photo.previewAlt", { number: index + 1 });
+  els.dryingPhotoActionName.textContent = `${t("photo.photoNumber", { number: index + 1 })} - ${file.name}`;
+  if (typeof els.dryingPhotoActions.showModal === "function") els.dryingPhotoActions.showModal();
+  else els.dryingPhotoActions.setAttribute("open", "");
+}
+
+function closeDryingPhotoActions() {
+  if (typeof els.dryingPhotoActions.close === "function" && els.dryingPhotoActions.open) {
+    els.dryingPhotoActions.close();
+  } else {
+    els.dryingPhotoActions.removeAttribute("open");
+    releaseDryingPhotoActionUrl();
+  }
+  state.photoAction.context = null;
+  state.photoAction.index = null;
+}
+
+function releaseDryingPhotoActionUrl() {
+  if (state.photoAction.objectUrl) URL.revokeObjectURL(state.photoAction.objectUrl);
+  state.photoAction.objectUrl = null;
+  els.dryingPhotoActionPreview.removeAttribute("src");
+}
+
+function beginDryingPhotoRetake() {
+  if (!state.photoAction.context || !Number.isInteger(state.photoAction.index)) return;
+  state.photoAction.retakeContext = { ...state.photoAction.context };
+  state.photoAction.retakeIndex = state.photoAction.index;
+  els.dryingPhotoRetake.value = "";
+  closeDryingPhotoActions();
+  els.dryingPhotoRetake.click();
+}
+
+function replaceDryingPhoto() {
+  const [replacement] = acceptedFiles(els.dryingPhotoRetake.files, 1);
+  const context = state.photoAction.retakeContext;
+  const index = state.photoAction.retakeIndex;
+  const files = context ? photoFiles(context) : null;
+  if (replacement && files?.[index]) files[index] = replacement;
+  state.photoAction.retakeContext = null;
+  state.photoAction.retakeIndex = null;
+  els.dryingPhotoRetake.value = "";
+  renderAll();
+  scheduleDraftSave();
+}
+
+function deleteActiveDryingPhoto() {
+  const context = state.photoAction.context;
+  const index = state.photoAction.index;
+  const files = context ? photoFiles(context) : null;
+  if (!files?.[index]) return;
+  files.splice(index, 1);
+  closeDryingPhotoActions();
+  renderAll();
+  scheduleDraftSave();
 }
 
 async function saveBatchCapture(phase) {
@@ -1493,7 +1599,7 @@ async function uploadSelectedPhotos({ phaseBayNumbers = state.selectedBays, incl
     const upload = uploads[index];
     setStatus(t("photo.preparing", { current: index + 1, total: uploads.length }));
     const blob = await preparePhoto(upload.file);
-    if (blob.size > CONFIG.maxPhotoBytes) throw new Error(`${upload.file.name} is still larger than 8 MB after compression.`);
+    if (blob.size > CONFIG.maxPhotoBytes) throw new Error(`${upload.file.name} is still larger than ${formatBytes(CONFIG.maxPhotoBytes)} after compression.`);
     const extension = photoExtension(blob.type);
     const objectId = createUuid();
     const objectPath = upload.kind === "table"
@@ -1545,25 +1651,25 @@ async function uploadSelectedPhotos({ phaseBayNumbers = state.selectedBays, incl
 function applyUploadedPhotoResult(result) {
   if (!result?.attached) return;
   if (Number.isFinite(Number(result.tableCount))) {
-    state.savedPhotos.table = clampInteger(result.tableCount, 0, 5, state.savedPhotos.table);
+    state.savedPhotos.table = clampInteger(result.tableCount, 0, TABLE_PHOTO_LIMIT, state.savedPhotos.table);
   } else if (result.touchedManifest?.table) {
-    state.savedPhotos.table = Math.min(5, state.savedPhotos.table + result.touchedManifest.table.length);
+    state.savedPhotos.table = Math.min(TABLE_PHOTO_LIMIT, result.touchedManifest.table.length);
   }
   result.touchedManifest?.bays?.forEach((bay) => {
     const saved = savedBayPhotos(bay.bay_number);
-    if (bay.loading) saved.loading = 1;
-    if (bay.unloading) saved.unloading = 1;
+    if (bay.loading) saved.loading = Math.min(PHASE_PHOTO_LIMIT, bay.loading.length);
+    if (bay.unloading) saved.unloading = Math.min(PHASE_PHOTO_LIMIT, bay.unloading.length);
   });
   result.bayPhotos?.forEach((bay) => {
     const saved = savedBayPhotos(bay.bay_number);
-    saved.loading = clampInteger(bay.loading_photo_count, 0, 5, saved.loading);
-    saved.unloading = clampInteger(bay.unloading_photo_count, 0, 5, saved.unloading);
+    saved.loading = clampInteger(bay.loading_photo_count, 0, PHASE_PHOTO_LIMIT, saved.loading);
+    saved.unloading = clampInteger(bay.unloading_photo_count, 0, PHASE_PHOTO_LIMIT, saved.unloading);
   });
 }
 
 function totalSavedPhotoCount() {
   return state.savedPhotos.table + Object.values(state.savedPhotos.bays).reduce(
-    (total, bay) => total + Number(Boolean(bay.loading)) + Number(Boolean(bay.unloading)),
+    (total, bay) => total + Number(bay.loading || 0) + Number(bay.unloading || 0),
     0
   );
 }
@@ -1586,22 +1692,65 @@ async function preparePhoto(file) {
     throw new Error(`${file.name} could not be compressed by this browser.`);
   }
 
-  const maxDimension = 1600;
+  const maxDimension = CONFIG.maxPhotoDimension;
   const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-  if (scale === 1 && file.size <= 1_500_000) {
+  if (scale === 1 && file.size <= 500_000) {
     bitmap.close?.();
     return file;
   }
 
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  const context = canvas.getContext("2d", { alpha: false });
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  let width = Math.max(1, Math.round(bitmap.width * scale));
+  let height = Math.max(1, Math.round(bitmap.height * scale));
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) break;
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, width, height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(bitmap, 0, 0, width, height);
+    const blob = await jpegBlobNearTarget(canvas, CONFIG.photoTargetBytes);
+    if (blob.size <= CONFIG.maxPhotoBytes) {
+      bitmap.close?.();
+      return blob;
+    }
+    const reduction = Math.min(0.9, Math.sqrt(CONFIG.photoTargetBytes / blob.size) * 0.96);
+    width = Math.max(1, Math.round(width * reduction));
+    height = Math.max(1, Math.round(height * reduction));
+  }
   bitmap.close?.();
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
-  if (!blob) throw new Error(`${file.name} could not be compressed.`);
-  return blob;
+  throw new Error(`${file.name} could not be compressed.`);
+}
+
+async function jpegBlobNearTarget(canvas, targetBytes) {
+  let low = 0.4;
+  let high = 0.84;
+  let best = null;
+  let smallest = null;
+  for (let attempt = 0; attempt < 7; attempt += 1) {
+    const quality = (low + high) / 2;
+    const blob = await canvasToJpeg(canvas, quality);
+    if (!smallest || blob.size < smallest.size) smallest = blob;
+    if (blob.size <= targetBytes) {
+      best = blob;
+      low = quality;
+    } else {
+      high = quality;
+    }
+  }
+  return best || smallest;
+}
+
+function canvasToJpeg(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Photo compression failed."));
+    }, "image/jpeg", quality);
+  });
 }
 
 async function uploadObject(objectPath, blob) {
