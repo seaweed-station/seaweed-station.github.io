@@ -405,7 +405,9 @@ function bootstrapSharedDeviceProfiles() {
   });
 }
 
-var SHARED_DEVICE_PROFILES_STARTUP = bootstrapSharedDeviceProfiles();
+var SHARED_DEVICE_PROFILES_STARTUP = /^\/v4(?:\/|$)/.test(window.location.pathname)
+  ? Promise.resolve({ changed: false, skippedRefresh: true, source: 'v4-adapter' })
+  : bootstrapSharedDeviceProfiles();
 
 function getConfiguredDeviceProfileMap(opts) {
   var profiles = getConfiguredDeviceProfiles(opts);

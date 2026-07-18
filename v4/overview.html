@@ -5,8 +5,9 @@
 <script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'&&sessionStorage.getItem('sw_auth')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Seaweed Station Overview</title>
-<script src="../pages/seaweed_common.js?v=20260716stationnames"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260716stationroutes"></script>
+<link rel="preconnect" href="https://iyoihlwtvdshtlzjdoed.supabase.co" crossorigin>
+<script src="../pages/seaweed_common.js?v=20260717realtime"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260717realtime"></script>
 <style>
 /* -- CSS Variables ------------------------------------------------- */
 :root {
@@ -457,27 +458,27 @@ function buildConfiguredTables() {
 }
 
 var TABLES = buildConfiguredTables();
-var _sharedProfilesOverviewReloaded = false;
+var _overviewInitialized = false;
+
+function refreshConfiguredOverviewTables() {
+  TABLES = buildConfiguredTables();
+  if (typeof filterStationsForRole === 'function') TABLES = filterStationsForRole(TABLES);
+  TABLES.forEach(function(t) {
+    if (!t.page) t.page = 'station.html?station=' + encodeURIComponent(t.stationKey || t.station_key || t.id);
+  });
+}
 
 if (typeof onSharedDeviceProfilesUpdated === 'function') {
   onSharedDeviceProfilesUpdated(function(detail) {
-    if (!detail || !detail.changed || _sharedProfilesOverviewReloaded) return;
-    _sharedProfilesOverviewReloaded = true;
-    location.reload();
+    if (!detail || !detail.changed) return;
+    refreshConfiguredOverviewTables();
+    if (_overviewInitialized && typeof renderAllCards === 'function') renderAllCards();
   });
 }
 
 // Role-based station filtering
-if (typeof filterStationsForRole === 'function') {
-  TABLES = filterStationsForRole(TABLES);
-}
+refreshConfiguredOverviewTables();
 if (typeof applyNavVisibility === 'function') applyNavVisibility();
-
-TABLES.forEach(function(t) {
-  if (!t.page) {
-    t.page = 'station.html?station=' + encodeURIComponent(t.stationKey || t.station_key || t.id);
-  }
-});
 
 // =====================================================================
 // UTILITY: Parse feed entry into usable values
@@ -1808,6 +1809,11 @@ async function init() {
   var grid = document.getElementById('tableGrid');
   grid.innerHTML = '<div class="loading-panel"><div class="loading-text"><span class="spinner"></span> Loading table data...</div></div>';
 
+  if (window.SW_V4_DASHBOARD && window.SW_V4_DASHBOARD.ready) {
+    try { await window.SW_V4_DASHBOARD.ready; } catch (_) {}
+    refreshConfiguredOverviewTables();
+  }
+
   if (!TABLES.length) {
     renderAllCards();
     updateOverviewDiagnostics({ source: 'idle', stationCount: 0, error: '', note: 'No enabled stations in current role/config.' });
@@ -1871,6 +1877,7 @@ async function init() {
 
   // Start auto-refresh
   setupAutoRefresh();
+  _overviewInitialized = true;
   document.body.classList.remove('loading-state');
   if (mainEl) mainEl.classList.remove('loading-state');
 }

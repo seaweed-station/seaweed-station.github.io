@@ -5,13 +5,15 @@
 <script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'&&sessionStorage.getItem('sw_auth')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Station Health &mdash; Seaweed Dashboard</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://iyoihlwtvdshtlzjdoed.supabase.co" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1/dist/chartjs-adapter-luxon.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2/dist/chartjs-plugin-zoom.min.js"></script>
-<script src="../pages/seaweed_common.js?v=20260716stationnames"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260716stationroutes"></script>
+<script src="../pages/seaweed_common.js?v=20260717realtime"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260717realtime"></script>
 <script src="../pages/seaweed_sync.js?v=20260504v4"></script>
 <script src="../pages/plot_core.js?v=20260619plots2"></script>
 <script src="../pages/plot_overlays.js"></script>
@@ -353,6 +355,7 @@ function buildConfiguredStations() {
 
 var STATIONS = buildConfiguredStations();
 var _sharedProfilesHealthLastFetchedAt = 0;
+var _healthBootReady = false;
 
 function pruneHealthStationState(activeStationIds) {
   var keep = {};
@@ -399,7 +402,8 @@ function restoreHealthViewState(viewState) {
   }
 }
 
-function refreshConfiguredHealthStationsInPlace(detail) {
+function refreshConfiguredHealthStationsInPlace(detail, opts) {
+  opts = opts || {};
   var fetchedAt = Number(detail && detail.fetchedAt) || Date.now();
   if (fetchedAt <= _sharedProfilesHealthLastFetchedAt) return;
   _sharedProfilesHealthLastFetchedAt = fetchedAt;
@@ -412,13 +416,13 @@ function refreshConfiguredHealthStationsInPlace(detail) {
   }
   pruneHealthStationState(STATIONS.map(function(st) { return st.id; }));
   syncConfiguredStationUI();
-  if (typeof rebuildHealthStations === 'function') rebuildHealthStations(openStationIds, viewState);
+  if (!opts.deferRender && typeof rebuildHealthStations === 'function') rebuildHealthStations(openStationIds, viewState);
 }
 
 if (typeof onSharedDeviceProfilesUpdated === 'function') {
   onSharedDeviceProfilesUpdated(function(detail) {
     if (!detail || !detail.changed) return;
-    refreshConfiguredHealthStationsInPlace(detail);
+    refreshConfiguredHealthStationsInPlace(detail, { deferRender: !_healthBootReady });
   });
 }
 
@@ -935,6 +939,11 @@ function _renderStationCharts(stationId) {
   if (!data || !data.entries || !data.entries.length) return;
   var range = stationRanges[stationId] || 'week';
   _renderStationRange(stationId, range);
+  if (range !== 'all' && typeof ensureHealthRangeLoaded === 'function' && !healthDataCanServeRange('recent')) {
+    ensureHealthRangeLoaded('recent').catch(function(err) {
+      console.warn('[Health] Recent-range hydration failed:', err && err.message ? err.message : err);
+    });
+  }
 }
 
 function filterByRange(entries, range) {
@@ -1107,8 +1116,14 @@ onDashboardDataRefresh(function(msg) {
 // ==========================================================
 // BOOT: Load all stations via Edge Function (cache pre-seed + async fetch)
 // ============================================================
-(function() {
+(async function() {
+  var bootFetchStatus = document.getElementById('fetchStatus');
   updateHealthDiagnostics({ source: 'loading', lastRefreshAt: Date.now(), error: '', note: 'Health page booting…' });
+  if (window.SW_V4_DASHBOARD && window.SW_V4_DASHBOARD.ready) {
+    try { await window.SW_V4_DASHBOARD.ready; } catch (_) {}
+  }
+  refreshConfiguredHealthStationsInPlace({ fetchedAt: Date.now() }, { deferRender: true });
+  _healthBootReady = true;
   // Pre-seed from cache so the page is not blank during network call
   var preSeeded = false;
   for (var pi = 0; pi < STATIONS.length; pi++) {
@@ -1123,6 +1138,10 @@ onDashboardDataRefresh(function(msg) {
   if (preSeeded) {
     onAllLoaded();
     console.log('[Health] Pre-seeded from cache (loading edge\u2026)');
+    if (bootFetchStatus) {
+      bootFetchStatus.textContent = 'Showing cached data — refreshing live…';
+      bootFetchStatus.style.color = 'var(--warning)';
+    }
     updateHealthDiagnostics({
       source: 'cache-preseed',
       dataAsOf: getHealthLatestDataAsOf(),
@@ -1133,11 +1152,13 @@ onDashboardDataRefresh(function(msg) {
       error: '',
       note: 'Page pre-seeded from local caches while live fetch runs.'
     });
+  } else if (bootFetchStatus) {
+    bootFetchStatus.textContent = 'Loading live station data…';
   }
 
     (async function() {
       try {
-        var payload = await fetchEdgeHealthSummaryResilient({ range: 'recent' });
+        var payload = await fetchEdgeHealthSummaryResilient({ range: 'recent', fast: true });
         applyEdgeHealthPayload(payload);
         rebuildHealthStations(getOpenHealthStationIds());
 
@@ -1160,14 +1181,25 @@ onDashboardDataRefresh(function(msg) {
           error: '',
           note: healthPayloadNote(
             payload,
-            'Initial health-summary load completed from Edge Function.',
+            'Current health snapshot loaded. Recent chart history loads when a station is expanded.',
             'Initial health-summary load completed from a reduced fallback window after the default recent request timed out.'
           )
         });
 
+        if (bootFetchStatus) {
+          bootFetchStatus.textContent = 'Live data loaded';
+          bootFetchStatus.style.color = 'var(--success)';
+        }
+
         notifyDashboardDataRefresh(STATIONS.map(function(st) { return st.id; }), 'station_health.edgeInit');
       } catch (edgeErr) {
         console.warn('[Health] Edge init failed:', edgeErr.message);
+        if (bootFetchStatus) {
+          bootFetchStatus.textContent = preSeeded
+            ? 'Live refresh failed — still showing cached data'
+            : 'Live station data could not be loaded';
+          bootFetchStatus.style.color = 'var(--danger)';
+        }
         if (!preSeeded) {
           var loadingEl = document.getElementById('loadingMsg');
           if (loadingEl) {
