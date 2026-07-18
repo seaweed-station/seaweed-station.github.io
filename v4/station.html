@@ -5,6 +5,9 @@
 <script>if(sessionStorage.getItem('sw_auth_v4_local')!=='ok'&&sessionStorage.getItem('sw_auth')!=='ok'){location.replace('login.html?r='+encodeURIComponent(location.href));}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="pageTitle">Seaweed T/H Monitoring</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://iyoihlwtvdshtlzjdoed.supabase.co" crossorigin>
+<link rel="preconnect" href="https://api.open-meteo.com" crossorigin>
 
 <!-- Chart.js + Luxon date adapter (required for time-series axes) -->
 <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
@@ -1038,8 +1041,8 @@ body {
      =================================================================== -->
 <!-- seaweed_common.js must load before bootLoader — STATION_REGISTRY is defined there -->
 <script src="js/catalog_provider_v4.js?v=20260716stationroutes"></script>
-<script src="../pages/seaweed_common.js?v=20260716stationnames"></script>
-<script src="js/v4_dashboard_adapter.js?v=20260716stationroutes"></script>
+<script src="../pages/seaweed_common.js?v=20260717realtime"></script>
+<script src="js/v4_dashboard_adapter.js?v=20260717realtime"></script>
 <script id="bootLoader">
 // Boot loader: reads ?table= param, injects data scripts
 (function(){
@@ -1233,12 +1236,38 @@ body {
   window.__STATIONS = STATIONS;
   window.__STATION = cfg;
 
-  var _sharedProfilesStationReloaded = false;
   if (typeof onSharedDeviceProfilesUpdated === 'function') {
     onSharedDeviceProfilesUpdated(function(detail) {
-      if (!detail || !detail.changed || _sharedProfilesStationReloaded) return;
-      _sharedProfilesStationReloaded = true;
-      location.reload();
+      if (!detail || !detail.changed) return;
+      var resolvedAfterRefresh = window.SW_V4_DASHBOARD && window.SW_V4_DASHBOARD.findStation
+        ? window.SW_V4_DASHBOARD.findStation(v4StationKey)
+        : null;
+      if (resolvedAfterRefresh && resolvedAfterRefresh.id && resolvedAfterRefresh.id !== tableId) {
+        location.reload();
+        return;
+      }
+
+      var refreshedStations = buildStationsFromConfig();
+      var refreshed = refreshedStations[tableId];
+      if (!refreshed) return;
+      STATIONS = refreshedStations;
+      Object.assign(cfg, refreshed);
+      window.__STATIONS = STATIONS;
+      window.__STATION = cfg;
+
+      if (typeof WEATHER_ENABLED !== 'undefined') {
+        WEATHER_ENABLED = typeof hasWeatherLocation === 'function' && hasWeatherLocation(cfg.weather);
+        WEATHER_LOCATION = WEATHER_ENABLED ? {
+          name: cfg.weather.name,
+          lat: Number(cfg.weather.lat),
+          lon: Number(cfg.weather.lon)
+        } : null;
+      }
+      if (document.readyState !== 'loading') {
+        if (typeof setupPage === 'function') setupPage();
+        var tzLabel = document.getElementById('tzLabel');
+        if (tzLabel && typeof getTimezoneLabel === 'function') tzLabel.textContent = getTimezoneLabel();
+      }
     });
   }
 

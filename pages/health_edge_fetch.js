@@ -615,9 +615,17 @@ async function ensureHealthRangeLoaded(range) {
             payload,
             'Recent Station Health window refreshed from the Edge Function.',
             'Recent Station Health refreshed from a reduced fallback window after the default request timed out.'
-          )
+      )
     });
+    if (fetchStatus) {
+      fetchStatus.textContent = requestedRange === 'all'
+        ? 'Full history loaded.'
+        : 'Recent history loaded.';
+    }
     return true;
+  })().catch(function(err) {
+    if (fetchStatus) fetchStatus.textContent = 'History refresh failed — current snapshot is still shown.';
+    throw err;
   })().finally(function() {
     _healthRangeFetchPromise = null;
     _healthRangeFetchKey = '';

@@ -13,6 +13,10 @@
   var V4_HISTORY_NORMAL_ROW_CAP = 90000;
   var V4_HISTORY_PAGE_SIZE = 1000;
   var V4_HISTORY_WINDOW_DAYS = 14;
+  var V4_SENSOR_PAGE_CONCURRENCY = 3;
+  var V4_STATION_FETCH_CONCURRENCY = 3;
+  var V4_CATALOG_REFRESH_MS = 5 * 60 * 1000;
+  var V4_METADATA_REFRESH_KEY = "sw_v4_local_station_metadata_refreshed_at";
 
   var STATIC_V4_STATIONS = [
     {
@@ -222,6 +226,26 @@
 
   function clampHistoryRowLimit(value, fallback) {
     return clampInt(value, fallback || V4_HISTORY_SAFE_ROW_CAP, 1, v4EgressSafeMode() ? V4_HISTORY_SAFE_ROW_CAP : V4_HISTORY_NORMAL_ROW_CAP);
+  }
+
+  async function mapWithConcurrency(items, concurrency, iteratee) {
+    var rows = Array.isArray(items) ? items : [];
+    if (!rows.length) return [];
+    var results = new Array(rows.length);
+    var nextIndex = 0;
+    var workerCount = Math.min(Math.max(1, Number(concurrency) || 1), rows.length);
+
+    async function worker() {
+      while (nextIndex < rows.length) {
+        var index = nextIndex++;
+        results[index] = await iteratee(rows[index], index);
+      }
+    }
+
+    var workers = [];
+    for (var i = 0; i < workerCount; i++) workers.push(worker());
+    await Promise.all(workers);
+    return results;
   }
 
   function windowSpanDays(win) {
@@ -607,6 +631,10 @@
   async function refreshSharedStationMetadataFromSupabase() {
     var before = metadataSnapshotKey();
     try {
+      var refreshedAt = Number(localStorage.getItem(V4_METADATA_REFRESH_KEY));
+      if (isFinite(refreshedAt) && refreshedAt > 0 && (Date.now() - refreshedAt) < V4_CATALOG_REFRESH_MS) {
+        return { changed: false, cached: true };
+      }
       var response = await fetchWithTimeout(V4_SUPABASE_URL + "/rest/v1/rpc/dashboard_get_station_metadata", 12000, {
         method: "POST",
         headers: Object.assign({}, headers(), { "Content-Type": "application/json" }),
@@ -625,6 +653,7 @@
       });
       writeStationMetadataMap(rows);
       updateCachedCatalogStationMetadata(rows);
+      try { localStorage.setItem(V4_METADATA_REFRESH_KEY, String(Date.now())); } catch (_) {}
       applyRegistry();
       var after = metadataSnapshotKey();
       var changed = before !== after;
@@ -644,6 +673,14 @@
   async function hydrateCatalogFromSupabase() {
     var before = metadataSnapshotKey();
     try {
+      var cachedCatalog = null;
+      try { cachedCatalog = JSON.parse(localStorage.getItem(CATALOG_CACHE_KEY) || "null"); } catch (_) {}
+      var cachedAt = cachedCatalog && Date.parse(cachedCatalog.fetched_at || cachedCatalog.generated_at || "");
+      if (cachedCatalog && Array.isArray(cachedCatalog.stations) && cachedCatalog.stations.length &&
+          isFinite(cachedAt) && (Date.now() - cachedAt) < V4_CATALOG_REFRESH_MS) {
+        applyRegistry();
+        return { changed: false, cached: true };
+      }
       var response = await fetchWithTimeout(
         V4_SUPABASE_URL + "/rest/v1/station_registry?select=station_uid,station_name,active,notes&active=eq.true&limit=500",
         12000,
@@ -906,16 +943,34 @@
     var rows = [];
     var offset = 0;
     while (rows.length < effectiveLimit) {
-      var pageParams = Object.assign({}, params, {
-        order: "sample_epoch.desc",
-        limit: String(Math.min(V4_HISTORY_PAGE_SIZE, effectiveLimit - rows.length)),
-        offset: String(offset)
-      });
-      var batch = await getPostgrest("sensor_readings", pageParams, 30000);
-      if (!Array.isArray(batch) || !batch.length) break;
-      rows = rows.concat(batch);
-      if (batch.length < Number(pageParams.limit)) break;
-      offset += batch.length;
+      var pageRequests = [];
+      var requestedRows = 0;
+      while (pageRequests.length < V4_SENSOR_PAGE_CONCURRENCY && (rows.length + requestedRows) < effectiveLimit) {
+        var pageLimit = Math.min(V4_HISTORY_PAGE_SIZE, effectiveLimit - rows.length - requestedRows);
+        var pageOffset = offset + requestedRows;
+        pageRequests.push({
+          limit: pageLimit,
+          promise: getPostgrest("sensor_readings", Object.assign({}, params, {
+            order: "sample_epoch.desc",
+            limit: String(pageLimit),
+            offset: String(pageOffset)
+          }), 30000)
+        });
+        requestedRows += pageLimit;
+      }
+
+      var batches = await Promise.all(pageRequests.map(function(request) { return request.promise; }));
+      var reachedEnd = false;
+      for (var pageIndex = 0; pageIndex < batches.length; pageIndex++) {
+        var batch = Array.isArray(batches[pageIndex]) ? batches[pageIndex] : [];
+        rows = rows.concat(batch);
+        offset += batch.length;
+        if (batch.length < pageRequests[pageIndex].limit) {
+          reachedEnd = true;
+          break;
+        }
+      }
+      if (reachedEnd || !batches.length) break;
     }
     rows = Array.isArray(rows) ? rows.filter(function(row) {
       var ts = Date.parse(rowTime(row));
@@ -990,13 +1045,22 @@
   async function fetchStationPayload(stationId, windowLike, pointsTarget) {
     var pointTarget = clampPointTarget(pointsTarget, 500);
     var win = windowParams(windowLike);
+    var minimumHistoryRows = v4EgressSafeMode() ? 3000 : 6000;
     var rowLimit = isHistoryWindow(win)
-      ? clampHistoryRowLimit(Math.max(pointTarget * 12, V4_HISTORY_SAFE_ROW_CAP), V4_HISTORY_SAFE_ROW_CAP)
+      ? clampHistoryRowLimit(Math.max(pointTarget * 12, minimumHistoryRows), minimumHistoryRows)
       : clampRowLimit(Math.max(pointTarget * 6, 600), 1800);
-    var result = await fetchRowsForStation(stationId, windowLike, rowLimit);
-    var slotRows = await fetchSlotRowsForStation(result.station);
-    var syncRows = await fetchSyncRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 200 : 800);
-    var uploadRows = await fetchUploadRowsForStation(result.station, windowLike, v4EgressSafeMode() ? 120 : 400);
+    var station = findStation(stationId);
+    if (!station) throw new Error("Unknown V4 station: " + stationId);
+    var results = await Promise.all([
+      fetchRowsForStation(stationId, windowLike, rowLimit),
+      fetchSlotRowsForStation(station),
+      fetchSyncRowsForStation(station, windowLike, v4EgressSafeMode() ? 200 : 800),
+      fetchUploadRowsForStation(station, windowLike, v4EgressSafeMode() ? 120 : 400)
+    ]);
+    var result = results[0];
+    var slotRows = results[1];
+    var syncRows = results[2];
+    var uploadRows = results[3];
     var stationRows = filterBatiCurrentSlotRows(result.rows, result.station, slotRows);
     var slots = discoverSlots(stationRows, slotRows);
     var feeds = rowsToFeeds(stationRows, slots);
@@ -1105,14 +1169,13 @@
     };
   }
 
-  async function buildOverviewPayload(windowLike) {
+  async function buildOverviewPayload(windowLike, pointsTarget) {
     var stationRows = stations();
-    var payloadStations = [];
-    for (var i = 0; i < stationRows.length; i++) {
+    var payloadStations = await mapWithConcurrency(stationRows, V4_STATION_FETCH_CONCURRENCY, async function(station) {
       try {
-        var detail = await fetchStationPayload(stationRows[i].id, windowLike, 180);
+        var detail = await fetchStationPayload(station.id, windowLike, pointsTarget || 180);
         var entries = payloadToEntries(detail);
-        var summary = stationSummaryFromEntries(stationRows[i], entries);
+        var summary = stationSummaryFromEntries(station, entries);
         summary.feeds = detail.feeds;
         summary.slot_map = detail.slot_map;
         summary.slot_history = detail.slot_history;
@@ -1121,11 +1184,11 @@
         summary.device_status = detail.device_status;
         summary.device_config = detail.device_config;
         summary.source_label = detail.source_label;
-        payloadStations.push(summary);
+        return summary;
       } catch (err) {
-        payloadStations.push({ station_id: stationRows[i].id, station_uid: stationRows[i].station_uid, station_name: stationRows[i].name, feeds: [], data_health: "error", error: err.message });
+        return { station_id: station.id, station_uid: station.station_uid, station_name: station.name, feeds: [], data_health: "error", error: err.message };
       }
-    }
+    });
     return {
       source: "v4_sensor_readings",
       schema_version: "v4-browser-adapter",
@@ -1156,9 +1219,14 @@
       opts = opts || {};
       var startedAt = Date.now();
       var allRangeDays = v4EgressSafeMode() ? 30 : 90;
-      var fromMs = opts.range === "all" ? Date.now() - allRangeDays * 24 * 3600000 : Date.now() - 7 * 24 * 3600000;
-      var payload = await buildOverviewPayload({ from: new Date(fromMs), to: new Date() });
-      payload.time_range = { from: new Date(fromMs).toISOString(), to: new Date().toISOString(), label: opts.range || "recent" };
+      var toDate = opts.to ? new Date(opts.to) : new Date();
+      if (isNaN(toDate.getTime())) toDate = new Date();
+      var defaultDays = opts.fast ? 2 : (opts.range === "all" ? allRangeDays : 14);
+      var fromDate = opts.from ? new Date(opts.from) : new Date(toDate.getTime() - defaultDays * 24 * 3600000);
+      if (isNaN(fromDate.getTime()) || fromDate >= toDate) fromDate = new Date(toDate.getTime() - defaultDays * 24 * 3600000);
+      var pointTarget = clampPointTarget(opts.points, opts.fast ? 80 : (opts.range === "all" ? 1500 : 350));
+      var payload = await buildOverviewPayload({ from: fromDate, to: toDate }, pointTarget);
+      payload.time_range = { from: fromDate.toISOString(), to: toDate.toISOString(), label: opts.range || "recent" };
       payload._response_duration_ms = Date.now() - startedAt;
       return payload;
     };
@@ -1172,11 +1240,14 @@
   }
 
   applyRegistry();
-  hydrateCatalogFromSupabase().then(function() {
+  var readyPromise = hydrateCatalogFromSupabase().then(function() {
     return refreshSharedStationMetadataFromSupabase();
+  }).catch(function() {
+    return { changed: false };
   });
 
   window.SW_V4_DASHBOARD = {
+    ready: readyPromise,
     stations: stations,
     findStation: findStation,
     fetchStationPayload: fetchStationPayload,
